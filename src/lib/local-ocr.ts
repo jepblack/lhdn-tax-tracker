@@ -806,18 +806,99 @@ export function parseAndClassifyReceiptText(
   };
 }
 
-function extractMerchant(lines: string[]): string {
-  const skipPattern =
-    /^(tax invoice|official receipt|receipt|invoice|cash bill|welcome|thank you|tel|fax|gst|sst|reg no|co\.?\s*no|date|time|cashier|table|www\.|http|\d[\d\s\-()+/]+)$/i;
+const KNOWN_MY_MERCHANTS: Array<{ pattern: RegExp; name: string }> = [
+  { pattern: /\b(tm\s*unifi|unifi\s*home|tm\s*technology)\b/i, name: "TM Unifi" },
+  { pattern: /\b(time\s*dotcom|time\s*fibre)\b/i, name: "TIME Fibre" },
+  { pattern: /\bmaxis\s*fibre\b/i, name: "Maxis Fibre" },
+  { pattern: /\bcelcomdigi\s*fibre\b/i, name: "CelcomDigi Fibre" },
+  { pattern: /\bdecathlon\b/i, name: "Decathlon Malaysia" },
+  { pattern: /\bal[\-\s]?ikhsan\b/i, name: "Al-Ikhsan Sports" },
+  { pattern: /\bsports\s*direct\b/i, name: "Sports Direct Malaysia" },
+  { pattern: /\bkinokuniya\b/i, name: "Kinokuniya" },
+  { pattern: /\bpopular\s*book/i, name: "Popular Bookstore" },
+  { pattern: /\bmph\s*book/i, name: "MPH Bookstores" },
+  { pattern: /\bbookxcess\b/i, name: "BookXcess" },
+  { pattern: /\bbp\s*healthcare\b/i, name: "BP Healthcare" },
+  { pattern: /\bpathlab\b/i, name: "Pathlab Malaysia" },
+  { pattern: /\bsunway\s*medical\b/i, name: "Sunway Medical Centre" },
+  { pattern: /\bpantai\s*hospital\b/i, name: "Pantai Hospital" },
+  { pattern: /\bgleneagles\b/i, name: "Gleneagles Hospital" },
+  { pattern: /\bprince\s*court\b/i, name: "Prince Court Medical Centre" },
+  { pattern: /\bcolumbia\s*asia\b/i, name: "Columbia Asia Hospital" },
+  { pattern: /\bthomson\s*hospital\b/i, name: "Thomson Hospital" },
+  { pattern: /\baia\s*public\s*takaful\b/i, name: "AIA Public Takaful" },
+  { pattern: /\baia\s*bhd\b/i, name: "AIA Malaysia" },
+  { pattern: /\bprubsn\b/i, name: "Prudential BSN Takaful" },
+  { pattern: /\bprudential\b/i, name: "Prudential Malaysia" },
+  { pattern: /\bgreat\s*eastern\b/i, name: "Great Eastern" },
+  { pattern: /\ballianz\b/i, name: "Allianz Malaysia" },
+  { pattern: /\betiqa\b/i, name: "Etiqa Takaful" },
+  { pattern: /\btakaful\s*ikhlas\b/i, name: "Takaful Ikhlas" },
+  { pattern: /\bfwd\s*takaful\b/i, name: "FWD Takaful" },
+  { pattern: /\bkwsp\b|\bepf\b/i, name: "KWSP / EPF" },
+  { pattern: /\bperkeso\b|\bsocso\b/i, name: "PERKESO / SOCSO" },
+  { pattern: /\bsimpan\s*sspn\b|\bptptn\b/i, name: "Simpan SSPN (PTPTN)" },
+  { pattern: /\bgentari\b/i, name: "Gentari" },
+  { pattern: /\bjomcharge\b/i, name: "JomCharge" },
+  { pattern: /\bchargev\b/i, name: "ChargEV" },
+  { pattern: /\banytime\s*fitness\b/i, name: "Anytime Fitness" },
+  { pattern: /\bcelebrity\s*fitness\b/i, name: "Celebrity Fitness" },
+  { pattern: /\bfitness\s*first\b/i, name: "Fitness First" },
+  { pattern: /\bmachines\s*sdn\b/i, name: "Machines" },
+  { pattern: /\bharvey\s*norman\b/i, name: "Harvey Norman" },
+  { pattern: /\bsenheng\b/i, name: "Senheng" },
+];
 
-  for (const line of lines.slice(0, 6)) {
-    const cleaned = line.replace(/[^a-zA-Z0-9&'.,()\-\s]/g, "").trim();
+function extractMerchant(lines: string[]): string {
+  const fullTopText = lines.slice(0, 20).join(" ");
+
+  // Pass 1: Known Malaysian brands / providers
+  for (const brand of KNOWN_MY_MERCHANTS) {
+    if (brand.pattern.test(fullTopText)) {
+      return brand.name;
+    }
+  }
+
+  // Pass 2: Malaysian business / clinic / institution entity line in top 15 lines
+  const entityPattern =
+    /\b(sdn\.?\s*bhd\.?|berhad|bhd\.?|klinik|clinic|hospital|dental|pergigian|pharmacy|farmasi|takaful|insurance|enterprise|trading|centre|center|academy|institute|universiti|university|taska|tadika|kindergarten|fitness|gym|medical|specialist)\b/i;
+  const headerOrNoisePattern =
+    /\b(tax\s*invoice|official\s*receipt|cash\s*bill|e[\-\s]?invoice|invoice\s*no|receipt\s*no|bill\s*no|date\s*:|time\s*:|tel\s*:|fax\s*:|sst\s*(no|id|reg)|gst\s*(no|id|reg)|tin\s*:|reg\.?\s*no|co\.?\s*no|page\s*\d|cashier|customer|bill\s*to|ship\s*to|sold\s*to|account\s*no|member\s*id|welcome|thank\s*you)\b/i;
+  const addressPattern =
+    /\b(jalan|jln\.?|lorong|persiaran|lebuh|taman|bandar|lot\s*\d|no\.?\s*\d+|level\s*\d|floor|tingkat|blok|block|kuala\s*lumpur|selangor|petaling\s*jaya|subang\s*jaya|shah\s*alam|puchong|cheras|ampang|cyberjaya|putrajaya|penang|pulau\s*pinang|johor\s*bahru|melaka|ipoh|seremban|kota\s*kinabalu|kuching|\b\d{5}\b)\b/i;
+
+  for (const line of lines.slice(0, 15)) {
+    if (headerOrNoisePattern.test(line)) continue;
+    if (addressPattern.test(line) && !entityPattern.test(line)) continue;
+    if (entityPattern.test(line)) {
+      const cleaned = cleanCompanyLine(line);
+      if (cleaned.length >= 3) return cleaned;
+    }
+  }
+
+  // Pass 3: First clean non-header, non-address, non-numeric line in top 10 lines
+  for (const line of lines.slice(0, 10)) {
+    const cleaned = cleanCompanyLine(line);
     if (cleaned.length < 3 || cleaned.length > 55) continue;
-    if (skipPattern.test(cleaned)) continue;
-    if (/^\d+$/.test(cleaned.replace(/\s/g, ""))) continue;
+    if (headerOrNoisePattern.test(cleaned)) continue;
+    if (addressPattern.test(cleaned)) continue;
+    if (/^(www\.|http|[\d\s\-()+/:.,]+$)/i.test(cleaned)) continue;
+    // Skip lines that are mostly digits/symbols
+    const letterCount = (cleaned.match(/[a-zA-Z]/g) || []).length;
+    if (letterCount < 3) continue;
     return cleaned;
   }
-  return lines[0]?.slice(0, 45) || "";
+
+  return "";
+}
+
+function cleanCompanyLine(line: string): string {
+  return line
+    .replace(/\(\s*\d{4,12}[\-\s]?[A-Z0-9]*\s*\)/gi, "") // remove (123456-X) reg numbers
+    .replace(/[^a-zA-Z0-9&'.,()\-\/\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 55);
 }
 
 function extractAmount(lines: string[], rawText: string): number {
