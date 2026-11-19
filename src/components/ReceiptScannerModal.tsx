@@ -7,6 +7,7 @@ import {
   Ban,
   Camera,
   CheckCircle2,
+  Cpu,
   FileText,
   Loader2,
   RotateCcw,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
+import { runLocalReceiptOcr } from "@/lib/local-ocr";
 import {
   CategorySummary,
   ReceiptScanResult,
@@ -69,7 +71,12 @@ export function ReceiptScannerModal({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<number>(0);
+  const [scanStatusText, setScanStatusText] = useState<string>(
+    "Scanning receipt..."
+  );
   const [scanResult, setScanResult] = useState<ReceiptScanResult | null>(null);
+  const [showRawText, setShowRawText] = useState(false);
   const [overrideRejection, setOverrideRejection] = useState(false);
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -94,8 +101,10 @@ export function ReceiptScannerModal({
       setReceiptFile(null);
       setPreviewUrl(null);
       setScanResult(null);
+      setShowRawText(false);
       setOverrideRejection(false);
       setScanNotice(null);
+      setScanProgress(0);
     }
   }, [isOpen, initialCategoryId, initialSubCategoryId, taxYear]);
 
@@ -109,7 +118,6 @@ export function ReceiptScannerModal({
   const isRejectedBlocked =
     scanResult?.eligibility === "rejected" && !overrideRejection;
 
-  // Detect if receipt date falls in a different year than selected targetTaxYear
   const receiptYearNum = Number(expenseDate.slice(0, 4));
   const hasYearMismatch =
     !Number.isNaN(receiptYearNum) && receiptYearNum !== targetTaxYear;
@@ -121,12 +129,39 @@ export function ReceiptScannerModal({
     setReceiptFile(null);
     setPreviewUrl(null);
     setScanResult(null);
+    setShowRawText(false);
     setOverrideRejection(false);
     setScanNotice(null);
+    setScanProgress(0);
     setMerchant("");
     setAmount("");
     setInvoiceNumber("");
     setDescription("");
+  }
+
+  function applyScanResult(result: ReceiptScanResult) {
+    setScanResult(result);
+
+    if (result.merchant) setMerchant(result.merchant);
+    if (result.date) {
+      setExpenseDate(result.date);
+      const detectedYr = Number(result.date.slice(0, 4));
+      if (SUPPORTED_TAX_YEARS.includes(detectedYr as TaxYear)) {
+        setTargetTaxYear(detectedYr as TaxYear);
+      }
+    }
+    if (result.invoiceNumber) setInvoiceNumber(result.invoiceNumber);
+    if (result.description) setDescription(result.description);
+
+    if (result.eligibility === "rejected") {
+      setAmount(result.totalAmount > 0 ? String(result.totalAmount) : "");
+    } else {
+      if (result.amount > 0) setAmount(String(result.amount));
+      if (result.suggestedCategoryId) {
+        setCategoryId(result.suggestedCategoryId);
+        setSubCategoryId(result.suggestedSubCategoryId || "");
+      }
+    }
   }
 
   async function handleFileSelected(file: File | undefined) {
@@ -134,7 +169,10 @@ export function ReceiptScannerModal({
     setReceiptFile(file);
     setScanNotice(null);
     setScanResult(null);
+    setShowRawText(false);
     setOverrideRejection(false);
+    setScanProgress(5);
+    setScanStatusText("Checking receipt...");
 
     if (file.type.startsWith("image/")) {
       const url = URL.createObjectURL(file);
@@ -145,49 +183,44 @@ export function ReceiptScannerModal({
 
     setIsScanning(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("taxYear", String(targetTaxYear));
+      // Step 1: Try cloud AI vision if configured on server
+      let usedCloudAi = false;
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("taxYear", String(targetTaxYear));
 
-      const res = await fetch("/api/scan-receipt", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
+        const res = await fetch("/api/scan-receipt", {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!res.ok) {
-        setScanNotice(
-          data.message ||
-            "AI scan unavailable right now — receipt attached! Please fill in the details below."
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.fallbackToLocalOcr && data.eligibility) {
+            applyScanResult(data as ReceiptScanResult);
+            usedCloudAi = true;
+          }
+        }
+      } catch {
+        // Silently fall back to on-device OCR
+      }
+
+      // Step 2: Seamless On-Device Free OCR + Malaysian LHDN Rule Engine
+      if (!usedCloudAi) {
+        const localResult = await runLocalReceiptOcr(
+          file,
+          targetTaxYear,
+          (pct, text) => {
+            setScanProgress(pct);
+            setScanStatusText(text);
+          }
         );
-      } else {
-        const result = data as ReceiptScanResult;
-        setScanResult(result);
-
-        if (result.merchant) setMerchant(result.merchant);
-        if (result.date) {
-          setExpenseDate(result.date);
-          const detectedYr = Number(result.date.slice(0, 4));
-          if (SUPPORTED_TAX_YEARS.includes(detectedYr as TaxYear)) {
-            setTargetTaxYear(detectedYr as TaxYear);
-          }
-        }
-        if (result.invoiceNumber) setInvoiceNumber(result.invoiceNumber);
-        if (result.description) setDescription(result.description);
-
-        if (result.eligibility === "rejected") {
-          setAmount(result.totalAmount > 0 ? String(result.totalAmount) : "");
-        } else {
-          if (result.amount > 0) setAmount(String(result.amount));
-          if (result.suggestedCategoryId) {
-            setCategoryId(result.suggestedCategoryId);
-            setSubCategoryId(result.suggestedSubCategoryId || "");
-          }
-        }
+        applyScanResult(localResult);
       }
     } catch {
       setScanNotice(
-        "Could not reach AI scanner — receipt is attached, please enter details manually."
+        "Could not read text from this file — receipt is attached! Please fill in the details below."
       );
     } finally {
       setIsScanning(false);
@@ -233,12 +266,11 @@ export function ReceiptScannerModal({
           <div>
             <h2 className="text-base font-bold text-slate-900">
               {isGeneralScanMode
-                ? "General LHDN Receipt Scanner"
+                ? "Smart LHDN Receipt Scanner"
                 : "Scan or Log Receipt"}
             </h2>
             <p className="text-xs text-slate-500">
-              AI checks LHDN eligibility, routes to the right relief, or rejects
-              non-claimable receipts
+              Built-in free OCR + LHDN rule engine (auto-routes or rejects)
             </p>
           </div>
           <button
@@ -332,13 +364,21 @@ export function ReceiptScannerModal({
             </div>
           )}
 
-          {/* AI Scanning State */}
+          {/* Scanning Progress State */}
           {isScanning && (
-            <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-3.5 text-xs text-emerald-800">
-              <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-              <span>
-                Checking LHDN eligibility & detecting relief category...
-              </span>
+            <div className="space-y-2 rounded-xl bg-emerald-50 p-3.5 text-xs text-emerald-800">
+              <div className="flex items-center gap-2.5">
+                <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                <span className="font-medium">{scanStatusText}</span>
+              </div>
+              {scanProgress > 0 && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-200">
+                  <div
+                    className="h-full rounded-full bg-emerald-600 transition-all duration-200"
+                    style={{ width: `${scanProgress}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -350,13 +390,11 @@ export function ReceiptScannerModal({
                   <Ban className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       Not Claimable
                     </span>
-                    <span className="text-[11px] font-medium text-rose-700">
-                      {scanResult.confidence} confidence
-                    </span>
+                    <EngineBadge engine={scanResult.scanEngine} />
                   </div>
                   <p className="mt-1.5 text-xs font-semibold text-rose-950">
                     {scanResult.merchant || "Unrecognized receipt"}
@@ -397,10 +435,11 @@ export function ReceiptScannerModal({
               <div className="flex items-start gap-2">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                       Partially Claimable
                     </span>
+                    <EngineBadge engine={scanResult.scanEngine} />
                     <span className="text-[11px] text-amber-800">
                       {formatRM(scanResult.amount, true)} of{" "}
                       {formatRM(scanResult.totalAmount, true)}
@@ -430,18 +469,34 @@ export function ReceiptScannerModal({
             <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950">
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                     Eligible Relief
                   </span>
-                  <span className="text-[11px] font-medium text-emerald-800">
-                    {scanResult.confidence} confidence
-                  </span>
+                  <EngineBadge engine={scanResult.scanEngine} />
                 </div>
                 <p className="mt-1 text-[11px] text-emerald-900">
                   {scanResult.reasoning}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Optional Raw OCR Text Drawer */}
+          {scanResult?.rawText && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowRawText((v) => !v)}
+                className="text-[11px] font-semibold text-slate-500 underline underline-offset-2"
+              >
+                {showRawText ? "Hide scanned receipt text" : "View scanned receipt text"}
+              </button>
+              {showRawText && (
+                <pre className="mt-1.5 max-h-32 overflow-auto rounded-xl bg-slate-100 p-2.5 text-[10px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+                  {scanResult.rawText}
+                </pre>
+              )}
             </div>
           )}
 
@@ -455,7 +510,6 @@ export function ReceiptScannerModal({
           {/* Form Fields (hidden when rejected unless overridden) */}
           {!isRejectedBlocked && (
             <>
-              {/* Tax Year Mismatch Warning */}
               {hasYearMismatch && (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   <span>
@@ -642,5 +696,20 @@ export function ReceiptScannerModal({
         </form>
       </div>
     </div>
+  );
+}
+
+function EngineBadge({ engine }: { engine?: "ai" | "local-ocr" }) {
+  if (engine === "ai") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+        <Sparkles className="h-2.5 w-2.5" /> AI Vision
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+      <Cpu className="h-2.5 w-2.5" /> Built-In OCR
+    </span>
   );
 }

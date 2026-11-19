@@ -129,4 +129,6 @@ export interface ReceiptScanResult {
   reasoning: string;
   rejectionReason?: string;
   excludedItems?: string[];
+  scanEngine?: "ai" | "local-ocr";
+  rawText?: string;
 }

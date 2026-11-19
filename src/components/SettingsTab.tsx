@@ -1,17 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  AlertCircle,
+  CheckCircle2,
   Cloud,
   CloudOff,
   Database,
+  FileUp,
+  Loader2,
   LogOut,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { getStatusReliefAmounts } from "@/lib/lhdn-rules";
+import {
+  parseMalaysianPayslipText,
+  PayslipExtraction,
+} from "@/lib/payslip-parser";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { TaxProfile } from "@/lib/types";
 
@@ -19,6 +28,11 @@ interface SettingsTabProps {
   profile: TaxProfile;
   userEmail: string | null;
   onUpdateProfile: (next: TaxProfile) => Promise<void>;
+  onLogPayslipReliefs: (
+    epfAmount: number,
+    socsoAmount: number,
+    payslipFile: File | null
+  ) => Promise<void>;
   onLoadSampleData: () => void;
   onClearLocalData: () => void;
 }
@@ -27,14 +41,133 @@ export function SettingsTab({
   profile,
   userEmail,
   onUpdateProfile,
+  onLogPayslipReliefs,
   onLoadSampleData,
   onClearLocalData,
 }: SettingsTabProps) {
   const amounts = getStatusReliefAmounts(profile.taxYear);
+  const payslipInputRef = useRef<HTMLInputElement>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authStatus, setAuthStatus] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  // Payslip upload state
+  const [payslipFile, setPayslipFile] = useState<File | null>(null);
+  const [payslipScanning, setPayslipScanning] = useState(false);
+  const [payslipProgress, setPayslipProgress] = useState("");
+  const [payslipError, setPayslipError] = useState<string | null>(null);
+  const [payslipData, setPayslipData] = useState<PayslipExtraction | null>(
+    null
+  );
+  const [showPayslipText, setShowPayslipText] = useState(false);
+  const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
+
+  async function handlePayslipUpload(file: File | undefined) {
+    if (!file) return;
+    setPayslipFile(file);
+    setPayslipError(null);
+    setPayslipData(null);
+    setAppliedBanner(null);
+    setShowPayslipText(false);
+    setPayslipScanning(true);
+
+    try {
+      const isPdf =
+        file.type === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
+
+      if (isPdf) {
+        setPayslipProgress("Reading PDF payslip...");
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/api/parse-payslip", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setPayslipError(
+            data.message ||
+              "Could not read PDF payslip. Try uploading a screenshot/photo instead."
+          );
+          return;
+        }
+        setPayslipData(data as PayslipExtraction);
+      } else {
+        // Image / screenshot payslip -> built-in free on-device OCR
+        setPayslipProgress("Loading on-device OCR...");
+        const Tesseract = await import("tesseract.js");
+        const { data } = await Tesseract.recognize(file, "eng", {
+          logger: (m) => {
+            if (
+              m.status === "recognizing text" &&
+              typeof m.progress === "number"
+            ) {
+              setPayslipProgress(
+                `Reading payslip... ${Math.round(m.progress * 100)}%`
+              );
+            }
+          },
+        });
+        const parsed = parseMalaysianPayslipText(data.text || "");
+        setPayslipData(parsed);
+      }
+    } catch {
+      setPayslipError(
+        "Failed to read payslip. Try a clearer screenshot or enter the values manually below."
+      );
+    } finally {
+      setPayslipScanning(false);
+      setPayslipProgress("");
+    }
+  }
+
+  async function handleApplyPayslip(includeReliefs: boolean) {
+    if (!payslipData) return;
+
+    const nextProfile: TaxProfile = {
+      ...profile,
+      annualIncome:
+        payslipData.estimatedAnnualIncome > 0
+          ? payslipData.estimatedAnnualIncome
+          : profile.annualIncome,
+      pcbPaid:
+        payslipData.ytdPcb > 0
+          ? payslipData.ytdPcb
+          : payslipData.monthlyPcb > 0
+          ? payslipData.monthlyPcb
+          : profile.pcbPaid,
+      zakatPaid:
+        payslipData.ytdZakat > 0
+          ? payslipData.ytdZakat
+          : payslipData.monthlyZakat > 0
+          ? payslipData.monthlyZakat
+          : profile.zakatPaid,
+    };
+
+    await onUpdateProfile(nextProfile);
+
+    if (includeReliefs) {
+      const epf = payslipData.ytdEpf || payslipData.employeeEpf;
+      const socsoTotal =
+        (payslipData.ytdSocso || payslipData.employeeSocso) +
+        (payslipData.ytdEis || payslipData.employeeEis);
+      if (epf > 0 || socsoTotal > 0) {
+        await onLogPayslipReliefs(epf, socsoTotal, payslipFile);
+      }
+    }
+
+    setAppliedBanner(
+      includeReliefs
+        ? "Applied income, PCB/Zakat & logged EPF/SOCSO reliefs!"
+        : "Applied income, PCB & Zakat to your YA " + profile.taxYear + " profile!"
+    );
+    setPayslipData(null);
+  }
 
   async function handleAuth(mode: "signin" | "signup") {
     const supabase = getSupabaseClient();
@@ -81,15 +214,173 @@ export function SettingsTab({
 
   return (
     <div className="space-y-4 pb-6">
-      {/* Income, PCB & Zakat */}
+      {/* Income, PCB & Zakat + Payslip Extractor */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-        <h2 className="text-sm font-bold text-slate-900">
-          YA {profile.taxYear} Income & Tax Estimate
-        </h2>
-        <p className="text-xs text-slate-500">
-          Used to calculate your marginal tax bracket, Ringgit saved per
-          receipt, and estimated refund.
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">
+              YA {profile.taxYear} Income & Tax Estimate
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Upload a payslip / EA Form to auto-fill, or edit figures directly.
+            </p>
+          </div>
+          <input
+            ref={payslipInputRef}
+            type="file"
+            accept="application/pdf,image/*"
+            className="hidden"
+            onChange={(e) => {
+              handlePayslipUpload(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={payslipScanning}
+            onClick={() => payslipInputRef.current?.click()}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-xs transition active:scale-95 disabled:opacity-60"
+          >
+            {payslipScanning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileUp className="h-3.5 w-3.5" />
+            )}
+            Upload Payslip
+          </button>
+        </div>
+
+        {/* Payslip Scanning State */}
+        {payslipScanning && (
+          <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+            <span>{payslipProgress || "Extracting payslip figures..."}</span>
+          </div>
+        )}
+
+        {/* Payslip Error */}
+        {payslipError && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span>{payslipError}</span>
+          </div>
+        )}
+
+        {/* Applied Confirmation */}
+        {appliedBanner && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{appliedBanner}</span>
+          </div>
+        )}
+
+        {/* Extracted Payslip Preview Card */}
+        {payslipData && (
+          <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+                <span>
+                  Extracted from{" "}
+                  {payslipData.sourceType === "ea-form"
+                    ? "EA Form"
+                    : payslipData.monthDetected || "Payslip"}
+                </span>
+              </div>
+              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                {payslipData.confidence} confidence
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-white p-2.5">
+                <p className="text-[10px] text-slate-500">Est. Annual Income</p>
+                <p className="font-bold text-slate-900">
+                  {payslipData.estimatedAnnualIncome > 0
+                    ? formatRM(payslipData.estimatedAnnualIncome)
+                    : "Not detected"}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-2.5">
+                <p className="text-[10px] text-slate-500">PCB / MTD (YTD)</p>
+                <p className="font-bold text-slate-900">
+                  {payslipData.ytdPcb > 0
+                    ? formatRM(payslipData.ytdPcb, true)
+                    : "Not detected"}
+                </p>
+              </div>
+              {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0) && (
+                <div className="rounded-xl bg-white p-2.5">
+                  <p className="text-[10px] text-slate-500">Employee EPF (YTD)</p>
+                  <p className="font-bold text-emerald-700">
+                    {formatRM(payslipData.ytdEpf || payslipData.employeeEpf, true)}
+                  </p>
+                </div>
+              )}
+              {(payslipData.ytdSocso > 0 ||
+                payslipData.employeeSocso > 0 ||
+                payslipData.ytdEis > 0) && (
+                <div className="rounded-xl bg-white p-2.5">
+                  <p className="text-[10px] text-slate-500">SOCSO + EIS (YTD)</p>
+                  <p className="font-bold text-emerald-700">
+                    {formatRM(
+                      (payslipData.ytdSocso || payslipData.employeeSocso) +
+                        (payslipData.ytdEis || payslipData.employeeEis),
+                      true
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {payslipData.notes.length > 0 && (
+              <p className="text-[11px] text-emerald-900">
+                {payslipData.notes.join(" ")}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleApplyPayslip(false)}
+                className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white active:scale-[0.99]"
+              >
+                Apply Income & PCB
+              </button>
+              {(payslipData.ytdEpf > 0 ||
+                payslipData.employeeEpf > 0 ||
+                payslipData.ytdSocso > 0 ||
+                payslipData.employeeSocso > 0) && (
+                <button
+                  type="button"
+                  onClick={() => handleApplyPayslip(true)}
+                  className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white active:scale-[0.99]"
+                >
+                  Apply + Log EPF & SOCSO
+                </button>
+              )}
+            </div>
+
+            {payslipData.rawText && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPayslipText((v) => !v)}
+                  className="text-[11px] font-semibold text-emerald-800 underline underline-offset-2"
+                >
+                  {showPayslipText
+                    ? "Hide extracted text"
+                    : "View extracted payslip text"}
+                </button>
+                {showPayslipText && (
+                  <pre className="mt-1.5 max-h-32 overflow-auto rounded-xl bg-white p-2.5 text-[10px] text-slate-700 whitespace-pre-wrap">
+                    {payslipData.rawText}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
@@ -297,17 +588,20 @@ export function SettingsTab({
               backup, add{" "}
               <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">
                 NEXT_PUBLIC_SUPABASE_URL
-              </code>
-              ,{" "}
-              <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">
-                NEXT_PUBLIC_SUPABASE_ANON_KEY
               </code>{" "}
               and{" "}
               <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">
-                GEMINI_API_KEY
+                NEXT_PUBLIC_SUPABASE_ANON_KEY
               </code>{" "}
-              to <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">.env.local</code> and run{" "}
-              <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">supabase/schema.sql</code>.
+              to{" "}
+              <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">
+                .env.local
+              </code>{" "}
+              and run{" "}
+              <code className="rounded bg-slate-200/70 px-1 py-0.5 text-[11px]">
+                supabase/schema.sql
+              </code>
+              .
             </p>
           </div>
         )}

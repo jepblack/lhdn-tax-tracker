@@ -133,6 +133,50 @@ export function TaxApp() {
     await persistProfile(next, userId);
   }
 
+  async function handleLogPayslipReliefs(
+    epfAmount: number,
+    socsoAmount: number,
+    payslipFile: File | null
+  ) {
+    const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    if (epfAmount > 0) {
+      const epfExpense = await createExpense(
+        {
+          taxYear,
+          categoryId: "epf_life_insurance",
+          subCategoryId: "epf_mandatory",
+          merchant: "KWSP / EPF (Payslip YTD)",
+          description: "Auto-extracted from uploaded payslip / EA Form",
+          amount: epfAmount,
+          expenseDate: today,
+          invoiceNumber: `PAYSLIP-EPF-${taxYear}`,
+          aiExtracted: true,
+        },
+        payslipFile,
+        userId
+      );
+      setExpenses((prev) => [epfExpense, ...prev]);
+    }
+    if (socsoAmount > 0) {
+      const socsoExpense = await createExpense(
+        {
+          taxYear,
+          categoryId: "socso",
+          subCategoryId: null,
+          merchant: "PERKESO / SOCSO & EIS (Payslip YTD)",
+          description: "Auto-extracted from uploaded payslip / EA Form",
+          amount: socsoAmount,
+          expenseDate: today,
+          invoiceNumber: `PAYSLIP-SOCSO-${taxYear}`,
+          aiExtracted: true,
+        },
+        payslipFile,
+        userId
+      );
+      setExpenses((prev) => [socsoExpense, ...prev]);
+    }
+  }
+
   function handleLoadSampleData() {
     const samples = getSampleExpenses(taxYear);
     const otherYears = expenses.filter((e) => e.taxYear !== taxYear);
@@ -231,6 +275,7 @@ export function TaxApp() {
                 profile={profile}
                 userEmail={userEmail}
                 onUpdateProfile={handleUpdateProfile}
+                onLogPayslipReliefs={handleLogPayslipReliefs}
                 onLoadSampleData={handleLoadSampleData}
                 onClearLocalData={handleClearLocalData}
               />
