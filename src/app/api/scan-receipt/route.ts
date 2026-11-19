@@ -86,7 +86,11 @@ Categorization Rules (when eligible or partial):
 
 Return strict JSON matching the schema.`;
 
-    const ai = new GoogleGenAI({ apiKey });
+    const isVertexExpressKey = apiKey.trim().startsWith("AQ.");
+    const ai = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      ...(isVertexExpressKey ? { vertexai: true } : {}),
+    });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
