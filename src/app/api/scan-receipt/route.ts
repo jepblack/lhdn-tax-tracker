@@ -150,13 +150,16 @@ Return strict JSON matching the schema.`;
       const devAi = new GoogleGenAI({ apiKey: trimmedKey, vertexai: false });
       response = await devAi.models.generateContent(generateParams);
     } catch (devErr) {
+      const devMsg = devErr instanceof Error ? devErr.message : String(devErr);
       if (trimmedKey.startsWith("AQ.")) {
         try {
           const vertexAi = new GoogleGenAI({ apiKey: trimmedKey, vertexai: true });
           response = await vertexAi.models.generateContent(generateParams);
-        } catch {
+        } catch (vertexErr) {
+          const vertexMsg =
+            vertexErr instanceof Error ? vertexErr.message : String(vertexErr);
           throw new Error(
-            "API key rejected by both Gemini API and Vertex AI. Please create a Gemini API key (starts with AIza...) at https://aistudio.google.com/apikey using a personal Google account."
+            `Gemini API error: ${devMsg} | Vertex AI fallback error: ${vertexMsg}`
           );
         }
       } else {
