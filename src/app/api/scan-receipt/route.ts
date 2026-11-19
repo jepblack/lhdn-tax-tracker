@@ -86,12 +86,8 @@ Categorization Rules (when eligible or partial):
 
 Return strict JSON matching the schema.`;
 
-    const isVertexExpressKey = apiKey.trim().startsWith("AQ.");
-    const ai = new GoogleGenAI({
-      apiKey: apiKey.trim(),
-      ...(isVertexExpressKey ? { vertexai: true } : {}),
-    });
-    const response = await ai.models.generateContent({
+    const trimmedKey = apiKey.trim();
+    const generateParams = {
       model: "gemini-2.5-flash",
       contents: [
         {
@@ -146,7 +142,27 @@ Return strict JSON matching the schema.`;
           ],
         },
       },
-    });
+    };
+
+    // Try Gemini Developer API first; if an AQ.* key is rejected there, fallback to Vertex AI Express Mode
+    let response;
+    try {
+      const devAi = new GoogleGenAI({ apiKey: trimmedKey, vertexai: false });
+      response = await devAi.models.generateContent(generateParams);
+    } catch (devErr) {
+      if (trimmedKey.startsWith("AQ.")) {
+        try {
+          const vertexAi = new GoogleGenAI({ apiKey: trimmedKey, vertexai: true });
+          response = await vertexAi.models.generateContent(generateParams);
+        } catch {
+          throw new Error(
+            "API key rejected by both Gemini API and Vertex AI. Please create a Gemini API key (starts with AIza...) at https://aistudio.google.com/apikey using a personal Google account."
+          );
+        }
+      } else {
+        throw devErr;
+      }
+    }
 
     const text = response.text;
     if (!text) {
