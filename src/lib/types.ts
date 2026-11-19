@@ -1,0 +1,132 @@
+export type TaxYear = 2025 | 2026;
+
+export interface ReliefSubCategory {
+  id: string;
+  name: string;
+  maxLimit: number;
+  description: string;
+  examples: string[];
+}
+
+export interface ReliefCategory {
+  id: string;
+  name: string;
+  shortName: string;
+  group: "medical" | "lifestyle" | "savings" | "family" | "housing";
+  maxLimit: number;
+  formBeRef: string;
+  description: string;
+  tips: string;
+  icon: string;
+  subCategories?: ReliefSubCategory[];
+}
+
+export interface StatusReliefs {
+  individual: boolean;
+  disabledIndividual: boolean;
+  spouse: boolean;
+  disabledSpouse: boolean;
+  childrenUnder18: number;
+  childrenHigherEd: number;
+  disabledChildren: number;
+  disabledChildrenHigherEd: number;
+}
+
+export interface TaxProfile {
+  taxYear: TaxYear;
+  annualIncome: number;
+  zakatPaid: number;
+  pcbPaid: number;
+  statusReliefs: StatusReliefs;
+}
+
+export interface TaxExpense {
+  id: string;
+  taxYear: TaxYear;
+  categoryId: string;
+  subCategoryId?: string | null;
+  merchant: string;
+  description: string;
+  amount: number;
+  expenseDate: string; // YYYY-MM-DD
+  invoiceNumber?: string;
+  receiptPath?: string | null;
+  receiptUrl?: string | null; // Object URL / signed URL / local data URL
+  receiptMimeType?: string | null;
+  receiptFileName?: string | null;
+  aiExtracted?: boolean;
+  createdAt: string;
+}
+
+export interface SubCategorySummary {
+  subCategory: ReliefSubCategory;
+  spent: number;
+  claimable: number;
+  remaining: number;
+  overflow: number;
+  expenseCount: number;
+  percentUsed: number;
+}
+
+export interface CategorySummary {
+  category: ReliefCategory;
+  spent: number;
+  claimable: number;
+  remaining: number;
+  overflow: number;
+  expenseCount: number;
+  missingReceiptCount: number;
+  percentUsed: number;
+  subSummaries: SubCategorySummary[];
+}
+
+export interface ReliefOpportunity {
+  categoryId: string;
+  categoryName: string;
+  remainingCap: number;
+  estimatedTaxSavings: number;
+  priority: "high" | "medium" | "low";
+  tip: string;
+}
+
+export interface TaxCalculationResult {
+  taxYear: TaxYear;
+  annualIncome: number;
+  statusReliefTotal: number;
+  expenseReliefSpent: number;
+  expenseReliefClaimable: number;
+  expenseReliefRemaining: number;
+  expenseReliefOverflow: number;
+  totalReliefs: number;
+  chargeableIncome: number;
+  chargeableIncomeWithoutExpenseReliefs: number;
+  grossTax: number;
+  zakatRebate: number;
+  smallIncomeRebate: number;
+  netTaxPayable: number;
+  taxSavedByExpenseReliefs: number;
+  marginalRate: number;
+  pcbPaid: number;
+  estimatedRefund: number; // positive = refund, negative = balance payable
+  retentionUntilYear: number;
+  categorySummaries: CategorySummary[];
+  opportunities: ReliefOpportunity[];
+}
+
+export type ReceiptEligibility = "eligible" | "partial" | "rejected";
+
+export interface ReceiptScanResult {
+  eligibility: ReceiptEligibility;
+  merchant: string;
+  date: string;
+  amount: number; // Claimable amount (0 if rejected)
+  totalAmount: number; // Full receipt total
+  invoiceNumber?: string;
+  description?: string;
+  suggestedCategoryId: string | null;
+  suggestedSubCategoryId?: string | null;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+  rejectionReason?: string;
+  excludedItems?: string[];
+}
