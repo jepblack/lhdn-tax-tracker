@@ -822,15 +822,24 @@ function extractMerchant(lines: string[]): string {
 
 function extractAmount(lines: string[], rawText: string): number {
   const totalKeyword =
-    /(grand\s*total|total\s*payable|amount\s*due|amount\s*paid|nett\s*total|net\s*total|total\s*incl|total\s*\(?rm\)?|total\b|balance\s*due)/i;
-  const ignoreKeyword = /(subtotal|sub\s*total|discount|change|rounding|sst|gst|tax\s*6%|tax\s*8%|points|qty)/i;
-  const amountRegex = /(?:RM|MYR)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/gi;
+    /(grand\s*total|total\s*payable|total\s*amount|total\s*due|amount\s*due|amount\s*paid|nett\s*total|net\s*total|total\s*incl|total\s*\(?rm\)?|jumlah\s*besar|jumlah\s*bayaran|jumlah\b|total\b|balance\s*due|paid\s*amount)/i;
+  const ignoreKeyword =
+    /(subtotal|sub\s*total|sub-total|discount|change|rounding|sst|gst|tax\s*6%|tax\s*8%|points|qty|quantity|item|unit)/i;
+  const decimalAmountRegex =
+    /(?:RM|MYR)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/gi;
+  const rmWholeOrDecimalRegex =
+    /(?:RM|MYR)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)/gi;
 
-  // Pass 1: Look at lines with "TOTAL" keywords (prefer bottom-most total line)
+  // Pass 1: Look at lines with "TOTAL"/"JUMLAH" keywords (check same line AND next line!)
   let bestFromTotalLine = 0;
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (totalKeyword.test(line) && !ignoreKeyword.test(line)) {
-      const matches = [...line.matchAll(amountRegex)];
+      const candidateLines = [line, lines[i + 1] || ""].join(" ");
+      const matches = [
+        ...candidateLines.matchAll(decimalAmountRegex),
+        ...candidateLines.matchAll(rmWholeOrDecimalRegex),
+      ];
       for (const m of matches) {
         const val = parseFloat(m[1].replace(/,/g, ""));
         if (val > 0 && val < 200000) {
@@ -841,10 +850,8 @@ function extractAmount(lines: string[], rawText: string): number {
   }
   if (bestFromTotalLine > 0) return bestFromTotalLine;
 
-  // Pass 2: Fallback to largest RM-prefixed amount in the receipt
-  const rmMatches = [
-    ...rawText.matchAll(/(?:RM|MYR)\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/gi),
-  ];
+  // Pass 2: Fallback to largest RM/MYR-prefixed amount in the receipt (decimal or whole)
+  const rmMatches = [...rawText.matchAll(rmWholeOrDecimalRegex)];
   let maxRm = 0;
   for (const m of rmMatches) {
     const val = parseFloat(m[1].replace(/,/g, ""));
@@ -852,11 +859,13 @@ function extractAmount(lines: string[], rawText: string): number {
   }
   if (maxRm > 0) return maxRm;
 
-  // Pass 3: Fallback to largest decimal currency-like number
-  const anyMatches = [...rawText.matchAll(/\b([0-9]{1,4}\.[0-9]{2})\b/g)];
+  // Pass 3: Fallback to largest decimal currency-like number (also supports comma thousands)
+  const anyMatches = [
+    ...rawText.matchAll(/\b([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]{1,5}\.[0-9]{2})\b/g),
+  ];
   let maxAny = 0;
   for (const m of anyMatches) {
-    const val = parseFloat(m[1]);
+    const val = parseFloat(m[1].replace(/,/g, ""));
     if (val > maxAny && val < 50000) maxAny = val;
   }
   return maxAny;

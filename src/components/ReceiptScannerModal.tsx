@@ -156,10 +156,18 @@ export function ReceiptScannerModal({
     if (result.eligibility === "rejected") {
       setAmount(result.totalAmount > 0 ? String(result.totalAmount) : "");
     } else {
-      if (result.amount > 0) setAmount(String(result.amount));
+      const bestAmount = result.amount > 0 ? result.amount : result.totalAmount;
+      if (bestAmount > 0) setAmount(String(bestAmount));
       if (result.suggestedCategoryId) {
         setCategoryId(result.suggestedCategoryId);
-        setSubCategoryId(result.suggestedSubCategoryId || "");
+        const matchedCat = getReliefCategories(targetTaxYear).find(
+          (c) => c.id === result.suggestedCategoryId
+        );
+        setSubCategoryId(
+          result.suggestedSubCategoryId ||
+            matchedCat?.subCategories?.[0]?.id ||
+            ""
+        );
       }
     }
   }

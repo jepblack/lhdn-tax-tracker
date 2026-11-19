@@ -1,29 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
+import { extractText } from "unpdf";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
 import { ReceiptEligibility, TaxYear } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
-    const openaiKey = process.env.OPENAI_API_KEY?.trim();
-
-    const hasGemini = Boolean(
-      geminiKey && geminiKey !== "your-gemini-api-key"
-    );
-    const hasOpenAi = Boolean(
-      openaiKey && openaiKey !== "your-openai-api-key"
-    );
-
-    if (!hasGemini && !hasOpenAi) {
-      return NextResponse.json({
-        fallbackToLocalOcr: true,
-        aiSkippedReason: "No external AI key configured — using built-in free OCR.",
-      });
-    }
-
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const rawYear = Number(formData.get("taxYear") || 2026);
@@ -36,7 +21,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const openaiKey = process.env.OPENAI_API_KEY?.trim();
+
+    const hasGemini = Boolean(
+      geminiKey && geminiKey !== "your-gemini-api-key"
+    );
+    const hasOpenAi = Boolean(
+      openaiKey && openaiKey !== "your-openai-api-key"
+    );
+
     const arrayBuffer = await file.arrayBuffer();
+    const isPdf =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
+
+    if (!hasGemini && !hasOpenAi) {
+      if (isPdf) {
+        const pdfResult = await tryExtractPdfReceipt(arrayBuffer, taxYear);
+        if (pdfResult) return NextResponse.json(pdfResult);
+      }
+      return NextResponse.json({
+        fallbackToLocalOcr: true,
+        aiSkippedReason: "No external AI key configured — using built-in free OCR.",
+      });
+    }
+
     const base64Data = Buffer.from(arrayBuffer).toString("base64");
     const mimeType = file.type || "image/jpeg";
     const categories = getReliefCategories(taxYear);
@@ -181,7 +191,13 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
       }
     }
 
-    // 3. Seamless fallback to client-side free OCR (never fail with a scary 401/500)
+    // 3. If PDF, extract text directly on server with unpdf before falling back
+    if (isPdf) {
+      const pdfResult = await tryExtractPdfReceipt(arrayBuffer, taxYear);
+      if (pdfResult) return NextResponse.json(pdfResult);
+    }
+
+    // 4. Seamless fallback to client-side free OCR (never fail with a scary 401/500)
     return NextResponse.json({
       fallbackToLocalOcr: true,
       aiSkippedReason: "External AI unavailable — switched automatically to built-in free OCR.",
@@ -193,6 +209,21 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
       aiSkippedReason: "Switched automatically to built-in free OCR.",
     });
   }
+}
+
+async function tryExtractPdfReceipt(arrayBuffer: ArrayBuffer, taxYear: TaxYear) {
+  try {
+    const { text } = await extractText(new Uint8Array(arrayBuffer), {
+      mergePages: true,
+    });
+    const rawText = Array.isArray(text) ? text.join("\n") : String(text || "");
+    if (rawText.trim().length >= 15) {
+      return parseAndClassifyReceiptText(rawText, taxYear);
+    }
+  } catch (err) {
+    console.warn("PDF text extraction failed:", err);
+  }
+  return null;
 }
 
 function normalizeAiPayload(
