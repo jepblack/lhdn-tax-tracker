@@ -145,12 +145,12 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
 
         let response;
         try {
-          response = await withTimeout(callGemini(), 35000);
+          response = await withTimeout(callGemini(), 14000);
         } catch (firstErr) {
           const m = firstErr instanceof Error ? firstErr.message : String(firstErr);
           if (m.includes("503") || m.includes("UNAVAILABLE")) {
-            await new Promise((r) => setTimeout(r, 800));
-            response = await withTimeout(callGemini(), 25000);
+            await new Promise((r) => setTimeout(r, 600));
+            response = await withTimeout(callGemini(), 12000);
           } else {
             throw firstErr;
           }

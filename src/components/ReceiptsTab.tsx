@@ -24,6 +24,7 @@ import {
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
@@ -281,8 +282,8 @@ export function ReceiptsTab({
                       }
                     }
                     const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), 42000);
-                    let res: Response;
+                    const timer = setTimeout(() => controller.abort(), 18000);
+                    let res: Response | null = null;
                     try {
                       res = await fetch("/api/parse-annual-doc", {
                         method: "POST",
@@ -290,10 +291,15 @@ export function ReceiptsTab({
                         body: fd,
                         signal: controller.signal,
                       });
+                    } catch {
+                      res = null;
                     } finally {
                       clearTimeout(timer);
                     }
-                    if (res.ok) {
+
+                    let extractedOk = false;
+                    let serverSkipReason: string | null = null;
+                    if (res && res.ok) {
                       const data = await res.json();
                       if (!data.skipped && data.docType) {
                         const ext = data as AnnualDocExtraction;
@@ -311,17 +317,60 @@ export function ReceiptsTab({
                             extraction: ext,
                             doc: savedDoc,
                           });
-                        } else {
-                          setDocNotice(
-                            `${slot.label} archived, but no RM figures were detected automatically. You can enter them under Profile.`
-                          );
+                          extractedOk = true;
                         }
                       } else if (data.skipReason) {
-                        setDocNotice(data.skipReason);
+                        serverSkipReason = data.skipReason;
                       }
-                    } else {
+                    }
+
+                    // Seamless on-device OCR fallback when Gemini times out or is busy
+                    if (!extractedOk && fileForAi.type.startsWith("image/")) {
+                      try {
+                        const Tesseract = await import("tesseract.js");
+                        const { data: ocrData } = await Tesseract.recognize(
+                          fileForAi,
+                          "eng"
+                        );
+                        const p = parseMalaysianPayslipText(ocrData.text || "");
+                        const fallbackExt: AnnualDocExtraction = {
+                          docType: slot.type,
+                          providerName: slot.label,
+                          annualIncome: p.estimatedAnnualIncome,
+                          pcbPaid: p.ytdPcb || p.monthlyPcb,
+                          zakatPaid: p.ytdZakat || p.monthlyZakat,
+                          epfEmployee: p.ytdEpf || p.employeeEpf,
+                          socsoEisEmployee:
+                            (p.ytdSocso || p.employeeSocso) +
+                            (p.ytdEis || p.employeeEis),
+                          lifeInsuranceAmount: 0,
+                          medicalInsuranceAmount: 0,
+                          housingLoanInterest: 0,
+                          summaryNote:
+                            "Gemini was busy — extracted automatically using built-in on-device OCR.",
+                          confidence: p.confidence,
+                        };
+                        const hasOcrFigures =
+                          fallbackExt.annualIncome > 0 ||
+                          fallbackExt.pcbPaid > 0 ||
+                          fallbackExt.epfEmployee > 0 ||
+                          fallbackExt.socsoEisEmployee > 0;
+                        if (hasOcrFigures) {
+                          setPendingExtraction({
+                            extraction: fallbackExt,
+                            doc: savedDoc,
+                          });
+                          extractedOk = true;
+                        }
+                      } catch {
+                        // ignore OCR fallback error
+                      }
+                    }
+
+                    if (!extractedOk) {
                       setDocNotice(
-                        `${slot.label} archived, but automatic extraction failed (HTTP ${res.status}). Try uploading a screenshot/photo of it instead.`
+                        serverSkipReason ||
+                          `${slot.label} archived! No numeric tax figures were detected automatically—you can enter them under Profile.`
                       );
                     }
                   } catch {
