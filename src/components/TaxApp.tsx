@@ -176,17 +176,31 @@ export function TaxApp() {
       });
     }
 
-    // 2. Log corresponding tax reliefs linked to the archived Annual Document
+    // 2. Log corresponding tax reliefs
+    // For Form BE imports, intentionally leave receiptUrl/receiptPath null so CukaiKu flags
+    // that underlying supporting receipts are still required for LHDN's 7-year audit!
+    const isFormBeImport = doc.docType === "form_be_proof";
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     const provider = ext.providerName || doc.label;
-    const sharedFileFields = {
-      receiptUrl: doc.fileUrl,
-      receiptPath:
-        doc.storageProvider === "gdrive" ? `gdrive:${doc.fileUrl}` : null,
-      receiptFileName: doc.fileName,
-      receiptMimeType: doc.mimeType,
-      aiExtracted: true,
-    };
+    const sharedFileFields = isFormBeImport
+      ? {
+          receiptUrl: null,
+          receiptPath: null,
+          receiptFileName: null,
+          receiptMimeType: null,
+          aiExtracted: true,
+        }
+      : {
+          receiptUrl: doc.fileUrl,
+          receiptPath:
+            doc.storageProvider === "gdrive" ? `gdrive:${doc.fileUrl}` : null,
+          receiptFileName: doc.fileName,
+          receiptMimeType: doc.mimeType,
+          aiExtracted: true,
+        };
+    const descriptionNote = isFormBeImport
+      ? `Imported from ${doc.label} — attach supporting receipts for LHDN 7-year audit`
+      : `Extracted from ${doc.label}`;
 
     if (ext.epfEmployee > 0) {
       await handleSaveExpense(
@@ -195,7 +209,7 @@ export function TaxApp() {
           categoryId: "epf_life_insurance",
           subCategoryId: "epf_mandatory",
           merchant: `${provider} — EPF`,
-          description: `Extracted from ${doc.label}`,
+          description: descriptionNote,
           amount: ext.epfEmployee,
           expenseDate: today,
           ...sharedFileFields,
@@ -211,7 +225,7 @@ export function TaxApp() {
           categoryId: "socso",
           subCategoryId: null,
           merchant: `${provider} — SOCSO & EIS`,
-          description: `Extracted from ${doc.label}`,
+          description: descriptionNote,
           amount: ext.socsoEisEmployee,
           expenseDate: today,
           ...sharedFileFields,
@@ -227,7 +241,7 @@ export function TaxApp() {
           categoryId: "epf_life_insurance",
           subCategoryId: "life_insurance",
           merchant: `${provider} — Life Insurance`,
-          description: `Extracted from ${doc.label}`,
+          description: descriptionNote,
           amount: ext.lifeInsuranceAmount,
           expenseDate: today,
           ...sharedFileFields,
@@ -243,7 +257,7 @@ export function TaxApp() {
           categoryId: "edu_med_insurance",
           subCategoryId: null,
           merchant: `${provider} — Medical Insurance`,
-          description: `Extracted from ${doc.label}`,
+          description: descriptionNote,
           amount: ext.medicalInsuranceAmount,
           expenseDate: today,
           ...sharedFileFields,
@@ -259,7 +273,7 @@ export function TaxApp() {
           categoryId: "first_home_interest",
           subCategoryId: "home_under_500k",
           merchant: `${provider} — Housing Loan Interest`,
-          description: `Extracted from ${doc.label}`,
+          description: descriptionNote,
           amount: ext.housingLoanInterest,
           expenseDate: today,
           ...sharedFileFields,
@@ -277,7 +291,7 @@ export function TaxApp() {
               categoryId: extra.categoryId,
               subCategoryId: extra.subCategoryId || null,
               merchant: `${provider} — ${extra.label}`,
-              description: `Extracted from ${doc.label}`,
+              description: descriptionNote,
               amount: extra.amount,
               expenseDate: today,
               ...sharedFileFields,
