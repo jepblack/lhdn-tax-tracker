@@ -41,8 +41,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Form BE proof & generic docs don't need figure extraction
-    if (docType === "form_be_proof" || docType === "other_doc") {
+    // Only generic other_doc is archive-only; EA Form, KWSP, Insurance, Loan & Form BE all extract!
+    if (docType === "other_doc") {
       return NextResponse.json({ skipped: true });
     }
 
@@ -77,21 +77,42 @@ export async function POST(request: Request) {
     const canUseGemini =
       Boolean(geminiKey && geminiKey !== "your-gemini-api-key") && authed;
 
+    const formBeExtraPrompt =
+      docType === "form_be_proof"
+        ? `
+Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract any other claimed relief boxes into "extraReliefs" array using ONLY these valid categoryId values:
+- "lifestyle" (F9 Lifestyle)
+- "sports" (F10 Sports equipment/activities)
+- "medical_self" (F4 Medical expenses self/spouse/child)
+- "parents_medical" (F2 Parents medical/care)
+- "education_self" (F5 Education fees self)
+- "prs_annuity" (F16 PRS / Deferred Annuity)
+- "sspn" (F13 SSPN net deposit)
+- "childcare" (F12 Childcare TASKA/TADIKA)
+- "breastfeeding" (F11 Breastfeeding equipment)
+- "ev_charging" (F20 EV charging / composting)
+- "supporting_equipment" (F3 Basic supporting equipment)
+- "approved_donations" (D1 Approved donations Section 44(6))
+Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": number}] (only include items with amount > 0).`
+        : "";
+
     const prompt = `You are a Malaysian LHDN personal tax document parser for YA ${taxYear}.
 Document type uploaded: "${docType}".
 Extract ONLY visibly printed annual MYR figures from this document. Never guess or fabricate numbers; return 0 for any field not present.
+${formBeExtraPrompt}
 
 Return ONLY raw valid JSON (no markdown) with exact keys:
 {
-  "providerName": string (employer, insurer, KWSP, or bank name),
-  "annualIncome": number (total gross remuneration / income if EA Form),
-  "pcbPaid": number (total PCB / MTD tax deducted if EA Form),
-  "zakatPaid": number (total Zakat deducted via salary if EA Form),
-  "epfEmployee": number (employee EPF / KWSP contribution only, NOT employer share),
-  "socsoEisEmployee": number (employee SOCSO + EIS / PERKESO + SIP total),
-  "lifeInsuranceAmount": number (qualifying life insurance / family takaful annual premium),
-  "medicalInsuranceAmount": number (qualifying medical / health / education insurance annual premium),
-  "housingLoanInterest": number (total housing loan interest paid for the year),
+  "providerName": string (employer, insurer, KWSP, bank, or "LHDN Form BE"),
+  "annualIncome": number (total gross/statutory/aggregate income),
+  "pcbPaid": number (total PCB / MTD tax deducted),
+  "zakatPaid": number (total Zakat / Fitrah rebate),
+  "epfEmployee": number (employee EPF / KWSP relief claimed),
+  "socsoEisEmployee": number (SOCSO / PERKESO relief claimed),
+  "lifeInsuranceAmount": number (life insurance / family takaful relief claimed),
+  "medicalInsuranceAmount": number (education & medical insurance relief claimed),
+  "housingLoanInterest": number (first-home housing loan interest relief claimed),
+  "extraReliefs": [{"categoryId": string, "label": string, "amount": number}],
   "summaryNote": string (short 1-sentence summary of what was extracted),
   "confidence": "high" | "medium" | "low"
 }`;
@@ -241,6 +262,30 @@ function normalizeAnnualExtraction(
   docType: AnnualDocType,
   engineName: string
 ): AnnualDocExtraction {
+  const validExtraIds = new Set([
+    "lifestyle",
+    "sports",
+    "medical_self",
+    "parents_medical",
+    "education_self",
+    "prs_annuity",
+    "sspn",
+    "childcare",
+    "breastfeeding",
+    "ev_charging",
+    "supporting_equipment",
+    "approved_donations",
+  ]);
+  const rawExtras = Array.isArray(parsed.extraReliefs) ? parsed.extraReliefs : [];
+  const extraReliefs = rawExtras
+    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
+    .map((x) => ({
+      categoryId: String(x.categoryId || ""),
+      label: String(x.label || x.categoryId || ""),
+      amount: Number(x.amount) || 0,
+    }))
+    .filter((x) => validExtraIds.has(x.categoryId) && x.amount > 0);
+
   return {
     docType,
     providerName: String(parsed.providerName || ""),
@@ -252,6 +297,7 @@ function normalizeAnnualExtraction(
     lifeInsuranceAmount: Number(parsed.lifeInsuranceAmount) || 0,
     medicalInsuranceAmount: Number(parsed.medicalInsuranceAmount) || 0,
     housingLoanInterest: Number(parsed.housingLoanInterest) || 0,
+    extraReliefs,
     summaryNote:
       String(parsed.summaryNote || "") ||
       `Extracted annual figures via ${engineName}.`,

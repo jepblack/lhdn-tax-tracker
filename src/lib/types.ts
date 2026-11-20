@@ -231,6 +231,12 @@ export interface AnnualDocExtraction {
   lifeInsuranceAmount: number;
   medicalInsuranceAmount: number;
   housingLoanInterest: number;
+  extraReliefs?: Array<{
+    categoryId: string;
+    subCategoryId?: string | null;
+    label: string;
+    amount: number;
+  }>;
   summaryNote: string;
   confidence: "high" | "medium" | "low";
 }

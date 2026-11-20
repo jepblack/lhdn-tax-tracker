@@ -253,11 +253,8 @@ export function ReceiptsTab({
                   file
                 );
 
-                // Auto-extract tax figures from EA Form, KWSP, Insurance, or Housing Loan statements
-                if (
-                  slot.type !== "form_be_proof" &&
-                  slot.type !== "other_doc"
-                ) {
+                // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, or Form BE
+                if (slot.type !== "other_doc") {
                   try {
                     // For PDFs (especially scanned EA Forms), render Page 1 to JPEG for reliable Gemini Vision reading
                     let fileForAi: File = file;
@@ -311,7 +308,8 @@ export function ReceiptsTab({
                           ext.socsoEisEmployee > 0 ||
                           ext.lifeInsuranceAmount > 0 ||
                           ext.medicalInsuranceAmount > 0 ||
-                          ext.housingLoanInterest > 0;
+                          ext.housingLoanInterest > 0 ||
+                          (ext.extraReliefs && ext.extraReliefs.length > 0);
                         if (hasAnyFigure) {
                           setPendingExtraction({
                             extraction: ext,
@@ -511,6 +509,16 @@ export function ReceiptsTab({
                     </p>
                   </div>
                 )}
+                {pendingExtraction.extraction.extraReliefs?.map((item, i) => (
+                  <div key={`${item.categoryId}-${i}`} className="rounded-xl bg-white p-2">
+                    <p className="truncate text-[10px] text-slate-500">
+                      {item.label}
+                    </p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(item.amount, true)}
+                    </p>
+                  </div>
+                ))}
               </div>
 
               <p className="text-[11px] text-emerald-900">

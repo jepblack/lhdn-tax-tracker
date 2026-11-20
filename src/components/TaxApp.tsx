@@ -267,6 +267,26 @@ export function TaxApp() {
         null
       );
     }
+
+    if (ext.extraReliefs && ext.extraReliefs.length > 0) {
+      for (const extra of ext.extraReliefs) {
+        if (extra.amount > 0) {
+          await handleSaveExpense(
+            {
+              taxYear,
+              categoryId: extra.categoryId,
+              subCategoryId: extra.subCategoryId || null,
+              merchant: `${provider} — ${extra.label}`,
+              description: `Extracted from ${doc.label}`,
+              amount: extra.amount,
+              expenseDate: today,
+              ...sharedFileFields,
+            },
+            null
+          );
+        }
+      }
+    }
   }
 
   function handleDeleteAnnualDoc(id: string) {
