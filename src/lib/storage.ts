@@ -448,6 +448,10 @@ export async function syncLocalDataToCloud(
             }
           }
         }
+        // Clear migrated local expenses once confirmed in cloud so deleted cloud receipts never resurrect on refresh
+        if (!lastError) {
+          saveLocalExpenses([]);
+        }
       }
     }
   } catch (err) {
@@ -781,11 +785,18 @@ export async function removeExpense(
       .delete()
       .eq("id", expense.id)
       .eq("user_id", userId);
-    return;
   }
 
+  // Also remove from localStorage (matching by id or signature) so it cannot resurrect
+  const targetKey = `${expense.expenseDate}_${expense.merchant}_${Number(expense.amount).toFixed(2)}`;
   const existing = loadLocalExpenses();
-  saveLocalExpenses(existing.filter((e) => e.id !== expense.id));
+  saveLocalExpenses(
+    existing.filter(
+      (e) =>
+        e.id !== expense.id &&
+        `${e.expenseDate}_${e.merchant}_${Number(e.amount).toFixed(2)}` !== targetKey
+    )
+  );
 }
 
 export function getSampleExpenses(taxYear: TaxYear): TaxExpense[] {
