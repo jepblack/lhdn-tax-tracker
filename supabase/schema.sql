@@ -38,7 +38,11 @@ create table if not exists public.tax_expenses (
 create index if not exists idx_tax_expenses_user_year on public.tax_expenses(user_id, tax_year);
 create index if not exists idx_tax_expenses_category on public.tax_expenses(category_id);
 
--- 3. Enable Row Level Security (RLS)
+-- 3. Grant table permissions to authenticated users & Enable Row Level Security (RLS)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.tax_profiles to authenticated;
+grant select, insert, update, delete on table public.tax_expenses to authenticated;
+
 alter table public.tax_profiles enable row level security;
 alter table public.tax_expenses enable row level security;
 
