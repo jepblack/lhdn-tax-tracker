@@ -15,8 +15,13 @@ import {
   X,
 } from "lucide-react";
 import { calculateProgressiveTax, formatRM } from "@/lib/calculator";
-import { getStatusReliefAmounts } from "@/lib/lhdn-rules";
-import { TaxCalculationResult, TaxExpense, TaxProfile } from "@/lib/types";
+import { getReliefCategories, getStatusReliefAmounts } from "@/lib/lhdn-rules";
+import {
+  FormBeBaseline,
+  TaxCalculationResult,
+  TaxExpense,
+  TaxProfile,
+} from "@/lib/types";
 
 export type FilingToolTab =
   | "form-be"
@@ -30,6 +35,8 @@ interface FilingToolsSheetProps {
   profile: TaxProfile;
   summary: TaxCalculationResult;
   expenses: TaxExpense[];
+  formBeBaseline?: FormBeBaseline | null;
+  onClearFormBeBaseline?: () => void;
   onClose: () => void;
   onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
   onQuickLogTemplate: (template: {
@@ -119,6 +126,8 @@ export function FilingToolsSheet({
   profile,
   summary,
   expenses,
+  formBeBaseline,
+  onClearFormBeBaseline,
   onClose,
   onQuickAdd,
   onQuickLogTemplate,
@@ -358,9 +367,147 @@ export function FilingToolsSheet({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* TAB 1: FORM BE e-FILING CHEAT SHEET */}
+          {/* TAB 1: FORM BE e-FILING CHEAT SHEET + AUDIT RECONCILIATION */}
           {activeTab === "form-be" && (
             <div className="space-y-4">
+              {/* Form BE Audit Reconciliation Card (when a Form BE PDF has been uploaded) */}
+              {formBeBaseline && (() => {
+                const cats = getReliefCategories(profile.taxYear);
+                const catMap = new Map(cats.map((c) => [c.id, c]));
+                // Sum ONLY verified receipts (expenses that actually have a receipt file attached)
+                const verifiedByCat: Record<string, number> = {};
+                for (const exp of yearExpenses) {
+                  if (exp.receiptUrl || exp.receiptPath) {
+                    verifiedByCat[exp.categoryId] =
+                      (verifiedByCat[exp.categoryId] || 0) + exp.amount;
+                  }
+                }
+                const allCatIds = Array.from(
+                  new Set([
+                    ...Object.keys(formBeBaseline.declaredByCategory),
+                    ...Object.keys(verifiedByCat),
+                  ])
+                );
+                const rows = allCatIds
+                  .map((catId) => {
+                    const declared = formBeBaseline.declaredByCategory[catId] || 0;
+                    const verified = verifiedByCat[catId] || 0;
+                    const diff = verified - declared;
+                    const cat = catMap.get(catId);
+                    return {
+                      catId,
+                      ref: cat?.formBeRef || "BE",
+                      name: cat?.shortName || catId,
+                      declared,
+                      verified,
+                      diff,
+                    };
+                  })
+                  .filter((r) => r.declared > 0 || r.verified > 0);
+
+                const declaredCount = rows.filter((r) => r.declared > 0).length;
+                const coveredCount = rows.filter(
+                  (r) => r.declared > 0 && r.verified >= r.declared - 0.01
+                ).length;
+                const totalShortfall = rows.reduce(
+                  (s, r) => (r.declared > r.verified ? s + (r.declared - r.verified) : s),
+                  0
+                );
+
+                return (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">
+                          Form BE Audit Reconciliation ({coveredCount}/{declaredCount} verified)
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Comparing declared totals from{" "}
+                          <strong>{formBeBaseline.uploadedFileName}</strong> vs.
+                          uploaded supporting receipts.
+                        </p>
+                      </div>
+                      {onClearFormBeBaseline && (
+                        <button
+                          type="button"
+                          onClick={onClearFormBeBaseline}
+                          className="text-[10px] font-semibold text-slate-400 hover:text-rose-600"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {totalShortfall > 0 ? (
+                      <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                        {formatRM(totalShortfall, true)} declared on Form BE still
+                        needs supporting receipts.
+                      </div>
+                    ) : (
+                      <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                        100% of your declared Form BE reliefs are backed by
+                        uploaded receipts!
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      {rows.map((r) => {
+                        const isShort = r.declared > 0 && r.verified < r.declared - 0.01;
+                        const isExtra = r.declared === 0 && r.verified > 0;
+                        return (
+                          <div
+                            key={r.catId}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="rounded bg-slate-200/70 px-1 py-0.5 font-mono text-[9px] font-bold text-slate-700">
+                                  {r.ref}
+                                </span>
+                                <span className="truncate font-semibold text-slate-900">
+                                  {r.name}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-[10px] text-slate-500">
+                                Form BE: {formatRM(r.declared, true)} • Receipts:{" "}
+                                {formatRM(r.verified, true)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {isShort ? (
+                                <>
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                    Short {formatRM(r.declared - r.verified)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onClose();
+                                      onQuickAdd(r.catId);
+                                    }}
+                                    className="rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
+                                  >
+                                    + Proof
+                                  </button>
+                                </>
+                              ) : isExtra ? (
+                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                                  Unclaimed +{formatRM(r.verified)}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                                  <CheckCircle2 className="h-3 w-3" /> Verified
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="rounded-2xl bg-emerald-50 p-3.5 text-xs text-emerald-950">
                 <p className="font-bold">
                   Ready for MyTax e-Filing (Form BE — YA {profile.taxYear})

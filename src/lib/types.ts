@@ -240,3 +240,13 @@ export interface AnnualDocExtraction {
   summaryNote: string;
   confidence: "high" | "medium" | "low";
 }
+
+export interface FormBeBaseline {
+  taxYear: TaxYear;
+  uploadedFileName: string;
+  uploadedAt: string;
+  declaredIncome: number;
+  declaredPcb: number;
+  declaredZakat: number;
+  declaredByCategory: Record<string, number>;
+}

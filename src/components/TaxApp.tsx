@@ -36,6 +36,7 @@ import {
   AnnualDocExtraction,
   AnnualDocType,
   AnnualTaxDoc,
+  FormBeBaseline,
   TaxExpense,
   TaxProfile,
   TaxYear,
@@ -50,6 +51,7 @@ import { ReliefsTab } from "./ReliefsTab";
 import { SettingsTab } from "./SettingsTab";
 
 const ANNUAL_DOCS_KEY = "cukaiku_annual_docs_v1";
+const FORM_BE_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
 
 type ActiveTab = "dashboard" | "reliefs" | "receipts" | "settings";
 
@@ -82,10 +84,13 @@ export function TaxApp() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [annualDocs, setAnnualDocs] = useState<AnnualTaxDoc[]>([]);
+  const [formBeBaselines, setFormBeBaselines] = useState<
+    Record<string, FormBeBaseline>
+  >({});
   const [privacyBlur, setPrivacyBlur] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load dark mode preference & annual docs on mount
+  // Load dark mode preference, annual docs & Form BE baselines on mount
   useEffect(() => {
     try {
       const savedTheme = window.localStorage.getItem("cukaiku_theme_v1");
@@ -95,6 +100,8 @@ export function TaxApp() {
       }
       const savedDocs = window.localStorage.getItem(ANNUAL_DOCS_KEY);
       if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
+      const savedBaselines = window.localStorage.getItem(FORM_BE_BASELINES_KEY);
+      if (savedBaselines) setFormBeBaselines(JSON.parse(savedBaselines));
     } catch {
       // ignore
     }
@@ -177,9 +184,45 @@ export function TaxApp() {
     }
 
     // 2. Log corresponding tax reliefs
-    // For Form BE imports, intentionally leave receiptUrl/receiptPath null so CukaiKu flags
-    // that underlying supporting receipts are still required for LHDN's 7-year audit!
+    // For Form BE imports, save a FormBeBaseline for live audit reconciliation AND
+    // intentionally leave receiptUrl/receiptPath null so CukaiKu flags missing supporting receipts!
     const isFormBeImport = doc.docType === "form_be_proof";
+    if (isFormBeImport) {
+      const declaredByCategory: Record<string, number> = {};
+      const epfLife = (ext.epfEmployee || 0) + (ext.lifeInsuranceAmount || 0);
+      if (epfLife > 0) declaredByCategory["epf_life_insurance"] = epfLife;
+      if (ext.socsoEisEmployee > 0) declaredByCategory["socso"] = ext.socsoEisEmployee;
+      if (ext.medicalInsuranceAmount > 0) {
+        declaredByCategory["edu_med_insurance"] = ext.medicalInsuranceAmount;
+      }
+      if (ext.housingLoanInterest > 0) {
+        declaredByCategory["first_home_interest"] = ext.housingLoanInterest;
+      }
+      for (const extra of ext.extraReliefs || []) {
+        if (extra.amount > 0) {
+          declaredByCategory[extra.categoryId] =
+            (declaredByCategory[extra.categoryId] || 0) + extra.amount;
+        }
+      }
+      const baseline: FormBeBaseline = {
+        taxYear,
+        uploadedFileName: doc.fileName,
+        uploadedAt: new Date().toISOString(),
+        declaredIncome: ext.annualIncome || 0,
+        declaredPcb: ext.pcbPaid || 0,
+        declaredZakat: ext.zakatPaid || 0,
+        declaredByCategory,
+      };
+      setFormBeBaselines((prev) => {
+        const next = { ...prev, [String(taxYear)]: baseline };
+        try {
+          window.localStorage.setItem(FORM_BE_BASELINES_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    }
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     const provider = ext.providerName || doc.label;
     const sharedFileFields = isFormBeImport
@@ -724,6 +767,22 @@ export function TaxApp() {
         profile={profile}
         summary={summary}
         expenses={expenses}
+        formBeBaseline={formBeBaselines[String(taxYear)] || null}
+        onClearFormBeBaseline={() => {
+          setFormBeBaselines((prev) => {
+            const next = { ...prev };
+            delete next[String(taxYear)];
+            try {
+              window.localStorage.setItem(
+                FORM_BE_BASELINES_KEY,
+                JSON.stringify(next)
+              );
+            } catch {
+              // ignore
+            }
+            return next;
+          });
+        }}
         onClose={() => setToolsOpen(false)}
         onQuickAdd={(catId, subId) => openScanner(catId, subId)}
         onQuickLogTemplate={async (tpl) => {
