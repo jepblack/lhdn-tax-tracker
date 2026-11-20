@@ -97,6 +97,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
 }`;
 
     // 1. Try Groq Vision (~1s) first if GROQ_API_KEY is configured
+    let groqFailReason = "";
     if (canUseGroq && (pdfText.length >= 20 || file.type.startsWith("image/"))) {
       try {
         const parsed = await callGroqJson({
@@ -112,8 +113,14 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
         });
         return NextResponse.json(normalizeAnnualExtraction(parsed, docType, "Groq Vision"));
       } catch (groqErr) {
+        groqFailReason =
+          groqErr instanceof Error ? groqErr.message.slice(0, 120) : "Groq error";
         console.warn("Groq annual doc parse failed, falling back to Gemini:", groqErr);
       }
+    } else if (!canUseGroq) {
+      groqFailReason = !groqKey ? "GROQ_API_KEY not loaded on server" : "not signed in";
+    } else {
+      groqFailReason = `unsupported file for Groq (mime=${file.type}, pdfTextLen=${pdfText.length})`;
     }
 
     let geminiFailReason = "";
@@ -215,11 +222,11 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
     }
 
     const skipReason = !authed
-      ? "Document archived! Sign in with Google under Profile to enable Gemini AI extraction for annual documents."
+      ? "Document archived! Sign in with Google under Profile to enable AI extraction for annual documents."
       : isPdf && pdfText.length < 20
-      ? "Document archived, but this PDF has no readable text (it may be password-protected or a scanned image). Take a screenshot of your EA Form and upload the image instead!"
-      : geminiFailReason
-      ? `Document archived, but AI extraction hit an error (${geminiFailReason}). Try uploading a screenshot/photo or re-uploading in a moment.`
+      ? `Document archived, but this PDF has no readable text (${groqFailReason || geminiFailReason || "scanned PDF"}). Take a screenshot and upload the image instead!`
+      : groqFailReason || geminiFailReason
+      ? `Document archived, but AI extraction failed (Groq: ${groqFailReason || "n/a"} | Gemini: ${geminiFailReason || "n/a"}).`
       : "Document archived! No numeric tax figures were detected automatically.";
 
     return NextResponse.json({ skipped: true, skipReason });

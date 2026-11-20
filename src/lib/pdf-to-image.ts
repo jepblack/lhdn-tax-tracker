@@ -36,7 +36,7 @@ export async function renderPdfFirstPageToJpeg(
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.82)
+        canvas.toBlob(resolve, "image/jpeg", 0.76)
       );
       if (!blob) return null;
 
