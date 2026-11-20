@@ -580,6 +580,29 @@ const RELIEF_RULES: ClassificationRule[] = [
     reason:
       "Matched housing loan interest statement (verify SPA was executed between 2025–2027).",
   },
+  {
+    categoryId: "approved_donations",
+    subCategoryId: null,
+    label: "Approved Donations — Sec. 44(6)",
+    keywords: [
+      "section 44(6)",
+      "seksyen 44(6)",
+      "44(6)",
+      "tax exempt",
+      "pengecualian cukai",
+      "derma",
+      "sumbangan",
+      "wakaf",
+      "baitulmal",
+      "mercy malaysia",
+      "makna",
+      "national kidney",
+      "yayasan",
+      "donation",
+    ],
+    reason:
+      "Matched approved charitable donation receipt under Section 44(6) (deductible up to 10% of aggregate income).",
+  },
 ];
 
 /**

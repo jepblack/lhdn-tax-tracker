@@ -17,3 +17,63 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* 1-Tap Salary & Tax Privacy Blur */
+.privacy-mode .privacy-sensitive {
+  filter: blur(6px);
+  user-select: none;
+  transition: filter 150ms ease;
+}
+
+/* Clean Dark Mode theme */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/70 {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/90,
+html.dark .bg-white\/95 {
+  background-color: #1e293b !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #334155 !important;
+}
+
+html.dark .border-slate-200,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-100 {
+  border-color: #334155 !important;
+}
+
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark input,
+html.dark select {
+  background-color: #0f172a !important;
+  color: #f1f5f9 !important;
+  border-color: #475569 !important;
+}

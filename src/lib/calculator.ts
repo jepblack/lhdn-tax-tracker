@@ -60,7 +60,14 @@ export function calculateTaxSummary(
   allExpenses: TaxExpense[]
 ): TaxCalculationResult {
   const yearExpenses = allExpenses.filter((e) => e.taxYear === profile.taxYear);
-  const categories = getReliefCategories(profile.taxYear);
+  const categories = getReliefCategories(profile.taxYear).map((cat) =>
+    cat.id === "approved_donations"
+      ? {
+          ...cat,
+          maxLimit: Math.max(0, Math.round((profile.annualIncome || 0) * 0.1)),
+        }
+      : cat
+  );
 
   const categorySummaries: CategorySummary[] = categories.map((category) => {
     const catExpenses = yearExpenses.filter((e) => e.categoryId === category.id);

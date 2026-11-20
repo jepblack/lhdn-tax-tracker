@@ -41,6 +41,8 @@ interface ReceiptScannerModalProps {
   taxYear: TaxYear;
   initialCategoryId?: string;
   initialSubCategoryId?: string;
+  prefillInvoiceNumber?: string;
+  prefillDescription?: string;
   editingExpense?: TaxExpense | null;
   categorySummaries: CategorySummary[];
   existingExpenses: TaxExpense[];
@@ -57,6 +59,8 @@ export function ReceiptScannerModal({
   taxYear,
   initialCategoryId,
   initialSubCategoryId,
+  prefillInvoiceNumber,
+  prefillDescription,
   editingExpense,
   categorySummaries,
   existingExpenses,
@@ -140,8 +144,8 @@ export function ReceiptScannerModal({
         setMerchant("");
         setAmount("");
         setExpenseDate(`${taxYear}-${new Date().toISOString().slice(5, 10)}`);
-        setInvoiceNumber("");
-        setDescription("");
+        setInvoiceNumber(prefillInvoiceNumber || "");
+        setDescription(prefillDescription || "");
         setPaymentMethod("");
         setCardLast4("");
         setSstAmount("0");

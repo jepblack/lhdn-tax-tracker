@@ -199,3 +199,23 @@ export interface ReceiptScanResult {
   reviewReason?: string;
   imageQualityIssue?: string;
 }
+
+export type AnnualDocType =
+  | "ea_form"
+  | "kwsp_statement"
+  | "insurance_statement"
+  | "loan_interest_statement"
+  | "form_be_proof"
+  | "other_doc";
+
+export interface AnnualTaxDoc {
+  id: string;
+  taxYear: TaxYear;
+  docType: AnnualDocType;
+  label: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  uploadedAt: string;
+  storageProvider: "gdrive" | "local";
+}

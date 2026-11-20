@@ -7,6 +7,7 @@ import {
   BookOpen,
   Dumbbell,
   GraduationCap,
+  HeartHandshake,
   HeartPulse,
   Home,
   Laptop,
@@ -22,6 +23,7 @@ import {
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Laptop,
   Dumbbell,
+  HeartHandshake,
   HeartPulse,
   Users,
   ShieldCheck,

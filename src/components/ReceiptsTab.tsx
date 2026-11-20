@@ -1,19 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertTriangle,
   Archive,
   CalendarClock,
   Download,
+  ExternalLink,
   Eye,
   FileCheck2,
+  Files,
   FileText,
+  FolderArchive,
   Loader2,
   Pencil,
+  QrCode,
   Search,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { exportAuditPackZip } from "@/lib/audit-pack";
@@ -22,17 +27,33 @@ import { getReliefCategories } from "@/lib/lhdn-rules";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
 import {
+  AnnualDocType,
+  AnnualTaxDoc,
   TaxCalculationResult,
   TaxExpense,
   TaxProfile,
   TaxYear,
 } from "@/lib/types";
 
+const ANNUAL_DOC_SLOTS: Array<{ type: AnnualDocType; label: string; hint: string }> = [
+  { type: "ea_form", label: "EA Form (C.P.8A)", hint: "Annual remuneration statement from employer" },
+  { type: "kwsp_statement", label: "KWSP / EPF Annual Statement", hint: "Yearly employee EPF contribution statement" },
+  { type: "insurance_statement", label: "Insurance / Takaful Tax Statement", hint: "Annual life & medical card tax relief certificate" },
+  { type: "loan_interest_statement", label: "Housing Loan Interest Statement", hint: "Bank annual interest letter (First-Home 2025–2027)" },
+  { type: "form_be_proof", label: "LHDN Form BE Filing Proof", hint: "MyTax e-BE submission acknowledgement PDF" },
+  { type: "other_doc", label: "Other Annual Tax Document", hint: "CP58, stamped SPA, OKU card, or JKM letter" },
+];
+
 interface ReceiptsTabProps {
   taxYear: TaxYear;
   profile: TaxProfile;
   summary: TaxCalculationResult;
   expenses: TaxExpense[];
+  annualDocs: AnnualTaxDoc[];
+  onUploadAnnualDoc: (docType: AnnualDocType, label: string, file: File) => Promise<void>;
+  onDeleteAnnualDoc: (id: string) => void;
+  onOpenBatchImport: () => void;
+  onOpenMyInvoisQr: () => void;
   onEdit: (expense: TaxExpense) => void;
   onDelete: (expense: TaxExpense) => Promise<void>;
   onAddNew: () => void;
@@ -43,10 +64,16 @@ export function ReceiptsTab({
   profile,
   summary,
   expenses,
+  annualDocs,
+  onUploadAnnualDoc,
+  onDeleteAnnualDoc,
+  onOpenBatchImport,
+  onOpenMyInvoisQr,
   onEdit,
   onDelete,
   onAddNew,
 }: ReceiptsTabProps) {
+  const [vaultView, setVaultView] = useState<"receipts" | "docs">("receipts");
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "missing" | "review">(
     "all"
@@ -54,6 +81,9 @@ export function ReceiptsTab({
   const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
   const [pendingDelete, setPendingDelete] = useState<TaxExpense | null>(null);
   const [exportingZip, setExportingZip] = useState(false);
+  const [uploadingDocType, setUploadingDocType] = useState<AnnualDocType | null>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const activeDocSlotRef = useRef<{ type: AnnualDocType; label: string } | null>(null);
 
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
@@ -132,7 +162,163 @@ export function ReceiptsTab({
         </div>
       </div>
 
-      {/* Search & Filters */}
+      {/* Vault Mode Switch + Quick Import Actions */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setVaultView("receipts")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+              vaultView === "receipts"
+                ? "bg-white text-emerald-700 shadow-xs"
+                : "text-slate-500"
+            }`}
+          >
+            Receipts ({yearExpenses.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setVaultView("docs")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+              vaultView === "docs"
+                ? "bg-white text-emerald-700 shadow-xs"
+                : "text-slate-500"
+            }`}
+          >
+            Annual Docs ({annualDocs.filter((d) => d.taxYear === taxYear).length})
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onOpenMyInvoisQr}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-xs active:scale-95"
+          >
+            <QrCode className="h-3.5 w-3.5 text-emerald-600" />
+            MyInvois
+          </button>
+          <button
+            type="button"
+            onClick={onOpenBatchImport}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-xs active:scale-95"
+          >
+            <Files className="h-3.5 w-3.5 text-emerald-600" />
+            Batch
+          </button>
+        </div>
+      </div>
+
+      {/* ANNUAL TAX DOCUMENTS VAULT VIEW */}
+      {vaultView === "docs" && (
+        <div className="space-y-2.5">
+          <input
+            ref={docInputRef}
+            type="file"
+            accept="application/pdf,image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              const slot = activeDocSlotRef.current;
+              e.target.value = "";
+              if (!file || !slot) return;
+              setUploadingDocType(slot.type);
+              try {
+                await onUploadAnnualDoc(slot.type, slot.label, file);
+              } finally {
+                setUploadingDocType(null);
+              }
+            }}
+          />
+          {ANNUAL_DOC_SLOTS.map((slot) => {
+            const matchedDocs = annualDocs.filter(
+              (d) => d.taxYear === taxYear && d.docType === slot.type
+            );
+            const isUploading = uploadingDocType === slot.type;
+            return (
+              <div
+                key={slot.type}
+                className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`mt-0.5 rounded-xl p-2 ${
+                        matchedDocs.length > 0
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      <FolderArchive className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900">
+                        {slot.label}
+                      </p>
+                      <p className="text-[11px] text-slate-500">{slot.hint}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => {
+                      activeDocSlotRef.current = {
+                        type: slot.type,
+                        label: slot.label,
+                      };
+                      docInputRef.current?.click();
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white active:scale-95 disabled:opacity-50"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Upload className="h-3 w-3" />
+                    )}
+                    Upload
+                  </button>
+                </div>
+
+                {matchedDocs.length > 0 && (
+                  <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                    {matchedDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50/70 px-2.5 py-1.5 text-xs"
+                      >
+                        <span className="truncate font-medium text-emerald-950">
+                          {doc.fileName}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <a
+                            href={doc.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs"
+                          >
+                            Open <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteAnnualDoc(doc.id)}
+                            className="rounded-lg p-1 text-slate-400 hover:text-rose-600"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Search & Filters (Receipts View) */}
+      {vaultView === "receipts" && (
+      <>
       <div className="space-y-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -346,6 +532,8 @@ export function ReceiptsTab({
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       {/* Explicit Delete Confirmation Dialog (7-Year Retention Guard) */}

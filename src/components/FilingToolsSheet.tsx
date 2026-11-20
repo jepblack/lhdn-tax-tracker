@@ -10,6 +10,7 @@ import {
   Plus,
   Repeat,
   Scale,
+  SlidersHorizontal,
   Sparkles,
   X,
 } from "lucide-react";
@@ -17,7 +18,11 @@ import { calculateProgressiveTax, formatRM } from "@/lib/calculator";
 import { getStatusReliefAmounts } from "@/lib/lhdn-rules";
 import { TaxCalculationResult, TaxExpense, TaxProfile } from "@/lib/types";
 
-export type FilingToolTab = "form-be" | "year-end" | "joint-vs-separate";
+export type FilingToolTab =
+  | "form-be"
+  | "year-end"
+  | "what-if"
+  | "joint-vs-separate";
 
 interface FilingToolsSheetProps {
   isOpen: boolean;
@@ -126,6 +131,13 @@ export function FilingToolsSheet({
   // Joint vs Separate Simulator state
   const [spouseIncome, setSpouseIncome] = useState("60000");
   const [spouseReliefs, setSpouseReliefs] = useState("15000");
+
+  // Interactive "What-If" Tax Bracket Simulator sliders
+  const [extraPrs, setExtraPrs] = useState(0);
+  const [extraLifestyleSports, setExtraLifestyleSports] = useState(0);
+  const [extraSspn, setExtraSspn] = useState(0);
+  const [extraDonations, setExtraDonations] = useState(0);
+  const [extraZakat, setExtraZakat] = useState(0);
 
   // Sync initialTab when opened
   useMemo(() => {
@@ -293,11 +305,11 @@ export function FilingToolsSheet({
         </div>
 
         {/* Tool Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 border-b border-slate-100 bg-slate-50 p-2.5">
+        <div className="grid grid-cols-4 gap-1 border-b border-slate-100 bg-slate-50 p-2">
           <button
             type="button"
             onClick={() => setActiveTab("form-be")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold transition ${
               activeTab === "form-be"
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "text-slate-600 hover:bg-white"
@@ -309,7 +321,7 @@ export function FilingToolsSheet({
           <button
             type="button"
             onClick={() => setActiveTab("year-end")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold transition ${
               activeTab === "year-end"
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "text-slate-600 hover:bg-white"
@@ -320,15 +332,27 @@ export function FilingToolsSheet({
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("what-if")}
+            className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold transition ${
+              activeTab === "what-if"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            What-If
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("joint-vs-separate")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold transition ${
               activeTab === "joint-vs-separate"
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "text-slate-600 hover:bg-white"
             }`}
           >
             <Scale className="h-3.5 w-3.5" />
-            Joint vs Sep
+            Joint/Sep
           </button>
         </div>
 
@@ -613,7 +637,144 @@ export function FilingToolsSheet({
             </div>
           )}
 
-          {/* TAB 3: JOINT VS SEPARATE ASSESSMENT OPTIMIZER */}
+          {/* TAB 3: INTERACTIVE WHAT-IF TAX BRACKET SIMULATOR */}
+          {activeTab === "what-if" && (() => {
+            const prsRem =
+              summary.categorySummaries.find((c) => c.category.id === "prs_annuity")
+                ?.remaining ?? 3000;
+            const lsRem =
+              (summary.categorySummaries.find((c) => c.category.id === "lifestyle")
+                ?.remaining ?? 2500) +
+              (summary.categorySummaries.find((c) => c.category.id === "sports")
+                ?.remaining ?? 1000);
+            const sspnRem =
+              summary.categorySummaries.find((c) => c.category.id === "sspn")
+                ?.remaining ?? 8000;
+            const donRem =
+              summary.categorySummaries.find(
+                (c) => c.category.id === "approved_donations"
+              )?.remaining ?? Math.round(summary.annualIncome * 0.1);
+
+            const totalExtraReliefs =
+              extraPrs + extraLifestyleSports + extraSspn + extraDonations;
+            const simChargeable = Math.max(
+              0,
+              summary.chargeableIncome - totalExtraReliefs
+            );
+            const simTaxObj = calculateProgressiveTax(simChargeable);
+            const simSmallRebate =
+              simChargeable > 0 && simChargeable <= 35000
+                ? profile.statusReliefs.spouse
+                  ? 800
+                  : 400
+                : 0;
+            const simNetTax = Math.max(
+              0,
+              simTaxObj.tax - simSmallRebate - (summary.zakatRebate + extraZakat)
+            );
+            const extraTaxSaved = Math.max(0, summary.netTaxPayable - simNetTax);
+            const simRefund = summary.pcbPaid - simNetTax;
+            const droppedBracket = simTaxObj.marginalRate < summary.marginalRate;
+
+            return (
+              <div className="space-y-4">
+                <div className="rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 p-4 text-white space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider text-emerald-100">
+                        Additional Tax Saved
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {formatRM(extraTaxSaved, true)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right">
+                      <p className="text-[10px] uppercase text-emerald-100">
+                        Tax Bracket
+                      </p>
+                      <p className="text-sm font-bold">
+                        {Math.round(summary.marginalRate * 100)}% →{" "}
+                        <span
+                          className={
+                            droppedBracket ? "text-amber-200" : "text-white"
+                          }
+                        >
+                          {Math.round(simTaxObj.marginalRate * 100)}%
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-white/15 pt-2 text-xs text-emerald-100">
+                    <span>
+                      New Est. {simRefund >= 0 ? "Refund" : "Balance Due"}:{" "}
+                      <strong className="text-white">
+                        {formatRM(Math.abs(simRefund), true)}
+                      </strong>
+                    </span>
+                    {droppedBracket && (
+                      <span className="rounded-full bg-amber-400/25 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                        Bracket Dropped!
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <SliderRow
+                    label="Extra PRS Top-Up"
+                    value={extraPrs}
+                    max={Math.max(0, Math.round(prsRem))}
+                    step={100}
+                    onChange={setExtraPrs}
+                  />
+                  <SliderRow
+                    label="Extra Lifestyle / Sports"
+                    value={extraLifestyleSports}
+                    max={Math.max(0, Math.round(lsRem))}
+                    step={100}
+                    onChange={setExtraLifestyleSports}
+                  />
+                  <SliderRow
+                    label="Extra SSPN Net Deposit"
+                    value={extraSspn}
+                    max={Math.max(0, Math.round(sspnRem))}
+                    step={250}
+                    onChange={setExtraSspn}
+                  />
+                  <SliderRow
+                    label="Extra Sec. 44(6) Donations"
+                    value={extraDonations}
+                    max={Math.min(15000, Math.max(0, Math.round(donRem)))}
+                    step={100}
+                    onChange={setExtraDonations}
+                  />
+                  <SliderRow
+                    label="Extra Zakat / Fitrah (Direct Rebate)"
+                    value={extraZakat}
+                    max={Math.max(500, Math.round(summary.netTaxPayable))}
+                    step={50}
+                    onChange={setExtraZakat}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExtraPrs(0);
+                      setExtraLifestyleSports(0);
+                      setExtraSspn(0);
+                      setExtraDonations(0);
+                      setExtraZakat(0);
+                    }}
+                    className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600"
+                  >
+                    Reset Sliders
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* TAB 4: JOINT VS SEPARATE ASSESSMENT OPTIMIZER */}
           {activeTab === "joint-vs-separate" && (
             <div className="space-y-4">
               <p className="text-xs text-slate-600">
@@ -740,6 +901,42 @@ export function FilingToolsSheet({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SliderRow({
+  label,
+  value,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="font-semibold text-slate-700">{label}</span>
+        <span className="font-bold text-emerald-700">
+          +{formatRM(value)}{" "}
+          <span className="font-normal text-slate-400">/ {formatRM(max)}</span>
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={max}
+        step={step}
+        value={Math.min(value, max)}
+        disabled={max <= 0}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-emerald-600"
+      />
     </div>
   );
 }

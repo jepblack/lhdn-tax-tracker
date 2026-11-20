@@ -287,3 +287,18 @@ export async function syncYearIndexToGoogleDrive(
     syncedCount: yearExpenses.length,
   };
 }
+
+/**
+ * Uploads an Annual Tax Document (EA Form, KWSP, Insurance Tax Statement, Form BE Proof)
+ * directly to My Drive / CukaiKu / Receipts / {YYYY} / AnnualDocs /
+ */
+export async function uploadAnnualDocToGoogleDrive(
+  token: string,
+  taxYear: TaxYear,
+  file: File
+): Promise<{ fileId: string; webViewLink: string }> {
+  const yearFolderId = await ensureYearFolderInDrive(token, taxYear);
+  const docsFolderId = await findOrCreateFolder(token, "AnnualDocs", yearFolderId);
+  const uploaded = await uploadFileToDriveFolder(token, docsFolderId, file);
+  return { fileId: uploaded.id, webViewLink: uploaded.webViewLink };
+}

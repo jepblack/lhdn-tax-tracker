@@ -391,6 +391,18 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
         "Purchase of basic supporting equipment for disabled self, spouse, child, or parent (registered with JKM).",
       tips: "Examples: wheelchair, hearing aid, dialysis machine, prosthetic limbs.",
     },
+    {
+      id: "approved_donations",
+      name: "Approved Donations — Sec. 44(6) (10% Cap)",
+      shortName: "Donations",
+      group: "savings",
+      maxLimit: 10000, // Dynamically overridden to 10% of Annual Income in calculator.ts
+      formBeRef: "D1",
+      icon: "HeartHandshake",
+      description:
+        "Cash donations to LHDN-approved charitable institutions/NGOs/Wakaf under Section 44(6), deductible up to 10% of your aggregate income.",
+      tips: "Official receipt MUST state 'Tax Exempt under Section 44(6)' with LHDN reference number. Separate from Zakat rebate!",
+    },
   ];
 }
 

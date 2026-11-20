@@ -3,14 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Camera,
+  Eye,
+  EyeOff,
   LayoutDashboard,
   ListChecks,
+  Moon,
   ReceiptText,
   Settings,
   Shield,
+  Sun,
 } from "lucide-react";
 import { calculateTaxSummary } from "@/lib/calculator";
-import { getGoogleDriveToken, saveGoogleDriveToken } from "@/lib/google-drive";
+import {
+  getGoogleDriveToken,
+  saveGoogleDriveToken,
+  uploadAnnualDocToGoogleDrive,
+} from "@/lib/google-drive";
 import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import {
   createExpense,
@@ -24,13 +32,23 @@ import {
   updateExpense,
 } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
-import { TaxExpense, TaxProfile, TaxYear } from "@/lib/types";
+import {
+  AnnualDocType,
+  AnnualTaxDoc,
+  TaxExpense,
+  TaxProfile,
+  TaxYear,
+} from "@/lib/types";
+import { BatchImportModal } from "./BatchImportModal";
 import { DashboardTab } from "./DashboardTab";
 import { FilingToolsSheet, FilingToolTab } from "./FilingToolsSheet";
+import { MyInvoisQrModal } from "./MyInvoisQrModal";
 import { ReceiptScannerModal } from "./ReceiptScannerModal";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReliefsTab } from "./ReliefsTab";
 import { SettingsTab } from "./SettingsTab";
+
+const ANNUAL_DOCS_KEY = "cukaiku_annual_docs_v1";
 
 type ActiveTab = "dashboard" | "reliefs" | "receipts" | "settings";
 
@@ -56,6 +74,101 @@ export function TaxApp() {
     string | undefined
   >(undefined);
   const [editingExpense, setEditingExpense] = useState<TaxExpense | null>(null);
+  const [prefillInvoice, setPrefillInvoice] = useState<string | undefined>(undefined);
+  const [prefillDesc, setPrefillDesc] = useState<string | undefined>(undefined);
+
+  // Batch import, MyInvois QR, Annual Docs, Dark Mode & Privacy Blur
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [annualDocs, setAnnualDocs] = useState<AnnualTaxDoc[]>([]);
+  const [privacyBlur, setPrivacyBlur] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Load dark mode preference & annual docs on mount
+  useEffect(() => {
+    try {
+      const savedTheme = window.localStorage.getItem("cukaiku_theme_v1");
+      if (savedTheme === "dark") {
+        setDarkMode(true);
+        document.documentElement.classList.add("dark");
+      }
+      const savedDocs = window.localStorage.getItem(ANNUAL_DOCS_KEY);
+      if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  function toggleDarkMode() {
+    setDarkMode((prev) => {
+      const next = !prev;
+      document.documentElement.classList.toggle("dark", next);
+      window.localStorage.setItem("cukaiku_theme_v1", next ? "dark" : "light");
+      return next;
+    });
+  }
+
+  async function handleUploadAnnualDoc(
+    docType: AnnualDocType,
+    label: string,
+    file: File
+  ) {
+    const driveToken = getGoogleDriveToken();
+    let fileUrl = "";
+    let storageProvider: "gdrive" | "local" = "local";
+
+    if (driveToken) {
+      try {
+        const res = await uploadAnnualDocToGoogleDrive(driveToken, taxYear, file);
+        fileUrl = res.webViewLink;
+        storageProvider = "gdrive";
+      } catch {
+        // fall back to local data URL
+      }
+    }
+
+    if (!fileUrl) {
+      fileUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const newDoc: AnnualTaxDoc = {
+      id: `doc_${Date.now()}`,
+      taxYear,
+      docType,
+      label,
+      fileName: file.name,
+      fileUrl,
+      mimeType: file.type || "application/pdf",
+      uploadedAt: new Date().toISOString(),
+      storageProvider,
+    };
+
+    setAnnualDocs((prev) => {
+      const next = [newDoc, ...prev];
+      try {
+        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
+      } catch {
+        // ignore quota
+      }
+      return next;
+    });
+  }
+
+  function handleDeleteAnnualDoc(id: string) {
+    setAnnualDocs((prev) => {
+      const next = prev.filter((d) => d.id !== id);
+      try {
+        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   // Filing tools sheet state
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -235,10 +348,14 @@ export function TaxApp() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div
+      className={`min-h-screen bg-slate-50 text-slate-900 ${
+        privacyBlur ? "privacy-mode" : ""
+      }`}
+    >
       {/* Top Sticky Mobile Header */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
               <Shield className="h-5 w-5" />
@@ -253,22 +370,49 @@ export function TaxApp() {
             </div>
           </div>
 
-          {/* Year of Assessment Switcher */}
-          <div className="flex items-center rounded-xl bg-slate-100 p-1">
-            {SUPPORTED_TAX_YEARS.map((yr) => (
-              <button
-                key={yr}
-                type="button"
-                onClick={() => setTaxYear(yr)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                  taxYear === yr
-                    ? "bg-white text-emerald-700 shadow-xs"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                YA {yr}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPrivacyBlur((v) => !v)}
+              title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
+              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+            >
+              {privacyBlur ? (
+                <EyeOff className="h-4 w-4 text-emerald-600" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={toggleDarkMode}
+              title={darkMode ? "Light mode" : "Dark mode"}
+              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+            >
+              {darkMode ? (
+                <Sun className="h-4 w-4 text-amber-400" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
+
+            {/* Year of Assessment Switcher */}
+            <div className="flex items-center rounded-xl bg-slate-100 p-1">
+              {SUPPORTED_TAX_YEARS.map((yr) => (
+                <button
+                  key={yr}
+                  type="button"
+                  onClick={() => setTaxYear(yr)}
+                  className={`rounded-lg px-2 py-1 text-xs font-bold transition ${
+                    taxYear === yr
+                      ? "bg-white text-emerald-700 shadow-xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {yr}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
@@ -314,6 +458,11 @@ export function TaxApp() {
                 profile={profile}
                 summary={summary}
                 expenses={expenses}
+                annualDocs={annualDocs}
+                onUploadAnnualDoc={handleUploadAnnualDoc}
+                onDeleteAnnualDoc={handleDeleteAnnualDoc}
+                onOpenBatchImport={() => setBatchOpen(true)}
+                onOpenMyInvoisQr={() => setQrOpen(true)}
                 onEdit={openEditExpense}
                 onDelete={handleDeleteExpense}
                 onAddNew={() => openScanner()}
@@ -386,14 +535,40 @@ export function TaxApp() {
         taxYear={taxYear}
         initialCategoryId={scannerCategoryId}
         initialSubCategoryId={scannerSubCategoryId}
+        prefillInvoiceNumber={prefillInvoice}
+        prefillDescription={prefillDesc}
         editingExpense={editingExpense}
         categorySummaries={summary.categorySummaries}
         existingExpenses={expenses}
         onClose={() => {
           setScannerOpen(false);
           setEditingExpense(null);
+          setPrefillInvoice(undefined);
+          setPrefillDesc(undefined);
         }}
         onSave={handleSaveExpense}
+      />
+
+      {/* Batch Multi-Receipt Import Modal */}
+      <BatchImportModal
+        isOpen={batchOpen}
+        taxYear={taxYear}
+        onClose={() => setBatchOpen(false)}
+        onSaveItem={async (exp, file) => {
+          await handleSaveExpense(exp, file);
+        }}
+      />
+
+      {/* LHDN MyInvois QR Scanner Modal */}
+      <MyInvoisQrModal
+        isOpen={qrOpen}
+        onClose={() => setQrOpen(false)}
+        onDetected={(payload) => {
+          setEditingExpense(null);
+          setPrefillInvoice(payload.invoiceUuid);
+          setPrefillDesc(`MyInvois e-Invoice: ${payload.rawUrl}`);
+          setScannerOpen(true);
+        }}
       />
 
       {/* Filing & Tax Maximizer Tools Sheet */}

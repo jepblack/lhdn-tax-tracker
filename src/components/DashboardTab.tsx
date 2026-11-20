@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Repeat,
   Scale,
+  SlidersHorizontal,
   Sparkles,
   TrendingDown,
   Wallet,
@@ -50,10 +51,10 @@ export function DashboardTab({
             <p className="text-xs font-medium uppercase tracking-wider text-emerald-100/90">
               YA {summary.taxYear} Total Claimable Reliefs
             </p>
-            <p className="mt-1 text-3xl font-bold tracking-tight">
+            <p className="privacy-sensitive mt-1 text-3xl font-bold tracking-tight">
               {formatRM(summary.totalReliefs)}
             </p>
-            <p className="mt-0.5 text-xs text-emerald-100/85">
+            <p className="privacy-sensitive mt-0.5 text-xs text-emerald-100/85">
               {formatRM(summary.statusReliefTotal)} status +{" "}
               {formatRM(summary.expenseReliefClaimable)} receipts
             </p>
@@ -62,7 +63,7 @@ export function DashboardTab({
             <p className="text-[10px] uppercase tracking-wider text-emerald-100">
               Tax Bracket
             </p>
-            <p className="text-lg font-bold">
+            <p className="privacy-sensitive text-lg font-bold">
               {Math.round(summary.marginalRate * 100)}%
             </p>
           </div>
@@ -74,7 +75,7 @@ export function DashboardTab({
               <TrendingDown className="h-3.5 w-3.5" />
               <span className="text-[11px] font-medium">Tax Saved (Receipts)</span>
             </div>
-            <p className="mt-1 text-lg font-bold text-white">
+            <p className="privacy-sensitive mt-1 text-lg font-bold text-white">
               {formatRM(summary.taxSavedByExpenseReliefs)}
             </p>
           </div>
@@ -87,7 +88,7 @@ export function DashboardTab({
               </span>
             </div>
             <p
-              className={`mt-1 text-lg font-bold ${
+              className={`privacy-sensitive mt-1 text-lg font-bold ${
                 summary.estimatedRefund >= 0 ? "text-emerald-200" : "text-amber-200"
               }`}
             >
@@ -112,44 +113,49 @@ export function DashboardTab({
       </section>
 
       {/* Quick-Launch Filing & Tax Tools */}
-      <section className="grid grid-cols-3 gap-2">
+      <section className="grid grid-cols-4 gap-2">
         <button
           type="button"
           onClick={() => onOpenTool("form-be")}
-          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-xs transition active:scale-[0.98]"
         >
           <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700">
             <ClipboardList className="h-4 w-4" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800">
-            Form BE Sheet
-          </span>
+          <span className="text-[10px] font-bold text-slate-800">Form BE</span>
         </button>
 
         <button
           type="button"
           onClick={() => onOpenTool("year-end")}
-          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-xs transition active:scale-[0.98]"
         >
           <div className="rounded-xl bg-teal-50 p-2 text-teal-700">
             <Repeat className="h-4 w-4" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800">
-            Year-End &amp; Bills
-          </span>
+          <span className="text-[10px] font-bold text-slate-800">Year-End</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenTool("what-if")}
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-xs transition active:scale-[0.98]"
+        >
+          <div className="rounded-xl bg-amber-50 p-2 text-amber-700">
+            <SlidersHorizontal className="h-4 w-4" />
+          </div>
+          <span className="text-[10px] font-bold text-slate-800">What-If</span>
         </button>
 
         <button
           type="button"
           onClick={() => onOpenTool("joint-vs-separate")}
-          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-xs transition active:scale-[0.98]"
         >
           <div className="rounded-xl bg-indigo-50 p-2 text-indigo-700">
             <Scale className="h-4 w-4" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800">
-            Joint vs Sep
-          </span>
+          <span className="text-[10px] font-bold text-slate-800">Joint/Sep</span>
         </button>
       </section>
 
@@ -331,7 +337,7 @@ export function DashboardTab({
         <h2 className="text-sm font-semibold text-slate-900">
           YA {summary.taxYear} Quick Tax Estimate
         </h2>
-        <div className="mt-3 space-y-2 text-xs">
+        <div className="privacy-sensitive mt-3 space-y-2 text-xs">
           <div className="flex justify-between text-slate-600">
             <span>Estimated Annual Income</span>
             <span className="font-medium text-slate-900">

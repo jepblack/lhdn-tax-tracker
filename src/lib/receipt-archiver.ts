@@ -64,6 +64,7 @@ export function mapReliefToArchiveCategory(
     return "insurance";
   }
   if (categoryId === "childcare" || categoryId === "breastfeeding") return "childcare";
+  if (categoryId === "approved_donations") return "donation";
   return "other";
 }
 
