@@ -192,24 +192,52 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
     if (hasGemini) {
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
+
+        // For text-based PDFs, extract text via unpdf and send as text (avoids PDF inlineData 400 errors & is faster)
+        let pdfExtractedText: string | null = null;
+        if (isPdf) {
+          try {
+            const { text } = await extractText(new Uint8Array(arrayBuffer), {
+              mergePages: true,
+            });
+            const joined = Array.isArray(text) ? text.join("\n") : String(text || "");
+            if (joined.trim().length >= 20) {
+              pdfExtractedText = joined.trim().slice(0, 15000);
+            }
+          } catch {
+            // Fall through to inlineData PDF
+          }
+        }
+
+        const supportedMime =
+          mimeType === "image/jpeg" ||
+          mimeType === "image/png" ||
+          mimeType === "image/webp" ||
+          mimeType === "application/pdf"
+            ? mimeType
+            : "image/jpeg";
+
+        const parts = pdfExtractedText
+          ? [
+              {
+                text: `${prompt}\n\nIMPORTANT: Return ONLY a raw valid JSON object (no markdown, no explanation).\n\nRECEIPT / INVOICE TEXT:\n${pdfExtractedText}`,
+              },
+            ]
+          : [
+              {
+                text: `${prompt}\n\nIMPORTANT: Return ONLY a raw valid JSON object (no markdown, no explanation).`,
+              },
+              { inlineData: { mimeType: supportedMime, data: base64Data } },
+            ];
+
         const response = await ai.models.generateContent({
           model: GEMINI_MODEL,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                { inlineData: { mimeType, data: base64Data } },
-              ],
-            },
-          ],
-          config: {
-            responseMimeType: "application/json",
-          },
+          contents: [{ role: "user", parts }],
         });
 
         if (response.text) {
-          const cleanedJson = response.text
+          const jsonMatch = response.text.match(/\{[\s\S]*\}/);
+          const cleanedJson = (jsonMatch ? jsonMatch[0] : response.text)
             .replace(/^```json\s*/i, "")
             .replace(/^```\s*/i, "")
             .replace(/```\s*$/i, "")
@@ -219,7 +247,7 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
           );
         }
       } catch (err) {
-        geminiErrorMsg = err instanceof Error ? err.message : String(err);
+        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${arrayBuffer.byteLength}]`;
         console.warn("Gemini vision unavailable, falling back to local OCR:", err);
       }
     }
