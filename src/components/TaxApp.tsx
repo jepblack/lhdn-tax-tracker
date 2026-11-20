@@ -335,6 +335,7 @@ export function TaxApp() {
         initialCategoryId={scannerCategoryId}
         initialSubCategoryId={scannerSubCategoryId}
         categorySummaries={summary.categorySummaries}
+        existingExpenses={expenses}
         onClose={() => setScannerOpen(false)}
         onSave={handleSaveExpense}
       />

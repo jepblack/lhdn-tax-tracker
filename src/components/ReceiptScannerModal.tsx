@@ -19,7 +19,17 @@ import { formatRM } from "@/lib/calculator";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { runLocalReceiptOcr } from "@/lib/local-ocr";
 import {
+  buildArchiveBaseFilename,
+  buildSearchableReceiptPdf,
+  computeFileSha256,
+  findDuplicateExpense,
+  mapReliefToArchiveCategory,
+  maskSensitiveText,
+} from "@/lib/receipt-archiver";
+import {
+  ArchiveCategory,
   CategorySummary,
+  LhdnReceiptMetadata,
   ReceiptScanResult,
   TaxExpense,
   TaxYear,
@@ -31,6 +41,7 @@ interface ReceiptScannerModalProps {
   initialCategoryId?: string;
   initialSubCategoryId?: string;
   categorySummaries: CategorySummary[];
+  existingExpenses: TaxExpense[];
   onClose: () => void;
   onSave: (
     expense: Omit<TaxExpense, "id" | "createdAt">,
@@ -44,6 +55,7 @@ export function ReceiptScannerModal({
   initialCategoryId,
   initialSubCategoryId,
   categorySummaries,
+  existingExpenses,
   onClose,
   onSave,
 }: ReceiptScannerModalProps) {
@@ -66,6 +78,16 @@ export function ReceiptScannerModal({
   );
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [description, setDescription] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [cardLast4, setCardLast4] = useState("");
+  const [sstAmount, setSstAmount] = useState("0");
+  const [merchantTaxId, setMerchantTaxId] = useState("");
+  const [currency, setCurrency] = useState("MYR");
+  const [keepColorPdf, setKeepColorPdf] = useState(false);
+  const [originalFileHash, setOriginalFileHash] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
+  const [showArchiveDetails, setShowArchiveDetails] = useState(false);
 
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -98,6 +120,16 @@ export function ReceiptScannerModal({
       setExpenseDate(`${taxYear}-${new Date().toISOString().slice(5, 10)}`);
       setInvoiceNumber("");
       setDescription("");
+      setPaymentMethod("");
+      setCardLast4("");
+      setSstAmount("0");
+      setMerchantTaxId("");
+      setCurrency("MYR");
+      setKeepColorPdf(false);
+      setOriginalFileHash("");
+      setDuplicateWarning(null);
+      setDuplicateConfirmed(false);
+      setShowArchiveDetails(false);
       setReceiptFile(null);
       setPreviewUrl(null);
       setScanResult(null);
@@ -152,6 +184,15 @@ export function ReceiptScannerModal({
     }
     if (result.invoiceNumber) setInvoiceNumber(result.invoiceNumber);
     if (result.description) setDescription(result.description);
+    if (result.paymentMethod) setPaymentMethod(result.paymentMethod);
+    if (result.cardLast4) setCardLast4(result.cardLast4);
+    if (typeof result.sstOrTaxAmount === "number") {
+      setSstAmount(String(result.sstOrTaxAmount));
+    }
+    if (result.merchantRegistrationOrTaxId) {
+      setMerchantTaxId(result.merchantRegistrationOrTaxId);
+    }
+    if (result.currency) setCurrency(result.currency);
 
     if (result.eligibility === "rejected") {
       setAmount(result.totalAmount > 0 ? String(result.totalAmount) : "");
@@ -179,8 +220,22 @@ export function ReceiptScannerModal({
     setScanResult(null);
     setShowRawText(false);
     setOverrideRejection(false);
+    setDuplicateWarning(null);
+    setDuplicateConfirmed(false);
     setScanProgress(5);
     setScanStatusText("Checking receipt...");
+
+    // Compute SHA-256 hash of original file for integrity & duplicate detection
+    computeFileSha256(file).then((hash) => {
+      setOriginalFileHash(hash);
+      if (hash) {
+        const dup = findDuplicateExpense(
+          { merchant: "", amount: 0, expenseDate: "", fileHash: hash },
+          existingExpenses
+        );
+        if (dup) setDuplicateWarning(dup.reason);
+      }
+    });
 
     if (file.type.startsWith("image/")) {
       const url = URL.createObjectURL(file);
@@ -244,21 +299,122 @@ export function ReceiptScannerModal({
     if (isRejectedBlocked) return;
     if (!merchant.trim() || numericAmount <= 0) return;
 
+    // Duplicate check before saving (requires user confirmation)
+    if (!duplicateConfirmed) {
+      const dup = findDuplicateExpense(
+        {
+          merchant: merchant.trim(),
+          amount: numericAmount,
+          expenseDate,
+          invoiceNumber: invoiceNumber.trim(),
+          fileHash: originalFileHash,
+        },
+        existingExpenses
+      );
+      if (dup) {
+        setDuplicateWarning(dup.reason);
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
+      const archiveCat: ArchiveCategory =
+        scanResult?.archiveCategory ||
+        mapReliefToArchiveCategory(categoryId, subCategoryId);
+      const baseName = buildArchiveBaseFilename({
+        transactionDate: expenseDate,
+        merchantName: merchant.trim(),
+        amountPaid: numericAmount,
+        currency: currency || "MYR",
+        category: archiveCat,
+      });
+      const filePdfName = `${baseName}.pdf`;
+      const missingKeyFields: string[] = [];
+      if (!expenseDate) missingKeyFields.push("transaction date");
+      if (!invoiceNumber.trim()) missingKeyFields.push("receipt number");
+      if (!paymentMethod.trim()) missingKeyFields.push("payment method");
+
+      const needsReview =
+        Boolean(scanResult?.needsReview) ||
+        Boolean(scanResult?.imageQualityIssue) ||
+        missingKeyFields.length > 0;
+      const reviewReason =
+        scanResult?.reviewReason ||
+        scanResult?.imageQualityIssue ||
+        (missingKeyFields.length > 0
+          ? `Missing: ${missingKeyFields.join(", ")}`
+          : "");
+
+      const metadata: LhdnReceiptMetadata = {
+        file_pdf: filePdfName,
+        capture_date: new Date().toISOString().slice(0, 10),
+        transaction_date: expenseDate,
+        merchant_name: maskSensitiveText(merchant.trim()),
+        merchant_registration_or_tax_id: maskSensitiveText(
+          merchantTaxId.trim()
+        ),
+        receipt_number: maskSensitiveText(invoiceNumber.trim()),
+        payment_method: paymentMethod.trim(),
+        card_last4: cardLast4.replace(/\D/g, "").slice(-4),
+        currency: (currency || "MYR").toUpperCase(),
+        amount_paid: numericAmount,
+        sst_or_tax_amount: parseFloat(sstAmount) || 0,
+        tax_inclusive: scanResult?.taxInclusive ?? true,
+        category: archiveCat,
+        lhdn_relief_or_expense_type:
+          selectedCategory?.name || categoryId,
+        items:
+          scanResult?.items && scanResult.items.length > 0
+            ? scanResult.items
+            : [
+                {
+                  description:
+                    maskSensitiveText(description.trim()) ||
+                    selectedCategory?.shortName ||
+                    "Receipt item",
+                  quantity: 1,
+                  unit_price: numericAmount,
+                  amount: numericAmount,
+                },
+              ],
+        ocr_confidence: scanResult?.confidence || "high",
+        needs_review: needsReview,
+        review_reason: reviewReason,
+        original_file_hash: originalFileHash,
+        notes: maskSensitiveText(description.trim()),
+      };
+
+      // Convert photo to compact, searchable single-page PDF (<150KB target); keep original PDFs unaltered
+      let archivedPdfFile: File | null = receiptFile;
+      if (receiptFile) {
+        try {
+          archivedPdfFile = await buildSearchableReceiptPdf(
+            receiptFile,
+            metadata,
+            { keepColor: keepColorPdf }
+          );
+        } catch {
+          archivedPdfFile = receiptFile;
+        }
+      }
+
       await onSave(
         {
           taxYear: targetTaxYear,
           categoryId,
           subCategoryId: subCategoryId || null,
           merchant: merchant.trim(),
-          description: description.trim(),
+          description: maskSensitiveText(description.trim()),
           amount: numericAmount,
           expenseDate,
           invoiceNumber: invoiceNumber.trim(),
+          receiptFileName: archivedPdfFile ? filePdfName : null,
+          receiptMimeType: archivedPdfFile ? "application/pdf" : null,
+          metadata,
           aiExtracted: Boolean(scanResult),
         },
-        receiptFile
+        archivedPdfFile
       );
       onClose();
     } finally {
@@ -519,6 +675,57 @@ export function ReceiptScannerModal({
             </div>
           )}
 
+          {/* Blurry / Faded / Cropped Image Quality Gate */}
+          {scanResult?.imageQualityIssue && (
+            <div className="flex items-start justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-semibold">Image quality issue detected</p>
+                  <p className="mt-0.5 text-[11px]">
+                    {scanResult.imageQualityIssue}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={resetScan}
+                className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white"
+              >
+                Retake
+              </button>
+            </div>
+          )}
+
+          {/* Duplicate Receipt Confirmation Gate */}
+          {duplicateWarning && !duplicateConfirmed && (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-bold">Possible Duplicate Receipt</p>
+                  <p className="mt-0.5 text-[11px]">{duplicateWarning}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={resetScan}
+                  className="flex-1 rounded-lg border border-amber-300 bg-white py-1.5 text-[11px] font-semibold text-amber-900"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateConfirmed(true)}
+                  className="flex-1 rounded-lg bg-amber-600 py-1.5 text-[11px] font-semibold text-white"
+                >
+                  Save Anyway
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Form Fields (hidden when rejected unless overridden) */}
           {!isRejectedBlocked && (
             <>
@@ -687,6 +894,111 @@ export function ReceiptScannerModal({
                     />
                   </div>
                 </div>
+
+                {/* Expandable LHDN Archiving Details (SST, Payment, Tax ID, PDF Options) */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowArchiveDetails((v) => !v)}
+                      className="text-xs font-semibold text-slate-700 underline underline-offset-2"
+                    >
+                      {showArchiveDetails
+                        ? "Hide LHDN Archive Details"
+                        : "LHDN Archive Details (SST, Payment, PDF)"}
+                    </button>
+                    {receiptFile && receiptFile.type.startsWith("image/") && (
+                      <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={keepColorPdf}
+                          onChange={(e) => setKeepColorPdf(e.target.checked)}
+                          className="h-3.5 w-3.5 accent-emerald-600"
+                        />
+                        Keep color PDF
+                      </label>
+                    )}
+                  </div>
+
+                  {merchant.trim() && numericAmount > 0 && (
+                    <p className="truncate font-mono text-[10px] text-slate-500">
+                      Archive:{" "}
+                      {buildArchiveBaseFilename({
+                        transactionDate: expenseDate,
+                        merchantName: merchant.trim(),
+                        amountPaid: numericAmount,
+                        currency: currency || "MYR",
+                        category:
+                          scanResult?.archiveCategory ||
+                          mapReliefToArchiveCategory(categoryId, subCategoryId),
+                      })}
+                      .pdf + .json
+                    </p>
+                  )}
+
+                  {showArchiveDetails && (
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                          Payment Method
+                        </label>
+                        <select
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                        >
+                          <option value="">Not specified</option>
+                          <option value="card">Card</option>
+                          <option value="ewallet">e-Wallet</option>
+                          <option value="duitnow">DuitNow QR</option>
+                          <option value="fpx">FPX / Online Banking</option>
+                          <option value="bank_transfer">Bank Transfer</option>
+                          <option value="cash">Cash</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                          Card Last 4 Digits
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          placeholder="e.g. 4242"
+                          value={cardLast4}
+                          onChange={(e) =>
+                            setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))
+                          }
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                          SST / Tax Amount ({currency})
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={sstAmount}
+                          onChange={(e) => setSstAmount(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                          Merchant Reg / Tax ID
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="SSM / SST / TIN"
+                          value={merchantTaxId}
+                          onChange={(e) => setMerchantTaxId(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <button
@@ -697,10 +1009,10 @@ export function ReceiptScannerModal({
                 {isSaving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving to Vault...
+                    Building Searchable PDF & Archiving...
                   </>
                 ) : (
-                  `Save to YA ${targetTaxYear} Vault`
+                  `Archive PDF + JSON to YA ${targetTaxYear}`
                 )}
               </button>
             </>

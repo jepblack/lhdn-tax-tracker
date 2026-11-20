@@ -1,4 +1,5 @@
 import { DEFAULT_STATUS_RELIEFS, getReliefCategories } from "./lhdn-rules";
+import { buildJsonMetadataFile } from "./receipt-archiver";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 import { TaxExpense, TaxProfile, TaxYear } from "./types";
 
@@ -180,15 +181,17 @@ export async function createExpense(
     let receiptFileName: string | null = null;
 
     if (receiptFile) {
-      const ext = receiptFile.name.split(".").pop() || "jpg";
-      const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      receiptPath = `${userId}/${expense.taxYear}/${safeName}`;
-      receiptMimeType = receiptFile.type;
-      receiptFileName = receiptFile.name;
+      const folder = `${userId}/Receipts/${expense.taxYear}`;
+      const pdfName =
+        expense.metadata?.file_pdf ||
+        receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
+      receiptPath = `${folder}/${pdfName}`;
+      receiptMimeType = receiptFile.type || "application/pdf";
+      receiptFileName = pdfName;
 
       const { error: uploadError } = await supabase.storage
         .from("receipts")
-        .upload(receiptPath, receiptFile, { upsert: false });
+        .upload(receiptPath, receiptFile, { upsert: true });
 
       if (!uploadError) {
         const { data: signed } = await supabase.storage
@@ -197,6 +200,15 @@ export async function createExpense(
         receiptUrl = signed?.signedUrl || null;
       } else {
         receiptPath = null;
+      }
+
+      // Also archive paired LHDN JSON metadata file alongside the PDF
+      if (expense.metadata) {
+        const jsonFile = buildJsonMetadataFile(expense.metadata);
+        const jsonPath = `${folder}/${jsonFile.name}`;
+        await supabase.storage
+          .from("receipts")
+          .upload(jsonPath, jsonFile, { upsert: true });
       }
     }
 
@@ -235,6 +247,8 @@ export async function createExpense(
         receiptUrl,
         receiptMimeType: data.receipt_mime_type,
         receiptFileName: data.receipt_file_name,
+        jsonPath: receiptPath ? receiptPath.replace(/\.pdf$/i, ".json") : null,
+        metadata: expense.metadata || null,
         aiExtracted: Boolean(data.ai_extracted),
         createdAt: data.created_at,
       };
@@ -267,8 +281,15 @@ export async function removeExpense(
 ): Promise<void> {
   const supabase = getSupabaseClient();
   if (supabase && userId && !expense.id.startsWith("local_")) {
+    const pathsToRemove: string[] = [];
     if (expense.receiptPath) {
-      await supabase.storage.from("receipts").remove([expense.receiptPath]);
+      pathsToRemove.push(expense.receiptPath);
+      if (expense.receiptPath.toLowerCase().endsWith(".pdf")) {
+        pathsToRemove.push(expense.receiptPath.replace(/\.pdf$/i, ".json"));
+      }
+    }
+    if (pathsToRemove.length > 0) {
+      await supabase.storage.from("receipts").remove(pathsToRemove);
     }
     await supabase
       .from("tax_expenses")
@@ -411,36 +432,43 @@ export function exportExpensesToCsv(expenses: TaxExpense[], taxYear: TaxYear): v
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
 
+  // Annual LHDN Index CSV matching archiving specification
   const headers = [
-    "Tax Year",
-    "Form BE Ref",
-    "Relief Category",
-    "Sub-Category",
-    "Expense Date",
-    "Merchant",
-    "Description",
-    "Amount (RM)",
-    "Invoice No",
-    "Receipt Attached",
-    "Retain Until",
+    "filename",
+    "date",
+    "merchant",
+    "amount",
+    "currency",
+    "category",
+    "payment_method",
+    "tax_amount",
+    "ocr_confidence",
+    "needs_review",
+    "form_be_ref",
+    "lhdn_relief",
+    "receipt_number",
+    "retain_until",
   ];
 
   const rows = expenses
     .filter((e) => e.taxYear === taxYear)
     .map((e) => {
       const cat = catMap.get(e.categoryId);
-      const sub = cat?.subCategories?.find((s) => s.id === e.subCategoryId);
+      const m = e.metadata;
       return [
-        String(e.taxYear),
+        m?.file_pdf || e.receiptFileName || "",
+        m?.transaction_date || e.expenseDate,
+        m?.merchant_name || e.merchant,
+        (m?.amount_paid ?? e.amount).toFixed(2),
+        m?.currency || "MYR",
+        m?.category || cat?.shortName || e.categoryId,
+        m?.payment_method || "",
+        (m?.sst_or_tax_amount ?? 0).toFixed(2),
+        m?.ocr_confidence || (e.aiExtracted ? "high" : "manual"),
+        m?.needs_review ? "true" : "false",
         cat?.formBeRef || "",
         cat?.name || e.categoryId,
-        sub?.name || "",
-        e.expenseDate,
-        e.merchant,
-        e.description,
-        e.amount.toFixed(2),
-        e.invoiceNumber || "",
-        e.receiptPath || e.receiptUrl ? "Yes" : "Missing",
+        m?.receipt_number || e.invoiceNumber || "",
         String(e.taxYear + 8),
       ];
     });
@@ -453,7 +481,7 @@ export function exportExpensesToCsv(expenses: TaxExpense[], taxYear: TaxYear): v
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `LHDN_YA${taxYear}_Tax_Reliefs_Audit_Summary.csv`;
+  link.download = `Receipts_${taxYear}_LHDN_Index.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

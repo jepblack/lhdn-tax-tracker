@@ -127,22 +127,55 @@ export async function POST(request: Request) {
       })
       .join("\n");
 
-    const prompt = `You are a strict Malaysian LHDN personal income tax auditor for YA ${taxYear}.
-Determine if this receipt is "eligible", "partial", or "rejected" under Malaysian LHDN personal tax reliefs.
+    const prompt = `ROLE: You are an LHDN (Malaysia) receipt-scanning and archiving assistant for Year of Assessment (YA) ${taxYear}.
+GOAL: Extract ONLY information visibly present on the receipt to substantiate an LHDN tax record. Never guess or fabricate missing values. If a field is absent, leave it empty "" or 0/null.
 
-Categories:
+Available LHDN Relief Categories (for suggestedCategoryId / suggestedSubCategoryId):
 ${taxonomyText}
 
-Reject ("rejected", claimableAmount=0, suggestedCategoryId=""):
-- Non-receipts, food/dining/cafes, groceries, petrol/tolls/parking/travel, general retail/clothing/utilities, mobile phone plans (only home broadband qualifies), smartwatches/wearables, general electronics (TV/earbuds/consoles), OTC supplements/minor flu GP visits, cosmetic dental, entertainment/streaming.
+Primary archiveCategory list (assign ONE only when clearly supported):
+medical, dental, education, donation, insurance, sports, books, computer_or_phone, childcare, travel, business_expense, personal, other.
 
-If eligible or partial:
+Strict Eligibility Rules:
+- Reject (eligibility="rejected", claimableAmount=0, suggestedCategoryId="") if non-receipt, food/dining/cafes, groceries, petrol/tolls/parking/travel, general retail/clothing/utilities, mobile phone plans (only home broadband qualifies), smartwatches/wearables, general electronics (TV/earbuds/consoles), OTC supplements/minor flu GP visits, cosmetic dental, or entertainment/streaming.
 - Sports gear/gym/courts -> "sports" (NOT "lifestyle").
 - Home broadband/PC/smartphone/tablet/books -> "lifestyle".
 - Dental -> "medical_self" / "med_dental"; Vaccination -> "med_vaccination"; Checkup/mental health/BP monitor -> "med_checkup".
-- For mixed receipts ("partial"), set claimableAmount to ONLY qualifying items and list non-claimable items in excludedItems.
+- For mixed receipts (eligibility="partial"), set claimableAmount to ONLY qualifying items and list non-claimable items in excludedItems.
 
-Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmount, claimableAmount, invoiceNumber, description, suggestedCategoryId, suggestedSubCategoryId, confidence ("high"|"medium"|"low"), reasoning, rejectionReason, excludedItems (string[]).`;
+Privacy & Quality Control Rules:
+- NEVER return full card numbers, bank account numbers, MyKad/NRIC numbers, or passwords. Only retain card_last4 (last 4 digits) if shown.
+- If the image is blurry, cropped, faded, or unreadable, set imageQualityIssue to a short warning asking the user to retake/upload a clearer image, and set needsReview=true.
+- Set needsReview=true with a clear reviewReason if any of these are unclear or missing: transaction date, merchant name, total amount, currency, receipt/reference number, payment method, item description, or tax amount, OR if item amounts do not sum cleanly to total.
+- Record SST, service tax, service charge, or VAT/GST separately in sstOrTaxAmount where shown. Do NOT convert foreign currencies—record the printed currency and amount.
+
+Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
+{
+  "eligibility": "eligible" | "partial" | "rejected",
+  "merchant": string,
+  "merchantRegistrationOrTaxId": string,
+  "date": "YYYY-MM-DD" or "",
+  "totalAmount": number,
+  "claimableAmount": number,
+  "currency": "MYR" or printed currency code,
+  "sstOrTaxAmount": number,
+  "taxInclusive": boolean,
+  "invoiceNumber": string,
+  "paymentMethod": "cash" | "card" | "ewallet" | "bank_transfer" | "duitnow" | "fpx" | "",
+  "cardLast4": string (max 4 digits or ""),
+  "archiveCategory": "medical"|"dental"|"education"|"donation"|"insurance"|"sports"|"books"|"computer_or_phone"|"childcare"|"travel"|"business_expense"|"personal"|"other",
+  "description": string,
+  "items": [{"description": string, "quantity": number, "unit_price": number, "amount": number}],
+  "suggestedCategoryId": string,
+  "suggestedSubCategoryId": string,
+  "confidence": "high" | "medium" | "low",
+  "needsReview": boolean,
+  "reviewReason": string,
+  "imageQualityIssue": string,
+  "reasoning": string,
+  "rejectionReason": string,
+  "excludedItems": string[]
+}`;
 
     // 1. Try OpenAI Vision if OPENAI_API_KEY is configured (image receipts)
     if (hasOpenAi && mimeType.startsWith("image/")) {
@@ -230,10 +263,25 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
               { inlineData: { mimeType: supportedMime, data: base64Data } },
             ];
 
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: [{ role: "user", parts }],
-        });
+        // Automatic 1-retry on transient 503 UNAVAILABLE spikes
+        let response;
+        try {
+          response = await ai.models.generateContent({
+            model: GEMINI_MODEL,
+            contents: [{ role: "user", parts }],
+          });
+        } catch (firstErr) {
+          const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+          if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
+            await new Promise((r) => setTimeout(r, 1500));
+            response = await ai.models.generateContent({
+              model: GEMINI_MODEL,
+              contents: [{ role: "user", parts }],
+            });
+          } else {
+            throw firstErr;
+          }
+        }
 
         if (response.text) {
           const jsonMatch = response.text.match(/\{[\s\S]*\}/);
@@ -323,16 +371,57 @@ function normalizeAiPayload(
       ? 0
       : Number(parsed.claimableAmount) || totalAmount;
 
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const items = rawItems
+    .filter((it): it is Record<string, unknown> => Boolean(it && typeof it === "object"))
+    .map((it) => ({
+      description: String(it.description || ""),
+      quantity: Number(it.quantity) || 1,
+      unit_price: Number(it.unit_price) || Number(it.amount) || 0,
+      amount: Number(it.amount) || 0,
+    }));
+
+  const validArchiveCategories = new Set([
+    "medical",
+    "dental",
+    "education",
+    "donation",
+    "insurance",
+    "sports",
+    "books",
+    "computer_or_phone",
+    "childcare",
+    "travel",
+    "business_expense",
+    "personal",
+    "other",
+  ]);
+  const rawArchiveCat = String(parsed.archiveCategory || "other");
+  const archiveCategory = validArchiveCategories.has(rawArchiveCat)
+    ? rawArchiveCat
+    : "other";
+
+  const rawLast4 = String(parsed.cardLast4 || "").replace(/\D/g, "").slice(-4);
+
   return {
     eligibility: finalEligibility,
     merchant: String(parsed.merchant || ""),
+    merchantRegistrationOrTaxId: String(parsed.merchantRegistrationOrTaxId || ""),
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.date || ""))
       ? String(parsed.date)
-      : new Date().toISOString().slice(0, 10),
+      : "",
     amount: claimableAmount,
     totalAmount,
+    currency: String(parsed.currency || "MYR").toUpperCase().slice(0, 6),
+    sstOrTaxAmount: Number(parsed.sstOrTaxAmount) || 0,
+    taxInclusive:
+      typeof parsed.taxInclusive === "boolean" ? parsed.taxInclusive : true,
     invoiceNumber: String(parsed.invoiceNumber || ""),
+    paymentMethod: String(parsed.paymentMethod || ""),
+    cardLast4: rawLast4,
+    archiveCategory,
     description: String(parsed.description || ""),
+    items,
     suggestedCategoryId: validCat ? validCat.id : null,
     suggestedSubCategoryId: validSub ? validSub.id : null,
     confidence:
@@ -341,6 +430,9 @@ function normalizeAiPayload(
       parsed.confidence === "low"
         ? parsed.confidence
         : "medium",
+    needsReview: Boolean(parsed.needsReview),
+    reviewReason: String(parsed.reviewReason || ""),
+    imageQualityIssue: String(parsed.imageQualityIssue || ""),
     reasoning:
       String(parsed.reasoning || "") ||
       (finalEligibility === "rejected"

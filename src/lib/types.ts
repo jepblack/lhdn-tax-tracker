@@ -40,6 +40,51 @@ export interface TaxProfile {
   statusReliefs: StatusReliefs;
 }
 
+export type ArchiveCategory =
+  | "medical"
+  | "dental"
+  | "education"
+  | "donation"
+  | "insurance"
+  | "sports"
+  | "books"
+  | "computer_or_phone"
+  | "childcare"
+  | "travel"
+  | "business_expense"
+  | "personal"
+  | "other";
+
+export interface LhdnReceiptItem {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+}
+
+export interface LhdnReceiptMetadata {
+  file_pdf: string;
+  capture_date: string;
+  transaction_date: string;
+  merchant_name: string;
+  merchant_registration_or_tax_id: string;
+  receipt_number: string;
+  payment_method: string;
+  card_last4: string;
+  currency: string;
+  amount_paid: number;
+  sst_or_tax_amount: number;
+  tax_inclusive: boolean;
+  category: ArchiveCategory;
+  lhdn_relief_or_expense_type: string;
+  items: LhdnReceiptItem[];
+  ocr_confidence: "high" | "medium" | "low";
+  needs_review: boolean;
+  review_reason: string;
+  original_file_hash: string;
+  notes: string;
+}
+
 export interface TaxExpense {
   id: string;
   taxYear: TaxYear;
@@ -54,6 +99,8 @@ export interface TaxExpense {
   receiptUrl?: string | null; // Object URL / signed URL / local data URL
   receiptMimeType?: string | null;
   receiptFileName?: string | null;
+  jsonPath?: string | null;
+  metadata?: LhdnReceiptMetadata | null;
   aiExtracted?: boolean;
   createdAt: string;
 }
@@ -131,4 +178,16 @@ export interface ReceiptScanResult {
   excludedItems?: string[];
   scanEngine?: "ai" | "local-ocr";
   rawText?: string;
+  // Extended LHDN Archiving fields
+  archiveCategory?: ArchiveCategory;
+  merchantRegistrationOrTaxId?: string;
+  paymentMethod?: string;
+  cardLast4?: string;
+  currency?: string;
+  sstOrTaxAmount?: number;
+  taxInclusive?: boolean;
+  items?: LhdnReceiptItem[];
+  needsReview?: boolean;
+  reviewReason?: string;
+  imageQualityIssue?: string;
 }

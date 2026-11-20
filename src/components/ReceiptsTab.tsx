@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
 import { TaxExpense, TaxYear } from "@/lib/types";
 
@@ -32,15 +33,19 @@ export function ReceiptsTab({
   onAddNew,
 }: ReceiptsTabProps) {
   const [query, setQuery] = useState("");
-  const [onlyMissing, setOnlyMissing] = useState(false);
+  const [filterMode, setFilterMode] = useState<"all" | "missing" | "review">(
+    "all"
+  );
   const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<TaxExpense | null>(null);
 
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
 
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
   const filtered = yearExpenses.filter((e) => {
-    if (onlyMissing && (e.receiptPath || e.receiptUrl)) return false;
+    if (filterMode === "missing" && (e.receiptPath || e.receiptUrl)) return false;
+    if (filterMode === "review" && !e.metadata?.needs_review) return false;
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     const catName = catMap.get(e.categoryId)?.name.toLowerCase() || "";
@@ -48,12 +53,16 @@ export function ReceiptsTab({
       e.merchant.toLowerCase().includes(q) ||
       e.description.toLowerCase().includes(q) ||
       (e.invoiceNumber || "").toLowerCase().includes(q) ||
+      (e.receiptFileName || "").toLowerCase().includes(q) ||
       catName.includes(q)
     );
   });
 
   const missingCount = yearExpenses.filter(
     (e) => !e.receiptPath && !e.receiptUrl
+  ).length;
+  const reviewCount = yearExpenses.filter(
+    (e) => e.metadata?.needs_review
   ).length;
 
   return (
@@ -85,29 +94,57 @@ export function ReceiptsTab({
         </button>
       </div>
 
-      {/* Search & Missing Filter */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      {/* Search & Filters */}
+      <div className="space-y-2">
+        <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search merchant, invoice, relief..."
+            placeholder="Search merchant, filename, invoice, relief..."
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => setOnlyMissing((v) => !v)}
-          className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-            onlyMissing
-              ? "border-amber-300 bg-amber-100 text-amber-900"
-              : "border-slate-200 bg-white text-slate-600"
-          }`}
-        >
-          Missing ({missingCount})
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setFilterMode("all")}
+            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              filterMode === "all"
+                ? "border-emerald-600 bg-emerald-600 text-white"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            All ({yearExpenses.length})
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setFilterMode(filterMode === "review" ? "all" : "review")
+            }
+            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              filterMode === "review"
+                ? "border-amber-400 bg-amber-100 text-amber-950"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            Needs Review ({reviewCount})
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setFilterMode(filterMode === "missing" ? "all" : "missing")
+            }
+            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              filterMode === "missing"
+                ? "border-rose-300 bg-rose-100 text-rose-900"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            No File ({missingCount})
+          </button>
+        </div>
       </div>
 
       {/* Receipt List */}
@@ -173,11 +210,19 @@ export function ReceiptsTab({
                       </p>
                     )}
 
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                       <span>{exp.expenseDate}</span>
                       {exp.invoiceNumber && (
                         <span className="rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
                           #{exp.invoiceNumber}
+                        </span>
+                      )}
+                      {exp.metadata?.payment_method && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase text-slate-600">
+                          {exp.metadata.payment_method}
+                          {exp.metadata.card_last4
+                            ? ` ••••${exp.metadata.card_last4}`
+                            : ""}
                         </span>
                       )}
                       {exp.aiExtracted && (
@@ -185,7 +230,21 @@ export function ReceiptsTab({
                           <Sparkles className="h-2.5 w-2.5" /> AI Read
                         </span>
                       )}
+                      {exp.metadata?.needs_review && (
+                        <span
+                          title={exp.metadata.review_reason}
+                          className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                        >
+                          <AlertTriangle className="h-2.5 w-2.5" /> Review
+                        </span>
+                      )}
                     </div>
+                    {(exp.metadata?.file_pdf || exp.receiptFileName) && (
+                      <p className="mt-1 truncate font-mono text-[10px] text-slate-400">
+                        /Receipts/{exp.taxYear}/
+                        {exp.metadata?.file_pdf || exp.receiptFileName}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
@@ -193,6 +252,16 @@ export function ReceiptsTab({
                       {formatRM(exp.amount, true)}
                     </p>
                     <div className="flex items-center gap-1">
+                      {exp.metadata && (
+                        <button
+                          type="button"
+                          onClick={() => downloadJsonMetadata(exp.metadata!)}
+                          title="Download LHDN JSON metadata"
+                          className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-200"
+                        >
+                          JSON
+                        </button>
+                      )}
                       {hasReceipt ? (
                         isRealPreviewable ? (
                           <button
@@ -200,7 +269,7 @@ export function ReceiptsTab({
                             onClick={() => setPreviewExpense(exp)}
                             className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
                           >
-                            <Eye className="h-3 w-3" /> View
+                            <Eye className="h-3 w-3" /> PDF
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
@@ -214,7 +283,7 @@ export function ReceiptsTab({
                       )}
                       <button
                         type="button"
-                        onClick={() => onDelete(exp)}
+                        onClick={() => setPendingDelete(exp)}
                         aria-label="Delete expense"
                         className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                       >
@@ -226,6 +295,50 @@ export function ReceiptsTab({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Explicit Delete Confirmation Dialog (7-Year Retention Guard) */}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl space-y-3">
+            <div className="flex items-start gap-2.5">
+              <div className="rounded-xl bg-rose-100 p-2 text-rose-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Delete Archived Receipt?
+                </h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  <strong>{pendingDelete.merchant}</strong> (
+                  {formatRM(pendingDelete.amount, true)} on{" "}
+                  {pendingDelete.expenseDate}) is within LHDN&apos;s 7-year
+                  retention period (keep until {pendingDelete.taxYear + 8}).
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                className="flex-1 rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-700"
+              >
+                Keep Receipt
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = pendingDelete;
+                  setPendingDelete(null);
+                  await onDelete(target);
+                }}
+                className="flex-1 rounded-xl bg-rose-600 py-2 text-xs font-semibold text-white"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
