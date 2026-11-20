@@ -21,6 +21,7 @@ import {
   persistProfile,
   removeExpense,
   saveLocalExpenses,
+  updateExpense,
 } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
 import { TaxExpense, TaxProfile, TaxYear } from "@/lib/types";
@@ -54,6 +55,7 @@ export function TaxApp() {
   const [scannerSubCategoryId, setScannerSubCategoryId] = useState<
     string | undefined
   >(undefined);
+  const [editingExpense, setEditingExpense] = useState<TaxExpense | null>(null);
 
   // Filing tools sheet state
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -130,15 +132,36 @@ export function TaxApp() {
   );
 
   function openScanner(categoryId?: string, subCategoryId?: string) {
+    setEditingExpense(null);
     setScannerCategoryId(categoryId);
     setScannerSubCategoryId(subCategoryId);
     setScannerOpen(true);
   }
 
+  function openEditExpense(expense: TaxExpense) {
+    setEditingExpense(expense);
+    setScannerCategoryId(expense.categoryId);
+    setScannerSubCategoryId(expense.subCategoryId || undefined);
+    setScannerOpen(true);
+  }
+
   async function handleSaveExpense(
     expenseData: Omit<TaxExpense, "id" | "createdAt">,
-    receiptFile: File | null
+    receiptFile: File | null,
+    editingId?: string
   ) {
+    if (editingId) {
+      const updated = await updateExpense(
+        editingId,
+        expenseData,
+        receiptFile,
+        userId
+      );
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === editingId ? updated : e))
+      );
+      return;
+    }
     const created = await createExpense(expenseData, receiptFile, userId);
     setExpenses((prev) => [created, ...prev]);
   }
@@ -291,6 +314,7 @@ export function TaxApp() {
                 profile={profile}
                 summary={summary}
                 expenses={expenses}
+                onEdit={openEditExpense}
                 onDelete={handleDeleteExpense}
                 onAddNew={() => openScanner()}
               />
@@ -356,15 +380,19 @@ export function TaxApp() {
         </div>
       </nav>
 
-      {/* Receipt Scanner & Add Expense Modal */}
+      {/* Receipt Scanner & Add/Edit Expense Modal */}
       <ReceiptScannerModal
         isOpen={scannerOpen}
         taxYear={taxYear}
         initialCategoryId={scannerCategoryId}
         initialSubCategoryId={scannerSubCategoryId}
+        editingExpense={editingExpense}
         categorySummaries={summary.categorySummaries}
         existingExpenses={expenses}
-        onClose={() => setScannerOpen(false)}
+        onClose={() => {
+          setScannerOpen(false);
+          setEditingExpense(null);
+        }}
         onSave={handleSaveExpense}
       />
 

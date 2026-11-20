@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
 import { getReliefCategories } from "@/lib/lhdn-rules";
@@ -8,6 +9,31 @@ import { ReceiptEligibility, TaxYear } from "@/lib/types";
 export const runtime = "nodejs";
 
 const GEMINI_MODEL = "gemini-3.8-flash";
+
+async function verifyAuthenticatedUser(request: Request): Promise<boolean> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // If Supabase auth isn't configured (pure local dev), allow scanning
+  if (
+    !supabaseUrl ||
+    !supabaseKey ||
+    supabaseUrl.includes("your-project-id")
+  ) {
+    return true;
+  }
+
+  const authHeader = request.headers.get("authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
+
+  try {
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data, error } = await supabase.auth.getUser(token);
+    return Boolean(!error && data.user);
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -21,6 +47,15 @@ export async function POST(request: Request) {
         { error: "NO_FILE", message: "Please attach a receipt image or PDF." },
         { status: 400 }
       );
+    }
+
+    const isAuthed = await verifyAuthenticatedUser(request);
+    if (!isAuthed) {
+      return NextResponse.json({
+        fallbackToLocalOcr: true,
+        aiSkippedReason:
+          "Sign in under Profile to use Gemini AI Vision (using built-in free OCR for guests).",
+      });
     }
 
     const geminiKey = process.env.GEMINI_API_KEY?.trim();

@@ -26,6 +26,7 @@ import {
   mapReliefToArchiveCategory,
   maskSensitiveText,
 } from "@/lib/receipt-archiver";
+import { getSupabaseClient } from "@/lib/supabase";
 import {
   ArchiveCategory,
   CategorySummary,
@@ -40,12 +41,14 @@ interface ReceiptScannerModalProps {
   taxYear: TaxYear;
   initialCategoryId?: string;
   initialSubCategoryId?: string;
+  editingExpense?: TaxExpense | null;
   categorySummaries: CategorySummary[];
   existingExpenses: TaxExpense[];
   onClose: () => void;
   onSave: (
     expense: Omit<TaxExpense, "id" | "createdAt">,
-    receiptFile: File | null
+    receiptFile: File | null,
+    editingId?: string
   ) => Promise<void>;
 }
 
@@ -54,6 +57,7 @@ export function ReceiptScannerModal({
   taxYear,
   initialCategoryId,
   initialSubCategoryId,
+  editingExpense,
   categorySummaries,
   existingExpenses,
   onClose,
@@ -107,26 +111,45 @@ export function ReceiptScannerModal({
 
   useEffect(() => {
     if (isOpen) {
-      setTargetTaxYear(taxYear);
-      const cats = getReliefCategories(taxYear);
-      const catId = initialCategoryId || "lifestyle";
-      setCategoryId(catId);
-      const cat = cats.find((c) => c.id === catId);
-      setSubCategoryId(
-        initialSubCategoryId || cat?.subCategories?.[0]?.id || ""
-      );
-      setMerchant("");
-      setAmount("");
-      setExpenseDate(`${taxYear}-${new Date().toISOString().slice(5, 10)}`);
-      setInvoiceNumber("");
-      setDescription("");
-      setPaymentMethod("");
-      setCardLast4("");
-      setSstAmount("0");
-      setMerchantTaxId("");
-      setCurrency("MYR");
+      if (editingExpense) {
+        setTargetTaxYear(editingExpense.taxYear);
+        setCategoryId(editingExpense.categoryId);
+        setSubCategoryId(editingExpense.subCategoryId || "");
+        setMerchant(editingExpense.merchant);
+        setAmount(String(editingExpense.amount));
+        setExpenseDate(editingExpense.expenseDate);
+        setInvoiceNumber(editingExpense.invoiceNumber || "");
+        setDescription(editingExpense.description || "");
+        setPaymentMethod(editingExpense.metadata?.payment_method || "");
+        setCardLast4(editingExpense.metadata?.card_last4 || "");
+        setSstAmount(String(editingExpense.metadata?.sst_or_tax_amount ?? 0));
+        setMerchantTaxId(
+          editingExpense.metadata?.merchant_registration_or_tax_id || ""
+        );
+        setCurrency(editingExpense.metadata?.currency || "MYR");
+        setOriginalFileHash(editingExpense.metadata?.original_file_hash || "");
+      } else {
+        setTargetTaxYear(taxYear);
+        const cats = getReliefCategories(taxYear);
+        const catId = initialCategoryId || "lifestyle";
+        setCategoryId(catId);
+        const cat = cats.find((c) => c.id === catId);
+        setSubCategoryId(
+          initialSubCategoryId || cat?.subCategories?.[0]?.id || ""
+        );
+        setMerchant("");
+        setAmount("");
+        setExpenseDate(`${taxYear}-${new Date().toISOString().slice(5, 10)}`);
+        setInvoiceNumber("");
+        setDescription("");
+        setPaymentMethod("");
+        setCardLast4("");
+        setSstAmount("0");
+        setMerchantTaxId("");
+        setCurrency("MYR");
+        setOriginalFileHash("");
+      }
       setKeepColorPdf(false);
-      setOriginalFileHash("");
       setDuplicateWarning(null);
       setDuplicateConfirmed(false);
       setShowArchiveDetails(false);
@@ -138,7 +161,7 @@ export function ReceiptScannerModal({
       setScanNotice(null);
       setScanProgress(0);
     }
-  }, [isOpen, initialCategoryId, initialSubCategoryId, taxYear]);
+  }, [isOpen, initialCategoryId, initialSubCategoryId, editingExpense, taxYear]);
 
   if (!isOpen) return null;
 
@@ -246,7 +269,7 @@ export function ReceiptScannerModal({
 
     setIsScanning(true);
     try {
-      // Step 1: Try cloud AI vision if configured on server (normalize large/exotic images to JPEG)
+      // Step 1: Try cloud AI vision if configured on server (normalize large/exotic images to JPEG + attach auth token)
       let usedCloudAi = false;
       try {
         const uploadFile = await normalizeImageForAiUpload(file);
@@ -254,8 +277,18 @@ export function ReceiptScannerModal({
         formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
 
+        const headers: Record<string, string> = {};
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData.session?.access_token) {
+            headers["Authorization"] = `Bearer ${sessionData.session.access_token}`;
+          }
+        }
+
         const res = await fetch("/api/scan-receipt", {
           method: "POST",
+          headers,
           body: formData,
         });
 
@@ -299,7 +332,10 @@ export function ReceiptScannerModal({
     if (isRejectedBlocked) return;
     if (!merchant.trim() || numericAmount <= 0) return;
 
-    // Duplicate check before saving (requires user confirmation)
+    // Duplicate check before saving (skip comparing against self when editing)
+    const otherExpenses = editingExpense
+      ? existingExpenses.filter((ex) => ex.id !== editingExpense.id)
+      : existingExpenses;
     if (!duplicateConfirmed) {
       const dup = findDuplicateExpense(
         {
@@ -309,7 +345,7 @@ export function ReceiptScannerModal({
           invoiceNumber: invoiceNumber.trim(),
           fileHash: originalFileHash,
         },
-        existingExpenses
+        otherExpenses
       );
       if (dup) {
         setDuplicateWarning(dup.reason);
@@ -409,12 +445,23 @@ export function ReceiptScannerModal({
           amount: numericAmount,
           expenseDate,
           invoiceNumber: invoiceNumber.trim(),
-          receiptFileName: archivedPdfFile ? filePdfName : null,
-          receiptMimeType: archivedPdfFile ? "application/pdf" : null,
+          receiptPath: archivedPdfFile
+            ? undefined
+            : editingExpense?.receiptPath || null,
+          receiptUrl: archivedPdfFile
+            ? undefined
+            : editingExpense?.receiptUrl || null,
+          receiptFileName: archivedPdfFile
+            ? filePdfName
+            : editingExpense?.receiptFileName || null,
+          receiptMimeType: archivedPdfFile
+            ? "application/pdf"
+            : editingExpense?.receiptMimeType || null,
           metadata,
-          aiExtracted: Boolean(scanResult),
+          aiExtracted: Boolean(scanResult) || Boolean(editingExpense?.aiExtracted),
         },
-        archivedPdfFile
+        archivedPdfFile,
+        editingExpense?.id
       );
       onClose();
     } finally {
@@ -433,7 +480,9 @@ export function ReceiptScannerModal({
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              {isGeneralScanMode
+              {editingExpense
+                ? "Edit Receipt / Attach Proof"
+                : isGeneralScanMode
                 ? "Smart LHDN Receipt Scanner"
                 : "Scan or Log Receipt"}
             </h2>
@@ -1088,6 +1137,8 @@ export function ReceiptScannerModal({
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Saving...
                   </>
+                ) : editingExpense ? (
+                  "Update Receipt"
                 ) : (
                   "Save Receipt"
                 )}

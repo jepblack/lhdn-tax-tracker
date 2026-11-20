@@ -312,6 +312,141 @@ export async function createExpense(
   return created;
 }
 
+export async function updateExpense(
+  existingId: string,
+  expense: Omit<TaxExpense, "id" | "createdAt">,
+  receiptFile?: File | null,
+  userId?: string | null
+): Promise<TaxExpense> {
+  const supabase = getSupabaseClient();
+  const driveToken = getGoogleDriveToken();
+
+  let driveWebViewLink: string | null = null;
+  if (driveToken && (receiptFile || expense.metadata)) {
+    try {
+      const archived = await archiveReceiptToGoogleDrive(
+        driveToken,
+        expense.taxYear,
+        receiptFile || null,
+        expense
+      );
+      if (archived.pdfWebViewLink) {
+        driveWebViewLink = archived.pdfWebViewLink;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "DRIVE_TOKEN_EXPIRED") {
+        saveGoogleDriveToken(null);
+      }
+    }
+  }
+
+  if (supabase && userId && !existingId.startsWith("local_")) {
+    let receiptPath = expense.receiptPath || null;
+    let receiptUrl = expense.receiptUrl || null;
+    let receiptMimeType = expense.receiptMimeType || null;
+    let receiptFileName = expense.receiptFileName || null;
+
+    if (driveWebViewLink) {
+      receiptPath = `gdrive:${driveWebViewLink}`;
+      receiptUrl = driveWebViewLink;
+      receiptMimeType = receiptFile?.type || "application/pdf";
+      receiptFileName =
+        expense.metadata?.file_pdf || receiptFile?.name || "receipt.pdf";
+    } else if (receiptFile) {
+      const folder = `${userId}/Receipts/${expense.taxYear}`;
+      const pdfName =
+        expense.metadata?.file_pdf ||
+        receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
+      receiptPath = `${folder}/${pdfName}`;
+      receiptMimeType = receiptFile.type || "application/pdf";
+      receiptFileName = pdfName;
+
+      const { error: uploadError } = await supabase.storage
+        .from("receipts")
+        .upload(receiptPath, receiptFile, { upsert: true });
+
+      if (!uploadError) {
+        const { data: signed } = await supabase.storage
+          .from("receipts")
+          .createSignedUrl(receiptPath, 3600);
+        receiptUrl = signed?.signedUrl || null;
+      }
+
+      if (expense.metadata) {
+        const jsonFile = buildJsonMetadataFile(expense.metadata);
+        await supabase.storage
+          .from("receipts")
+          .upload(`${folder}/${jsonFile.name}`, jsonFile, { upsert: true });
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("tax_expenses")
+      .update({
+        tax_year: expense.taxYear,
+        category_id: expense.categoryId,
+        sub_category_id: expense.subCategoryId || null,
+        merchant: expense.merchant,
+        description: expense.description,
+        amount: expense.amount,
+        expense_date: expense.expenseDate,
+        invoice_number: expense.invoiceNumber || "",
+        receipt_path: receiptPath,
+        receipt_mime_type: receiptMimeType,
+        receipt_file_name: receiptFileName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingId)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (!error && data) {
+      return {
+        id: data.id,
+        taxYear: data.tax_year as TaxYear,
+        categoryId: data.category_id,
+        subCategoryId: data.sub_category_id,
+        merchant: data.merchant,
+        description: data.description || "",
+        amount: Number(data.amount),
+        expenseDate: data.expense_date,
+        invoiceNumber: data.invoice_number || "",
+        receiptPath: data.receipt_path,
+        receiptUrl,
+        receiptMimeType: data.receipt_mime_type,
+        receiptFileName: data.receipt_file_name,
+        jsonPath: receiptPath ? receiptPath.replace(/\.pdf$/i, ".json") : null,
+        metadata: expense.metadata || null,
+        aiExtracted: Boolean(data.ai_extracted),
+        createdAt: data.created_at,
+      };
+    }
+  }
+
+  // Local mode update
+  let localDataUrl = driveWebViewLink || expense.receiptUrl || null;
+  if (receiptFile && !driveWebViewLink) {
+    localDataUrl = await fileToCompressedDataUrl(receiptFile);
+  }
+
+  const existing = loadLocalExpenses();
+  const prev = existing.find((e) => e.id === existingId);
+  const updated: TaxExpense = {
+    ...expense,
+    id: existingId,
+    receiptUrl: localDataUrl,
+    receiptMimeType:
+      receiptFile?.type || expense.receiptMimeType || prev?.receiptMimeType || null,
+    receiptFileName:
+      expense.receiptFileName || receiptFile?.name || prev?.receiptFileName || null,
+    createdAt: prev?.createdAt || new Date().toISOString(),
+  };
+
+  saveLocalExpenses(existing.map((e) => (e.id === existingId ? updated : e)));
+  return updated;
+}
+
 export async function removeExpense(
   expense: TaxExpense,
   userId?: string | null

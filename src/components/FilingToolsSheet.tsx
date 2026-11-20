@@ -447,19 +447,29 @@ export function FilingToolsSheet({
           {/* TAB 2: RECURRING BILLS & YEAR-END CHECKLIST */}
           {activeTab === "year-end" && (
             <div className="space-y-4">
-              {/* Countdown Banner */}
-              <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 p-4 text-white">
-                <div>
-                  <p className="text-xs font-medium text-emerald-100">
-                    YA {profile.taxYear} Cutoff Countdown
-                  </p>
-                  <p className="mt-0.5 text-xl font-bold">
-                    {daysLeft > 0
-                      ? `${daysLeft} days left until 31 Dec ${profile.taxYear}`
-                      : `YA ${profile.taxYear} period closed`}
-                  </p>
+              {/* Countdown Banner + Calendar (.ics) Reminders */}
+              <div className="space-y-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 p-4 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-emerald-100">
+                      YA {profile.taxYear} Cutoff Countdown
+                    </p>
+                    <p className="mt-0.5 text-xl font-bold">
+                      {daysLeft > 0
+                        ? `${daysLeft} days left until 31 Dec ${profile.taxYear}`
+                        : `YA ${profile.taxYear} period closed`}
+                    </p>
+                  </div>
+                  <CalendarClock className="h-8 w-8 text-emerald-200" />
                 </div>
-                <CalendarClock className="h-8 w-8 text-emerald-200" />
+                <button
+                  type="button"
+                  onClick={() => downloadLhdnCalendarReminders(profile.taxYear)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm hover:bg-white/25 active:scale-[0.99]"
+                >
+                  <CalendarClock className="h-3.5 w-3.5" />
+                  Add 15 Dec &amp; 15 Apr Reminders to Calendar (.ics)
+                </button>
               </div>
 
               {/* 12-Month Broadband Tracker */}
@@ -732,4 +742,41 @@ export function FilingToolsSheet({
       </div>
     </div>
   );
+}
+
+function downloadLhdnCalendarReminders(taxYear: number): void {
+  const filingYear = taxYear + 1;
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//CukaiKu//LHDN Tax Reminders//EN",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:cukaiku-yearend-${taxYear}@lhdn-tax-tracker`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART;VALUE=DATE:${taxYear}1215`,
+    `DTEND;VALUE=DATE:${taxYear}1216`,
+    `SUMMARY:LHDN YA ${taxYear} Year-End Tax Relief Top-Up Check`,
+    `DESCRIPTION:Review remaining YA ${taxYear} caps in CukaiKu (PRS RM3000, Sports RM1000, Lifestyle RM2500, Medical/Dental, SSPN) before 31 Dec ${taxYear}!`,
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    `UID:cukaiku-efiling-${taxYear}@lhdn-tax-tracker`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART;VALUE=DATE:${filingYear}0415`,
+    `DTEND;VALUE=DATE:${filingYear}0416`,
+    `SUMMARY:LHDN Form BE e-Filing Deadline (YA ${taxYear})`,
+    `DESCRIPTION:Open CukaiKu Form BE Cheat Sheet & download your Audit Pack ZIP before submitting e-BE on MyTax (deadline 30 Apr ${filingYear}).`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `CukaiKu_LHDN_YA${taxYear}_Reminders.ics`;
+  link.click();
+  URL.revokeObjectURL(url);
 }

@@ -10,6 +10,7 @@ import {
   FileCheck2,
   FileText,
   Loader2,
+  Pencil,
   Search,
   Sparkles,
   Trash2,
@@ -32,6 +33,7 @@ interface ReceiptsTabProps {
   profile: TaxProfile;
   summary: TaxCalculationResult;
   expenses: TaxExpense[];
+  onEdit: (expense: TaxExpense) => void;
   onDelete: (expense: TaxExpense) => Promise<void>;
   onAddNew: () => void;
 }
@@ -41,6 +43,7 @@ export function ReceiptsTab({
   profile,
   summary,
   expenses,
+  onEdit,
   onDelete,
   onAddNew,
 }: ReceiptsTabProps) {
@@ -312,10 +315,22 @@ export function ReceiptsTab({
                           </span>
                         )
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
-                          <AlertTriangle className="h-3 w-3" /> No File
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onEdit(exp)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-200"
+                        >
+                          <AlertTriangle className="h-3 w-3" /> Attach
+                        </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => onEdit(exp)}
+                        aria-label="Edit expense"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setPendingDelete(exp)}
