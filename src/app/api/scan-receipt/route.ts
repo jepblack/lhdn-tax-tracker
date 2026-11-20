@@ -244,13 +244,15 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
               new Uint8Array(arrayBuffer.slice(0)),
               { mergePages: true }
             );
-            const joined = Array.isArray(text) ? text.join("\n") : String(text || "");
-            pdfExtractDebug = `len=${joined.trim().length}`;
-            if (joined.trim().length >= 20) {
-              pdfExtractedText = joined.trim().slice(0, 15000);
+            const joined = (Array.isArray(text) ? text.join("\n") : String(text || ""))
+              .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+              .trim();
+            pdfExtractDebug = `len=${joined.length}`;
+            if (joined.length >= 20) {
+              pdfExtractedText = joined.slice(0, 15000);
             }
           } catch (pdfErr) {
-            pdfExtractDebug = `err=${pdfErr instanceof Error ? pdfErr.message.slice(0, 60) : "unknown"}`;
+            pdfExtractDebug = `err=${pdfErr instanceof Error ? pdfErr.message.slice(0, 80) : "unknown"}`;
           }
         }
 
@@ -303,7 +305,8 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
           );
         }
       } catch (err) {
-        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${originalByteLength}, pdfText=${pdfExtractDebug}]`;
+        const rawErr = err instanceof Error ? err.message : String(err);
+        geminiErrorMsg = `[mime=${mimeType}, bytes=${originalByteLength}, pdfText=${pdfExtractDebug}] ${rawErr}`;
         console.warn("Gemini vision unavailable, falling back to local OCR:", err);
       }
     }
@@ -315,7 +318,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
         return NextResponse.json({
           ...pdfResult,
           aiSkippedReason: geminiErrorMsg
-            ? `Gemini AI failed (${geminiKey?.slice(0, 6)}...): fell back to PDF text parser.`
+            ? `Gemini AI failed (${geminiErrorMsg.slice(0, 220)}) — fell back to PDF text parser.`
             : undefined,
         });
       }
@@ -325,7 +328,9 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
     return NextResponse.json({
       fallbackToLocalOcr: true,
       aiSkippedReason: geminiErrorMsg
-        ? `Gemini AI unavailable (key ${geminiKey?.slice(0, 6)}...): ${geminiErrorMsg.slice(0, 140)}`
+        ? isPdf && geminiErrorMsg.includes("400")
+          ? `This PDF was rejected by Gemini (${geminiErrorMsg.slice(0, 160)}). It may be password-protected or use an unsupported PDF format—try taking a screenshot/photo of it instead!`
+          : `Gemini AI unavailable: ${geminiErrorMsg.slice(0, 240)}`
         : "External AI unavailable — switched automatically to built-in free OCR.",
     });
   } catch (err) {
