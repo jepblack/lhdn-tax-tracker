@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Camera,
+  Cloud,
+  CloudOff,
   Eye,
   EyeOff,
   LayoutDashboard,
@@ -29,6 +31,7 @@ import {
   persistProfile,
   removeExpense,
   saveLocalExpenses,
+  syncLocalDataToCloud,
   updateExpense,
 } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -368,7 +371,8 @@ export function TaxApp() {
     if (!supabase) return;
 
     supabase.auth.getSession().then(({ data }) => {
-      setUserId(data.session?.user?.id || null);
+      const uid = data.session?.user?.id || null;
+      setUserId(uid);
       setUserEmail(data.session?.user?.email || null);
       if (data.session?.provider_token) {
         saveGoogleDriveToken(data.session.provider_token);
@@ -376,11 +380,19 @@ export function TaxApp() {
       } else {
         setDriveConnected(Boolean(getGoogleDriveToken()));
       }
+      if (uid) {
+        syncLocalDataToCloud(uid).then((res) => {
+          if (res.syncedExpenses > 0) {
+            fetchExpenses(uid).then(setExpenses);
+          }
+        });
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUserId(session?.user?.id || null);
+        const uid = session?.user?.id || null;
+        setUserId(uid);
         setUserEmail(session?.user?.email || null);
         if (session?.provider_token) {
           saveGoogleDriveToken(session.provider_token);
@@ -388,6 +400,13 @@ export function TaxApp() {
         } else if (!session) {
           saveGoogleDriveToken(null);
           setDriveConnected(false);
+        }
+        if (uid) {
+          syncLocalDataToCloud(uid).then((res) => {
+            if (res.syncedExpenses > 0) {
+              fetchExpenses(uid).then(setExpenses);
+            }
+          });
         }
       }
     );
@@ -559,6 +578,29 @@ export function TaxApp() {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {userEmail ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab("settings")}
+                title={`Signed in as ${userEmail} — tap to view Cloud Sync settings`}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition"
+              >
+                <Cloud className="h-3 w-3 text-emerald-600" />
+                <span className="hidden sm:inline">{userEmail.split("@")[0]}</span>
+                <span className="sm:hidden">Synced</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveTab("settings")}
+                title="Currently in Local Mode on this device. Tap to sign in and sync with your phone or PC."
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-100 transition animate-pulse"
+              >
+                <CloudOff className="h-3 w-3 text-amber-600" />
+                <span>Not Synced</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setPrivacyBlur((v) => !v)}

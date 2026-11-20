@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import {
   AlertCircle,
+  ArrowUpCircle,
   CheckCircle2,
   Cloud,
   CloudOff,
@@ -26,6 +27,7 @@ import {
   parseMalaysianPayslipText,
   PayslipExtraction,
 } from "@/lib/payslip-parser";
+import { syncLocalDataToCloud } from "@/lib/storage";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { TaxExpense, TaxProfile } from "@/lib/types";
 
@@ -75,6 +77,8 @@ export function SettingsTab({
   const [driveSyncing, setDriveSyncing] = useState(false);
   const [driveSyncMsg, setDriveSyncMsg] = useState<string | null>(null);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
+  const [migratingLocal, setMigratingLocal] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
 
   async function handlePayslipUpload(file: File | undefined) {
     if (!file) return;
@@ -274,6 +278,26 @@ export function SettingsTab({
   async function handleSignOut() {
     const supabase = getSupabaseClient();
     if (supabase) await supabase.auth.signOut();
+  }
+
+  async function handlePushLocalToCloud() {
+    const supabase = getSupabaseClient();
+    const session = (await supabase?.auth.getSession())?.data.session;
+    if (!session?.user?.id) return;
+    setMigratingLocal(true);
+    setMigrateMsg(null);
+    try {
+      const res = await syncLocalDataToCloud(session.user.id);
+      if (res.syncedExpenses > 0) {
+        setMigrateMsg(`Successfully pushed ${res.syncedExpenses} local receipt(s) to cloud! They are now available across all your devices.`);
+      } else {
+        setMigrateMsg("All receipts and profile details are already up to date in the cloud.");
+      }
+    } catch {
+      setMigrateMsg("Failed to push local records to cloud. Please check connection.");
+    } finally {
+      setMigratingLocal(false);
+    }
   }
 
   function updateField<K extends keyof TaxProfile>(key: K, value: TaxProfile[K]) {
@@ -658,7 +682,28 @@ export function SettingsTab({
                     Open Drive Folder
                   </a>
                 )}
+
+                <button
+                  type="button"
+                  disabled={migratingLocal}
+                  onClick={handlePushLocalToCloud}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60"
+                  title="Upload any receipts or profile numbers entered locally on this browser into your cloud database"
+                >
+                  {migratingLocal ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUpCircle className="h-3.5 w-3.5 text-blue-600" />
+                  )}
+                  Push Local Receipts to Cloud
+                </button>
               </div>
+
+              {migrateMsg && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-2.5 text-xs text-blue-900">
+                  {migrateMsg}
+                </div>
+              )}
 
               {driveSyncMsg && (
                 <p className="text-xs font-medium text-emerald-800">
@@ -668,6 +713,15 @@ export function SettingsTab({
             </div>
           ) : (
             <div className="space-y-2.5">
+              <div className="rounded-xl bg-amber-50/90 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <CloudOff className="h-3.5 w-3.5 text-amber-600" />
+                  Currently in Local Browser Mode
+                </p>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Receipts and numbers entered on this device stay in this browser only. To sync across your phone and PC, sign in below with the <strong>same account</strong> on both devices.
+                </p>
+              </div>
               <p className="text-xs text-slate-500">
                 Sign in to your personal CukaiKu account (or create one below)
                 to privately back up and sync receipts between your phone and

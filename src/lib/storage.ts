@@ -176,6 +176,76 @@ export async function fetchExpenses(
   return loadLocalExpenses();
 }
 
+/**
+ * Syncs any local expenses or profiles stored in browser memory to the user's Supabase cloud account.
+ * This ensures that work done before signing in is not stranded in the browser.
+ */
+export async function syncLocalDataToCloud(
+  userId: string
+): Promise<{ syncedExpenses: number; syncedProfile: boolean }> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !userId) return { syncedExpenses: 0, syncedProfile: false };
+
+  let syncedExpenses = 0;
+  let syncedProfile = false;
+
+  // 1. Sync Profile
+  try {
+    for (const yr of [2025, 2026] as TaxYear[]) {
+      const localProf = loadLocalProfile(yr);
+      if (localProf && (localProf.annualIncome !== 96000 || localProf.zakatPaid > 0 || localProf.pcbPaid !== 6200)) {
+        await persistProfile(localProf, userId);
+        syncedProfile = true;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not sync local profile to cloud:", err);
+  }
+
+  // 2. Sync Expenses
+  try {
+    const local = loadLocalExpenses();
+    if (local.length > 0) {
+      const { data: cloudData } = await supabase
+        .from("tax_expenses")
+        .select("id, expense_date, merchant, amount")
+        .eq("user_id", userId);
+
+      const existingKeys = new Set(
+        (cloudData || []).map(
+          (r) => `${r.expense_date}_${r.merchant}_${Number(r.amount).toFixed(2)}`
+        )
+      );
+
+      for (const exp of local) {
+        const key = `${exp.expenseDate}_${exp.merchant}_${Number(exp.amount).toFixed(2)}`;
+        if (!existingKeys.has(key)) {
+          const { error: insErr } = await supabase.from("tax_expenses").insert({
+            user_id: userId,
+            tax_year: exp.taxYear,
+            category_id: exp.categoryId,
+            sub_category_id: exp.subCategoryId || null,
+            merchant: exp.merchant,
+            description: exp.description || "",
+            amount: exp.amount,
+            expense_date: exp.expenseDate,
+            invoice_number: exp.invoiceNumber || "",
+            receipt_path: exp.receiptPath || null,
+            receipt_mime_type: exp.receiptMimeType || null,
+            receipt_file_name: exp.receiptFileName || null,
+            ai_extracted: Boolean(exp.aiExtracted),
+          });
+          if (!insErr) syncedExpenses++;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not sync local expenses to cloud:", err);
+  }
+
+  return { syncedExpenses, syncedProfile };
+}
+
 export async function createExpense(
   expense: Omit<TaxExpense, "id" | "createdAt">,
   receiptFile?: File | null,
