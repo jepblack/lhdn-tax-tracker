@@ -90,13 +90,22 @@ export async function POST(request: Request) {
     );
 
     const arrayBuffer = await file.arrayBuffer();
+    const originalByteLength = arrayBuffer.byteLength;
+    if (originalByteLength === 0) {
+      return NextResponse.json({
+        fallbackToLocalOcr: true,
+        aiSkippedReason:
+          "Uploaded file is 0 bytes (empty). If this receipt is in OneDrive/iCloud/Google Drive, please make sure it is downloaded locally first.",
+      });
+    }
+
     const isPdf =
       file.type === "application/pdf" ||
       file.name.toLowerCase().endsWith(".pdf");
 
     if (!hasGemini && !hasOpenAi) {
       if (isPdf) {
-        const pdfResult = await tryExtractPdfReceipt(arrayBuffer, taxYear);
+        const pdfResult = await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
         if (pdfResult) return NextResponse.json(pdfResult);
       }
       return NextResponse.json({
@@ -226,13 +235,14 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
 
-        // For text-based PDFs, extract text via unpdf and send as text (avoids PDF inlineData 400 errors & is faster)
+        // For text-based PDFs, extract text via unpdf using a cloned buffer so arrayBuffer is never detached
         let pdfExtractedText: string | null = null;
         if (isPdf) {
           try {
-            const { text } = await extractText(new Uint8Array(arrayBuffer), {
-              mergePages: true,
-            });
+            const { text } = await extractText(
+              new Uint8Array(arrayBuffer.slice(0)),
+              { mergePages: true }
+            );
             const joined = Array.isArray(text) ? text.join("\n") : String(text || "");
             if (joined.trim().length >= 20) {
               pdfExtractedText = joined.trim().slice(0, 15000);
@@ -295,14 +305,14 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
           );
         }
       } catch (err) {
-        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${arrayBuffer.byteLength}]`;
+        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${originalByteLength}]`;
         console.warn("Gemini vision unavailable, falling back to local OCR:", err);
       }
     }
 
     // 3. If PDF, extract text directly on server with unpdf before falling back
     if (isPdf) {
-      const pdfResult = await tryExtractPdfReceipt(arrayBuffer, taxYear);
+      const pdfResult = await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
       if (pdfResult) {
         return NextResponse.json({
           ...pdfResult,
