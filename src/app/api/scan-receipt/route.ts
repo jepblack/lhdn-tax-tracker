@@ -7,6 +7,8 @@ import { ReceiptEligibility, TaxYear } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+const GEMINI_MODEL = "gemini-3.8-flash";
+
 /**
  * Live Gemini API Key health check (never exposes full secret — only prefix + live ping)
  */
@@ -18,7 +20,7 @@ export async function GET() {
       configured: false,
       keyPrefix: null,
       error: "GEMINI_API_KEY is not set on the server.",
-      hint: "Add GEMINI_API_KEY (starts with AIza...) in Vercel Environment Variables and redeploy.",
+      hint: "Add GEMINI_API_KEY in Vercel Environment Variables and redeploy.",
     });
   }
 
@@ -28,7 +30,7 @@ export async function GET() {
   try {
     const ai = new GoogleGenAI({ apiKey: geminiKey, vertexai: false });
     const res = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents: "Reply with OK",
     });
 
@@ -36,19 +38,18 @@ export async function GET() {
       ok: true,
       configured: true,
       keyPrefix,
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       latencyMs: Date.now() - startedAt,
       reply: (res.text || "OK").trim().slice(0, 30),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     let hint = "Verify your Gemini API key and redeploy Vercel.";
-    if (geminiKey.startsWith("AQ.")) {
+    if (msg.includes("API_KEY_INVALID") || msg.includes("401")) {
       hint =
-        "The server is still loading an AQ.* key. Create a standard AIza... key with 'Generative Language API' enabled, update GEMINI_API_KEY in Vercel, and Redeploy.";
-    } else if (msg.includes("API_KEY_INVALID") || msg.includes("401")) {
-      hint =
-        "Google rejected this key. Ensure 'Generative Language API' is enabled on the Google Cloud project and the key isn't restricted to 'Gemini API'.";
+        "Google rejected this key. Create a fresh key in Google AI Studio (aistudio.google.com/apikey), update GEMINI_API_KEY in Vercel, and Redeploy.";
+    } else if (msg.includes("404")) {
+      hint = `Model ${GEMINI_MODEL} returned 404 — check Google's error message below for the recommended model ID.`;
     } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
       hint = "Free-tier rate limit reached temporarily — wait 1 minute and retry.";
     }
@@ -188,7 +189,7 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: GEMINI_MODEL,
           contents: [
             {
               role: "user",
