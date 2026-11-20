@@ -10,6 +10,7 @@ import {
   Shield,
 } from "lucide-react";
 import { calculateTaxSummary } from "@/lib/calculator";
+import { getGoogleDriveToken, saveGoogleDriveToken } from "@/lib/google-drive";
 import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import {
   createExpense,
@@ -36,6 +37,7 @@ export function TaxApp() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [driveConnected, setDriveConnected] = useState(false);
 
   const [profile, setProfile] = useState<TaxProfile>(() =>
     getDefaultProfile(2026)
@@ -52,20 +54,33 @@ export function TaxApp() {
     string | undefined
   >(undefined);
 
-  // Listen to Supabase auth state if configured
+  // Listen to Supabase auth state + capture Google Drive provider_token
   useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data.user?.id || null);
-      setUserEmail(data.user?.email || null);
+    supabase.auth.getSession().then(({ data }) => {
+      setUserId(data.session?.user?.id || null);
+      setUserEmail(data.session?.user?.email || null);
+      if (data.session?.provider_token) {
+        saveGoogleDriveToken(data.session.provider_token);
+        setDriveConnected(true);
+      } else {
+        setDriveConnected(Boolean(getGoogleDriveToken()));
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUserId(session?.user?.id || null);
         setUserEmail(session?.user?.email || null);
+        if (session?.provider_token) {
+          saveGoogleDriveToken(session.provider_token);
+          setDriveConnected(true);
+        } else if (!session) {
+          saveGoogleDriveToken(null);
+          setDriveConnected(false);
+        }
       }
     );
 
@@ -273,7 +288,9 @@ export function TaxApp() {
             {activeTab === "settings" && (
               <SettingsTab
                 profile={profile}
+                expenses={expenses}
                 userEmail={userEmail}
+                driveConnected={driveConnected}
                 onUpdateProfile={handleUpdateProfile}
                 onLogPayslipReliefs={handleLogPayslipReliefs}
                 onLoadSampleData={handleLoadSampleData}

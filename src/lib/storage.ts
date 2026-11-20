@@ -1,3 +1,8 @@
+import {
+  archiveReceiptToGoogleDrive,
+  getGoogleDriveToken,
+  saveGoogleDriveToken,
+} from "./google-drive";
 import { DEFAULT_STATUS_RELIEFS, getReliefCategories } from "./lhdn-rules";
 import { buildJsonMetadataFile } from "./receipt-archiver";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
@@ -137,10 +142,14 @@ export async function fetchExpenses(
         data.map(async (row) => {
           let receiptUrl: string | null = null;
           if (row.receipt_path) {
-            const { data: signed } = await supabase.storage
-              .from("receipts")
-              .createSignedUrl(row.receipt_path, 3600);
-            receiptUrl = signed?.signedUrl || null;
+            if (String(row.receipt_path).startsWith("gdrive:")) {
+              receiptUrl = String(row.receipt_path).replace(/^gdrive:/, "");
+            } else {
+              const { data: signed } = await supabase.storage
+                .from("receipts")
+                .createSignedUrl(row.receipt_path, 3600);
+              receiptUrl = signed?.signedUrl || null;
+            }
           }
           return {
             id: row.id,
@@ -173,6 +182,28 @@ export async function createExpense(
   userId?: string | null
 ): Promise<TaxExpense> {
   const supabase = getSupabaseClient();
+  const driveToken = getGoogleDriveToken();
+
+  // Prefer Google Drive (/CukaiKu/Receipts/YYYY/) when signed in with Google Drive scope
+  let driveWebViewLink: string | null = null;
+  if (driveToken && (receiptFile || expense.metadata)) {
+    try {
+      const archived = await archiveReceiptToGoogleDrive(
+        driveToken,
+        expense.taxYear,
+        receiptFile || null,
+        expense
+      );
+      if (archived.pdfWebViewLink) {
+        driveWebViewLink = archived.pdfWebViewLink;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "DRIVE_TOKEN_EXPIRED") {
+        saveGoogleDriveToken(null);
+      }
+      console.warn("Google Drive upload skipped, using fallback storage:", err);
+    }
+  }
 
   if (supabase && userId) {
     let receiptPath: string | null = null;
@@ -180,7 +211,13 @@ export async function createExpense(
     let receiptMimeType: string | null = null;
     let receiptFileName: string | null = null;
 
-    if (receiptFile) {
+    if (driveWebViewLink) {
+      receiptPath = `gdrive:${driveWebViewLink}`;
+      receiptUrl = driveWebViewLink;
+      receiptMimeType = receiptFile?.type || "application/pdf";
+      receiptFileName =
+        expense.metadata?.file_pdf || receiptFile?.name || "receipt.pdf";
+    } else if (receiptFile) {
       const folder = `${userId}/Receipts/${expense.taxYear}`;
       const pdfName =
         expense.metadata?.file_pdf ||
@@ -282,7 +319,7 @@ export async function removeExpense(
   const supabase = getSupabaseClient();
   if (supabase && userId && !expense.id.startsWith("local_")) {
     const pathsToRemove: string[] = [];
-    if (expense.receiptPath) {
+    if (expense.receiptPath && !expense.receiptPath.startsWith("gdrive:")) {
       pathsToRemove.push(expense.receiptPath);
       if (expense.receiptPath.toLowerCase().endsWith(".pdf")) {
         pathsToRemove.push(expense.receiptPath.replace(/\.pdf$/i, ".json"));

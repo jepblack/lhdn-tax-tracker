@@ -16,17 +16,24 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import {
+  getGoogleDriveToken,
+  saveGoogleDriveToken,
+  syncYearIndexToGoogleDrive,
+} from "@/lib/google-drive";
 import { getStatusReliefAmounts } from "@/lib/lhdn-rules";
 import {
   parseMalaysianPayslipText,
   PayslipExtraction,
 } from "@/lib/payslip-parser";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
-import { TaxProfile } from "@/lib/types";
+import { TaxExpense, TaxProfile } from "@/lib/types";
 
 interface SettingsTabProps {
   profile: TaxProfile;
+  expenses: TaxExpense[];
   userEmail: string | null;
+  driveConnected: boolean;
   onUpdateProfile: (next: TaxProfile) => Promise<void>;
   onLogPayslipReliefs: (
     epfAmount: number,
@@ -39,7 +46,9 @@ interface SettingsTabProps {
 
 export function SettingsTab({
   profile,
+  expenses,
   userEmail,
+  driveConnected,
   onUpdateProfile,
   onLogPayslipReliefs,
   onLoadSampleData,
@@ -63,6 +72,9 @@ export function SettingsTab({
   );
   const [showPayslipText, setShowPayslipText] = useState(false);
   const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
+  const [driveSyncing, setDriveSyncing] = useState(false);
+  const [driveSyncMsg, setDriveSyncMsg] = useState<string | null>(null);
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
 
   async function handlePayslipUpload(file: File | undefined) {
     if (!file) return;
@@ -202,6 +214,11 @@ export function SettingsTab({
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
+          scopes: "https://www.googleapis.com/auth/drive.file",
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
           redirectTo:
             typeof window !== "undefined" ? window.location.origin : undefined,
         },
@@ -213,6 +230,44 @@ export function SettingsTab({
       }
     } finally {
       setAuthLoading(false);
+    }
+  }
+
+  async function handleSyncDriveIndex() {
+    const token = getGoogleDriveToken();
+    if (!token) {
+      setDriveSyncMsg(
+        "Google Drive session expired — tap 'Reconnect Google Drive' below."
+      );
+      return;
+    }
+    setDriveSyncing(true);
+    setDriveSyncMsg(null);
+    try {
+      const res = await syncYearIndexToGoogleDrive(
+        token,
+        profile.taxYear,
+        expenses
+      );
+      setDriveFolderUrl(res.folderUrl);
+      setDriveSyncMsg(
+        `Backed up YA ${profile.taxYear} CSV Index + JSON (${res.syncedCount} records) to Google Drive!`
+      );
+    } catch (err) {
+      if (err instanceof Error && err.message === "DRIVE_TOKEN_EXPIRED") {
+        saveGoogleDriveToken(null);
+        setDriveSyncMsg(
+          "Google Drive session expired — tap 'Reconnect Google Drive' to refresh access."
+        );
+      } else {
+        setDriveSyncMsg(
+          err instanceof Error
+            ? err.message
+            : "Could not sync to Google Drive. Check that Google Drive API is enabled."
+        );
+      }
+    } finally {
+      setDriveSyncing(false);
     }
   }
 
@@ -519,20 +574,24 @@ export function SettingsTab({
               <CloudOff className="h-4 w-4 text-slate-400" />
             )}
             <h2 className="text-sm font-bold text-slate-900">
-              Cloud Sync & Receipt Backup
+              Google Drive Sync & Receipt Backup
             </h2>
           </div>
           <span
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-              userEmail
+              userEmail && driveConnected
                 ? "bg-emerald-100 text-emerald-800"
+                : userEmail
+                ? "bg-amber-100 text-amber-800"
                 : isSupabaseConfigured
                 ? "bg-amber-100 text-amber-800"
                 : "bg-slate-100 text-slate-600"
             }`}
           >
-            {userEmail
-              ? "Cloud Connected"
+            {userEmail && driveConnected
+              ? "Google Drive Active"
+              : userEmail
+              ? "Signed In"
               : isSupabaseConfigured
               ? "Sign In Needed"
               : "Local Mode"}
@@ -541,22 +600,71 @@ export function SettingsTab({
 
         {isSupabaseConfigured ? (
           userEmail ? (
-            <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3">
-              <div>
-                <p className="text-xs font-semibold text-emerald-900">
-                  Signed in as {userEmail}
-                </p>
-                <p className="text-[11px] text-emerald-700">
-                  Receipts & reliefs sync automatically across phone and desktop.
-                </p>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3">
+                <div>
+                  <p className="text-xs font-semibold text-emerald-900">
+                    Signed in as {userEmail}
+                  </p>
+                  <p className="text-[11px] text-emerald-700">
+                    {driveConnected
+                      ? `Receipts archive directly to My Drive / CukaiKu / Receipts / ${profile.taxYear}`
+                      : "Reconnect Google Drive to archive PDF + JSON receipts directly to your Google Drive."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Sign Out
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs"
-              >
-                <LogOut className="h-3.5 w-3.5" /> Sign Out
-              </button>
+
+              <div className="flex flex-wrap gap-2">
+                {driveConnected ? (
+                  <button
+                    type="button"
+                    disabled={driveSyncing}
+                    onClick={handleSyncDriveIndex}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white active:scale-[0.99] disabled:opacity-60"
+                  >
+                    {driveSyncing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Cloud className="h-3.5 w-3.5" />
+                    )}
+                    Back Up YA {profile.taxYear} Index to Drive
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={authLoading}
+                    onClick={handleGoogleSignIn}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white active:scale-[0.99]"
+                  >
+                    <Cloud className="h-3.5 w-3.5" />
+                    Reconnect Google Drive
+                  </button>
+                )}
+
+                {driveFolderUrl && (
+                  <a
+                    href={driveFolderUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"
+                  >
+                    Open Drive Folder
+                  </a>
+                )}
+              </div>
+
+              {driveSyncMsg && (
+                <p className="text-xs font-medium text-emerald-800">
+                  {driveSyncMsg}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2.5">

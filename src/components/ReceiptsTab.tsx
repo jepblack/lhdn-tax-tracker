@@ -365,7 +365,8 @@ export function ReceiptsTab({
               </button>
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 p-4 text-center">
-              {previewExpense.receiptMimeType === "application/pdf" ? (
+              {previewExpense.receiptMimeType === "application/pdf" ||
+              previewExpense.receiptUrl.includes("drive.google.com") ? (
                 <div className="space-y-3 py-8">
                   <FileText className="mx-auto h-12 w-12 text-emerald-600" />
                   <p className="text-sm font-semibold text-slate-800">
@@ -377,7 +378,9 @@ export function ReceiptsTab({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
                   >
-                    Open PDF in New Tab
+                    {previewExpense.receiptUrl.includes("drive.google.com")
+                      ? "Open in Google Drive"
+                      : "Open PDF in New Tab"}
                   </a>
                 </div>
               ) : (
