@@ -219,3 +219,18 @@ export interface AnnualTaxDoc {
   uploadedAt: string;
   storageProvider: "gdrive" | "local";
 }
+
+export interface AnnualDocExtraction {
+  docType: AnnualDocType;
+  providerName: string;
+  annualIncome: number;
+  pcbPaid: number;
+  zakatPaid: number;
+  epfEmployee: number;
+  socsoEisEmployee: number;
+  lifeInsuranceAmount: number;
+  medicalInsuranceAmount: number;
+  housingLoanInterest: number;
+  summaryNote: string;
+  confidence: "high" | "medium" | "low";
+}

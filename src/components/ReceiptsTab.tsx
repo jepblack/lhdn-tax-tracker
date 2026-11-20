@@ -26,7 +26,9 @@ import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
+import { getSupabaseClient } from "@/lib/supabase";
 import {
+  AnnualDocExtraction,
   AnnualDocType,
   AnnualTaxDoc,
   TaxCalculationResult,
@@ -50,7 +52,15 @@ interface ReceiptsTabProps {
   summary: TaxCalculationResult;
   expenses: TaxExpense[];
   annualDocs: AnnualTaxDoc[];
-  onUploadAnnualDoc: (docType: AnnualDocType, label: string, file: File) => Promise<void>;
+  onUploadAnnualDoc: (
+    docType: AnnualDocType,
+    label: string,
+    file: File
+  ) => Promise<AnnualTaxDoc>;
+  onApplyAnnualDocExtraction: (
+    extraction: AnnualDocExtraction,
+    doc: AnnualTaxDoc
+  ) => Promise<void>;
   onDeleteAnnualDoc: (id: string) => void;
   onOpenBatchImport: () => void;
   onOpenMyInvoisQr: () => void;
@@ -66,6 +76,7 @@ export function ReceiptsTab({
   expenses,
   annualDocs,
   onUploadAnnualDoc,
+  onApplyAnnualDocExtraction,
   onDeleteAnnualDoc,
   onOpenBatchImport,
   onOpenMyInvoisQr,
@@ -82,6 +93,12 @@ export function ReceiptsTab({
   const [pendingDelete, setPendingDelete] = useState<TaxExpense | null>(null);
   const [exportingZip, setExportingZip] = useState(false);
   const [uploadingDocType, setUploadingDocType] = useState<AnnualDocType | null>(null);
+  const [pendingExtraction, setPendingExtraction] = useState<{
+    extraction: AnnualDocExtraction;
+    doc: AnnualTaxDoc;
+  } | null>(null);
+  const [applyingExtraction, setApplyingExtraction] = useState(false);
+  const [extractionAppliedMsg, setExtractionAppliedMsg] = useState<string | null>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const activeDocSlotRef = useRef<{ type: AnnualDocType; label: string } | null>(null);
 
@@ -223,13 +240,220 @@ export function ReceiptsTab({
               e.target.value = "";
               if (!file || !slot) return;
               setUploadingDocType(slot.type);
+              setPendingExtraction(null);
+              setExtractionAppliedMsg(null);
               try {
-                await onUploadAnnualDoc(slot.type, slot.label, file);
+                const savedDoc = await onUploadAnnualDoc(
+                  slot.type,
+                  slot.label,
+                  file
+                );
+
+                // Auto-extract tax figures from EA Form, KWSP, Insurance, or Housing Loan statements
+                if (
+                  slot.type !== "form_be_proof" &&
+                  slot.type !== "other_doc"
+                ) {
+                  try {
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    fd.append("docType", slot.type);
+                    fd.append("taxYear", String(taxYear));
+                    const headers: Record<string, string> = {};
+                    const sb = getSupabaseClient();
+                    if (sb) {
+                      const { data: sess } = await sb.auth.getSession();
+                      if (sess.session?.access_token) {
+                        headers["Authorization"] = `Bearer ${sess.session.access_token}`;
+                      }
+                    }
+                    const res = await fetch("/api/parse-annual-doc", {
+                      method: "POST",
+                      headers,
+                      body: fd,
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      if (!data.skipped && data.docType) {
+                        const ext = data as AnnualDocExtraction;
+                        const hasAnyFigure =
+                          ext.annualIncome > 0 ||
+                          ext.pcbPaid > 0 ||
+                          ext.zakatPaid > 0 ||
+                          ext.epfEmployee > 0 ||
+                          ext.socsoEisEmployee > 0 ||
+                          ext.lifeInsuranceAmount > 0 ||
+                          ext.medicalInsuranceAmount > 0 ||
+                          ext.housingLoanInterest > 0;
+                        if (hasAnyFigure) {
+                          setPendingExtraction({
+                            extraction: ext,
+                            doc: savedDoc,
+                          });
+                        }
+                      }
+                    }
+                  } catch {
+                    // Non-fatal: file is still archived cleanly
+                  }
+                }
               } finally {
                 setUploadingDocType(null);
               }
             }}
           />
+
+          {extractionAppliedMsg && (
+            <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-900">
+              <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>{extractionAppliedMsg}</span>
+            </div>
+          )}
+
+          {/* Extracted Annual Doc Figures Confirmation Card */}
+          {pendingExtraction && (
+            <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                  <Sparkles className="h-4 w-4 text-emerald-600" />
+                  <span>
+                    Extracted from {pendingExtraction.doc.label}
+                    {pendingExtraction.extraction.providerName
+                      ? ` (${pendingExtraction.extraction.providerName})`
+                      : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingExtraction(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {pendingExtraction.extraction.annualIncome > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Annual Income</p>
+                    <p className="font-bold text-slate-900">
+                      {formatRM(pendingExtraction.extraction.annualIncome, true)}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.pcbPaid > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">PCB / MTD Paid</p>
+                    <p className="font-bold text-slate-900">
+                      {formatRM(pendingExtraction.extraction.pcbPaid, true)}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.zakatPaid > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Zakat Rebate</p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(pendingExtraction.extraction.zakatPaid, true)}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.epfEmployee > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">EPF Relief</p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(pendingExtraction.extraction.epfEmployee, true)}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.socsoEisEmployee > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">SOCSO + EIS</p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(
+                        pendingExtraction.extraction.socsoEisEmployee,
+                        true
+                      )}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.lifeInsuranceAmount > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Life Insurance</p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(
+                        pendingExtraction.extraction.lifeInsuranceAmount,
+                        true
+                      )}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.medicalInsuranceAmount > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">
+                      Medical Insurance
+                    </p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(
+                        pendingExtraction.extraction.medicalInsuranceAmount,
+                        true
+                      )}
+                    </p>
+                  </div>
+                )}
+                {pendingExtraction.extraction.housingLoanInterest > 0 && (
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="text-[10px] text-slate-500">
+                      Housing Loan Interest
+                    </p>
+                    <p className="font-bold text-emerald-700">
+                      {formatRM(
+                        pendingExtraction.extraction.housingLoanInterest,
+                        true
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-emerald-900">
+                {pendingExtraction.extraction.summaryNote}
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={applyingExtraction}
+                  onClick={async () => {
+                    setApplyingExtraction(true);
+                    try {
+                      await onApplyAnnualDocExtraction(
+                        pendingExtraction.extraction,
+                        pendingExtraction.doc
+                      );
+                      setExtractionAppliedMsg(
+                        `Applied figures from ${pendingExtraction.doc.label} to your YA ${taxYear} tax profile & reliefs!`
+                      );
+                      setPendingExtraction(null);
+                    } finally {
+                      setApplyingExtraction(false);
+                    }
+                  }}
+                  className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white active:scale-[0.99] disabled:opacity-60"
+                >
+                  {applyingExtraction
+                    ? "Applying..."
+                    : `Apply to YA ${taxYear} Tax & Reliefs`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingExtraction(null)}
+                  className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-900"
+                >
+                  Archive Only
+                </button>
+              </div>
+            </div>
+          )}
           {ANNUAL_DOC_SLOTS.map((slot) => {
             const matchedDocs = annualDocs.filter(
               (d) => d.taxYear === taxYear && d.docType === slot.type

@@ -33,6 +33,7 @@ import {
 } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
+  AnnualDocExtraction,
   AnnualDocType,
   AnnualTaxDoc,
   TaxExpense,
@@ -112,7 +113,7 @@ export function TaxApp() {
     docType: AnnualDocType,
     label: string,
     file: File
-  ) {
+  ): Promise<AnnualTaxDoc> {
     const driveToken = getGoogleDriveToken();
     let fileUrl = "";
     let storageProvider: "gdrive" | "local" = "local";
@@ -156,6 +157,116 @@ export function TaxApp() {
       }
       return next;
     });
+
+    return newDoc;
+  }
+
+  async function handleApplyAnnualDocExtraction(
+    ext: AnnualDocExtraction,
+    doc: AnnualTaxDoc
+  ) {
+    // 1. Update Income / PCB / Zakat in Tax Profile if extracted
+    if (ext.annualIncome > 0 || ext.pcbPaid > 0 || ext.zakatPaid > 0) {
+      await handleUpdateProfile({
+        ...profile,
+        annualIncome:
+          ext.annualIncome > 0 ? ext.annualIncome : profile.annualIncome,
+        pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : profile.pcbPaid,
+        zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : profile.zakatPaid,
+      });
+    }
+
+    // 2. Log corresponding tax reliefs linked to the archived Annual Document
+    const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    const provider = ext.providerName || doc.label;
+    const sharedFileFields = {
+      receiptUrl: doc.fileUrl,
+      receiptPath:
+        doc.storageProvider === "gdrive" ? `gdrive:${doc.fileUrl}` : null,
+      receiptFileName: doc.fileName,
+      receiptMimeType: doc.mimeType,
+      aiExtracted: true,
+    };
+
+    if (ext.epfEmployee > 0) {
+      await handleSaveExpense(
+        {
+          taxYear,
+          categoryId: "epf_life_insurance",
+          subCategoryId: "epf_mandatory",
+          merchant: `${provider} — EPF`,
+          description: `Extracted from ${doc.label}`,
+          amount: ext.epfEmployee,
+          expenseDate: today,
+          ...sharedFileFields,
+        },
+        null
+      );
+    }
+
+    if (ext.socsoEisEmployee > 0) {
+      await handleSaveExpense(
+        {
+          taxYear,
+          categoryId: "socso",
+          subCategoryId: null,
+          merchant: `${provider} — SOCSO & EIS`,
+          description: `Extracted from ${doc.label}`,
+          amount: ext.socsoEisEmployee,
+          expenseDate: today,
+          ...sharedFileFields,
+        },
+        null
+      );
+    }
+
+    if (ext.lifeInsuranceAmount > 0) {
+      await handleSaveExpense(
+        {
+          taxYear,
+          categoryId: "epf_life_insurance",
+          subCategoryId: "life_insurance",
+          merchant: `${provider} — Life Insurance`,
+          description: `Extracted from ${doc.label}`,
+          amount: ext.lifeInsuranceAmount,
+          expenseDate: today,
+          ...sharedFileFields,
+        },
+        null
+      );
+    }
+
+    if (ext.medicalInsuranceAmount > 0) {
+      await handleSaveExpense(
+        {
+          taxYear,
+          categoryId: "edu_med_insurance",
+          subCategoryId: null,
+          merchant: `${provider} — Medical Insurance`,
+          description: `Extracted from ${doc.label}`,
+          amount: ext.medicalInsuranceAmount,
+          expenseDate: today,
+          ...sharedFileFields,
+        },
+        null
+      );
+    }
+
+    if (ext.housingLoanInterest > 0) {
+      await handleSaveExpense(
+        {
+          taxYear,
+          categoryId: "first_home_interest",
+          subCategoryId: "home_under_500k",
+          merchant: `${provider} — Housing Loan Interest`,
+          description: `Extracted from ${doc.label}`,
+          amount: ext.housingLoanInterest,
+          expenseDate: today,
+          ...sharedFileFields,
+        },
+        null
+      );
+    }
   }
 
   function handleDeleteAnnualDoc(id: string) {
@@ -460,6 +571,7 @@ export function TaxApp() {
                 expenses={expenses}
                 annualDocs={annualDocs}
                 onUploadAnnualDoc={handleUploadAnnualDoc}
+                onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
                 onDeleteAnnualDoc={handleDeleteAnnualDoc}
                 onOpenBatchImport={() => setBatchOpen(true)}
                 onOpenMyInvoisQr={() => setQrOpen(true)}
