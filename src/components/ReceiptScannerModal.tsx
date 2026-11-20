@@ -191,11 +191,12 @@ export function ReceiptScannerModal({
 
     setIsScanning(true);
     try {
-      // Step 1: Try cloud AI vision if configured on server
+      // Step 1: Try cloud AI vision if configured on server (normalize large/exotic images to JPEG)
       let usedCloudAi = false;
       try {
+        const uploadFile = await normalizeImageForAiUpload(file);
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
 
         const res = await fetch("/api/scan-receipt", {
@@ -723,4 +724,61 @@ function EngineBadge({ engine }: { engine?: "ai" | "local-ocr" }) {
       <Cpu className="h-2.5 w-2.5" /> Built-In OCR
     </span>
   );
+}
+
+/**
+ * Converts/resizes image uploads to a clean JPEG (<= 1600px) so phone photos
+ * stay well under Vercel's 4.5MB limit and always use a Gemini-supported MIME type.
+ */
+async function normalizeImageForAiUpload(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxDim = 1600;
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          URL.revokeObjectURL(objectUrl);
+          if (blob) {
+            resolve(
+              new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+                type: "image/jpeg",
+              })
+            );
+          } else {
+            resolve(file);
+          }
+        },
+        "image/jpeg",
+        0.85
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    };
+    img.src = objectUrl;
+  });
 }

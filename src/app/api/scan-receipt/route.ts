@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
 import { getReliefCategories } from "@/lib/lhdn-rules";
@@ -106,7 +106,11 @@ export async function POST(request: Request) {
     }
 
     const base64Data = Buffer.from(arrayBuffer).toString("base64");
-    const mimeType = file.type || "image/jpeg";
+    const mimeType = isPdf
+      ? "application/pdf"
+      : file.type && file.type.startsWith("image/")
+      ? file.type
+      : "image/jpeg";
     const categories = getReliefCategories(taxYear);
 
     const taxonomyText = categories
@@ -201,48 +205,17 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
           ],
           config: {
             responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                eligibility: {
-                  type: Type.STRING,
-                  enum: ["eligible", "partial", "rejected"],
-                },
-                merchant: { type: Type.STRING },
-                date: { type: Type.STRING },
-                totalAmount: { type: Type.NUMBER },
-                claimableAmount: { type: Type.NUMBER },
-                invoiceNumber: { type: Type.STRING },
-                description: { type: Type.STRING },
-                suggestedCategoryId: { type: Type.STRING },
-                suggestedSubCategoryId: { type: Type.STRING },
-                confidence: {
-                  type: Type.STRING,
-                  enum: ["high", "medium", "low"],
-                },
-                reasoning: { type: Type.STRING },
-                rejectionReason: { type: Type.STRING },
-                excludedItems: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-              },
-              required: [
-                "eligibility",
-                "merchant",
-                "date",
-                "totalAmount",
-                "claimableAmount",
-                "confidence",
-                "reasoning",
-              ],
-            },
           },
         });
 
         if (response.text) {
+          const cleanedJson = response.text
+            .replace(/^```json\s*/i, "")
+            .replace(/^```\s*/i, "")
+            .replace(/```\s*$/i, "")
+            .trim();
           return NextResponse.json(
-            normalizeAiPayload(JSON.parse(response.text), categories)
+            normalizeAiPayload(JSON.parse(cleanedJson), categories)
           );
         }
       } catch (err) {
