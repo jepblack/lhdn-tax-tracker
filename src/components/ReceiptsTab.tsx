@@ -3,24 +3,34 @@
 import { useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CalendarClock,
   Download,
   Eye,
   FileCheck2,
   FileText,
+  Loader2,
   Search,
   Sparkles,
   Trash2,
   X,
 } from "lucide-react";
+import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
-import { TaxExpense, TaxYear } from "@/lib/types";
+import {
+  TaxCalculationResult,
+  TaxExpense,
+  TaxProfile,
+  TaxYear,
+} from "@/lib/types";
 
 interface ReceiptsTabProps {
   taxYear: TaxYear;
+  profile: TaxProfile;
+  summary: TaxCalculationResult;
   expenses: TaxExpense[];
   onDelete: (expense: TaxExpense) => Promise<void>;
   onAddNew: () => void;
@@ -28,6 +38,8 @@ interface ReceiptsTabProps {
 
 export function ReceiptsTab({
   taxYear,
+  profile,
+  summary,
   expenses,
   onDelete,
   onAddNew,
@@ -38,6 +50,7 @@ export function ReceiptsTab({
   );
   const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
   const [pendingDelete, setPendingDelete] = useState<TaxExpense | null>(null);
+  const [exportingZip, setExportingZip] = useState(false);
 
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
@@ -83,15 +96,37 @@ export function ReceiptsTab({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => exportExpensesToCsv(expenses, taxYear)}
-          disabled={yearExpenses.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
-        >
-          <Download className="h-3.5 w-3.5" />
-          CSV
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => exportExpensesToCsv(expenses, taxYear)}
+            disabled={yearExpenses.length === 0}
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              setExportingZip(true);
+              try {
+                await exportAuditPackZip(profile, summary, expenses);
+              } finally {
+                setExportingZip(false);
+              }
+            }}
+            disabled={yearExpenses.length === 0 || exportingZip}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-xs disabled:opacity-40"
+          >
+            {exportingZip ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Archive className="h-3.5 w-3.5" />
+            )}
+            Audit ZIP
+          </button>
+        </div>
       </div>
 
       {/* Search & Filters */}

@@ -1,0 +1,735 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  CalendarClock,
+  Check,
+  CheckCircle2,
+  ClipboardList,
+  Copy,
+  Plus,
+  Repeat,
+  Scale,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { calculateProgressiveTax, formatRM } from "@/lib/calculator";
+import { getStatusReliefAmounts } from "@/lib/lhdn-rules";
+import { TaxCalculationResult, TaxExpense, TaxProfile } from "@/lib/types";
+
+export type FilingToolTab = "form-be" | "year-end" | "joint-vs-separate";
+
+interface FilingToolsSheetProps {
+  isOpen: boolean;
+  initialTab: FilingToolTab;
+  profile: TaxProfile;
+  summary: TaxCalculationResult;
+  expenses: TaxExpense[];
+  onClose: () => void;
+  onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
+  onQuickLogTemplate: (template: {
+    categoryId: string;
+    subCategoryId?: string | null;
+    merchant: string;
+    description: string;
+    amount: number;
+  }) => Promise<void>;
+}
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const RECURRING_TEMPLATES = [
+  {
+    id: "unifi",
+    label: "Home Fibre / Broadband",
+    merchant: "TM Unifi / TIME Fibre",
+    description: "Monthly home internet subscription",
+    categoryId: "lifestyle",
+    subCategoryId: "lifestyle_internet",
+    defaultAmount: 149,
+  },
+  {
+    id: "gym",
+    label: "Gym / Sports Membership",
+    merchant: "Gym Membership",
+    description: "Monthly gym / sports facility membership",
+    categoryId: "sports",
+    subCategoryId: "sports_gym",
+    defaultAmount: 180,
+  },
+  {
+    id: "med_ins",
+    label: "Medical Card Insurance",
+    merchant: "Medical Card / Takaful",
+    description: "Monthly medical insurance premium",
+    categoryId: "edu_med_insurance",
+    subCategoryId: null,
+    defaultAmount: 250,
+  },
+  {
+    id: "childcare",
+    label: "Childcare (TASKA / TADIKA)",
+    merchant: "TASKA / TADIKA",
+    description: "Monthly registered childcare / kindergarten fee",
+    categoryId: "childcare",
+    subCategoryId: null,
+    defaultAmount: 550,
+  },
+  {
+    id: "prs",
+    label: "PRS Year-End Top-Up",
+    merchant: "Private Retirement Scheme (PRS)",
+    description: "Annual PRS retirement contribution",
+    categoryId: "prs_annuity",
+    subCategoryId: null,
+    defaultAmount: 3000,
+  },
+  {
+    id: "sspn",
+    label: "SSPN Net Deposit",
+    merchant: "Simpan SSPN (PTPTN)",
+    description: "Education savings net deposit",
+    categoryId: "sspn",
+    subCategoryId: null,
+    defaultAmount: 1000,
+  },
+];
+
+export function FilingToolsSheet({
+  isOpen,
+  initialTab,
+  profile,
+  summary,
+  expenses,
+  onClose,
+  onQuickAdd,
+  onQuickLogTemplate,
+}: FilingToolsSheetProps) {
+  const [activeTab, setActiveTab] = useState<FilingToolTab>(initialTab);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [loggingId, setLoggingId] = useState<string | null>(null);
+  const [loggedId, setLoggedId] = useState<string | null>(null);
+
+  // Joint vs Separate Simulator state
+  const [spouseIncome, setSpouseIncome] = useState("60000");
+  const [spouseReliefs, setSpouseReliefs] = useState("15000");
+
+  // Sync initialTab when opened
+  useMemo(() => {
+    if (isOpen) setActiveTab(initialTab);
+  }, [isOpen, initialTab]);
+
+  if (!isOpen) return null;
+
+  const yearExpenses = expenses.filter((e) => e.taxYear === profile.taxYear);
+  const statusAmounts = getStatusReliefAmounts(profile.taxYear);
+
+  // Broadband 12-month coverage tracker
+  const broadbandMonths = new Set<number>();
+  for (const exp of yearExpenses) {
+    if (
+      exp.categoryId === "lifestyle" &&
+      exp.subCategoryId === "lifestyle_internet" &&
+      /^\d{4}-\d{2}/.test(exp.expenseDate)
+    ) {
+      const m = Number(exp.expenseDate.slice(5, 7));
+      if (m >= 1 && m <= 12) broadbandMonths.add(m);
+    }
+  }
+
+  // Days left until 31 Dec of taxYear
+  const now = new Date();
+  const cutoff = new Date(profile.taxYear, 11, 31, 23, 59, 59);
+  const daysLeft = Math.max(
+    0,
+    Math.ceil((cutoff.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  );
+
+  function copyValue(key: string, val: number) {
+    const text = val.toFixed(2);
+    navigator.clipboard?.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1500);
+  }
+
+  // Form BE ordered rows
+  const formBeRows = [
+    {
+      ref: "F1",
+      label: "Individual and dependent relatives",
+      amount: profile.statusReliefs.individual ? statusAmounts.individual : 0,
+      max: statusAmounts.individual,
+    },
+    ...(profile.statusReliefs.disabledIndividual
+      ? [
+          {
+            ref: "F1a",
+            label: "Disabled individual (OKU)",
+            amount: statusAmounts.disabledIndividual,
+            max: statusAmounts.disabledIndividual,
+          },
+        ]
+      : []),
+    ...(profile.statusReliefs.spouse
+      ? [
+          {
+            ref: "F7",
+            label: "Husband / Wife / Alimony",
+            amount: statusAmounts.spouse,
+            max: statusAmounts.spouse,
+          },
+        ]
+      : []),
+    ...(profile.statusReliefs.disabledSpouse
+      ? [
+          {
+            ref: "F7a",
+            label: "Disabled spouse (OKU)",
+            amount: statusAmounts.disabledSpouse,
+            max: statusAmounts.disabledSpouse,
+          },
+        ]
+      : []),
+    ...(profile.statusReliefs.childrenUnder18 +
+      profile.statusReliefs.childrenHigherEd +
+      profile.statusReliefs.disabledChildren >
+    0
+      ? [
+          {
+            ref: "F8",
+            label: "Child relief (total)",
+            amount:
+              profile.statusReliefs.childrenUnder18 * statusAmounts.childUnder18 +
+              profile.statusReliefs.childrenHigherEd *
+                statusAmounts.childHigherEd +
+              profile.statusReliefs.disabledChildren *
+                statusAmounts.disabledChild,
+            max: 0,
+          },
+        ]
+      : []),
+    ...summary.categorySummaries
+      .slice()
+      .sort((a, b) => {
+        const numA = parseInt(a.category.formBeRef.replace(/\D/g, ""), 10) || 99;
+        const numB = parseInt(b.category.formBeRef.replace(/\D/g, ""), 10) || 99;
+        return numA - numB;
+      })
+      .map((c) => ({
+        ref: c.category.formBeRef,
+        label: c.category.name,
+        amount: c.claimable,
+        max: c.category.maxLimit,
+      })),
+  ];
+
+  // Joint vs Separate Assessment Calculation
+  const sIncome = Math.max(0, parseFloat(spouseIncome) || 0);
+  const sReliefs = Math.max(9000, parseFloat(spouseReliefs) || 9000);
+
+  // Separate: each taxed on own chargeable income
+  const selfChargeable = summary.chargeableIncome;
+  const spouseChargeable = Math.max(0, sIncome - sReliefs);
+  const selfTaxSep = calculateProgressiveTax(selfChargeable);
+  const spouseTaxSep = calculateProgressiveTax(spouseChargeable);
+  const sepRebateSelf =
+    selfChargeable > 0 && selfChargeable <= 35000 ? 400 : 0;
+  const sepRebateSpouse =
+    spouseChargeable > 0 && spouseChargeable <= 35000 ? 400 : 0;
+  const totalSeparateTax =
+    Math.max(0, selfTaxSep.tax - sepRebateSelf - summary.zakatRebate) +
+    Math.max(0, spouseTaxSep.tax - sepRebateSpouse);
+
+  // Joint: combined income, 1 individual relief + RM4,000 spouse relief + combined expense reliefs (capped roughly)
+  const combinedIncome = summary.annualIncome + sIncome;
+  const jointReliefs =
+    summary.totalReliefs +
+    (profile.statusReliefs.spouse ? 0 : statusAmounts.spouse);
+  const jointChargeable = Math.max(0, combinedIncome - jointReliefs);
+  const jointTaxRaw = calculateProgressiveTax(jointChargeable);
+  const jointRebate =
+    jointChargeable > 0 && jointChargeable <= 35000 ? 800 : 0;
+  const totalJointTax = Math.max(
+    0,
+    jointTaxRaw.tax - jointRebate - summary.zakatRebate
+  );
+
+  const separateSaves = totalJointTax - totalSeparateTax;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4">
+      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">
+              LHDN Filing &amp; Tax Maximizer Tools
+            </h2>
+            <p className="text-xs text-slate-500">
+              YA {profile.taxYear} • e-Filing, recurring bills &amp; household
+              simulator
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Tool Tabs */}
+        <div className="grid grid-cols-3 gap-1.5 border-b border-slate-100 bg-slate-50 p-2.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab("form-be")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+              activeTab === "form-be"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            Form BE
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("year-end")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+              activeTab === "year-end"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            <Repeat className="h-3.5 w-3.5" />
+            Year-End
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("joint-vs-separate")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+              activeTab === "joint-vs-separate"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            <Scale className="h-3.5 w-3.5" />
+            Joint vs Sep
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* TAB 1: FORM BE e-FILING CHEAT SHEET */}
+          {activeTab === "form-be" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-emerald-50 p-3.5 text-xs text-emerald-950">
+                <p className="font-bold">
+                  Ready for MyTax e-Filing (Form BE — YA {profile.taxYear})
+                </p>
+                <p className="mt-0.5 text-[11px] text-emerald-800">
+                  Tap <strong>Copy</strong> on any box below to paste straight
+                  into LHDN MyTax e-BE. Total reliefs:{" "}
+                  <strong>{formatRM(summary.totalReliefs, true)}</strong>.
+                </p>
+              </div>
+
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+                {formBeRows.map((row) => {
+                  const isCopied = copiedKey === row.ref;
+                  return (
+                    <div
+                      key={row.ref}
+                      className="flex items-center justify-between gap-3 px-3.5 py-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">
+                            {row.ref}
+                          </span>
+                          <p className="truncate text-xs font-medium text-slate-800">
+                            {row.label}
+                          </p>
+                        </div>
+                        {row.max > 0 && (
+                          <p className="mt-0.5 text-[10px] text-slate-400">
+                            Max cap {formatRM(row.max)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold ${
+                            row.amount > 0 ? "text-slate-900" : "text-slate-300"
+                          }`}
+                        >
+                          {formatRM(row.amount, true)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyValue(row.ref, row.amount)}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition ${
+                            isCopied
+                              ? "bg-emerald-600 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {isCopied ? (
+                            <>
+                              <Check className="h-3 w-3" /> Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" /> Copy
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Final Summary Totals */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Chargeable Income</span>
+                  <span className="font-bold text-slate-900">
+                    {formatRM(summary.chargeableIncome, true)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Net Tax Payable</span>
+                  <span className="font-bold text-slate-900">
+                    {formatRM(summary.netTaxPayable, true)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">PCB / MTD Paid</span>
+                  <span className="font-bold text-slate-900">
+                    {formatRM(summary.pcbPaid, true)}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-bold">
+                  <span>
+                    {summary.estimatedRefund >= 0
+                      ? "Estimated LHDN Refund"
+                      : "Estimated Balance Payable"}
+                  </span>
+                  <span
+                    className={
+                      summary.estimatedRefund >= 0
+                        ? "text-emerald-700"
+                        : "text-amber-700"
+                    }
+                  >
+                    {formatRM(Math.abs(summary.estimatedRefund), true)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: RECURRING BILLS & YEAR-END CHECKLIST */}
+          {activeTab === "year-end" && (
+            <div className="space-y-4">
+              {/* Countdown Banner */}
+              <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 p-4 text-white">
+                <div>
+                  <p className="text-xs font-medium text-emerald-100">
+                    YA {profile.taxYear} Cutoff Countdown
+                  </p>
+                  <p className="mt-0.5 text-xl font-bold">
+                    {daysLeft > 0
+                      ? `${daysLeft} days left until 31 Dec ${profile.taxYear}`
+                      : `YA ${profile.taxYear} period closed`}
+                  </p>
+                </div>
+                <CalendarClock className="h-8 w-8 text-emerald-200" />
+              </div>
+
+              {/* 12-Month Broadband Tracker */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-900">
+                    Home Broadband Tracker ({broadbandMonths.size}/12 months)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onQuickAdd("lifestyle", "lifestyle_internet");
+                    }}
+                    className="text-[11px] font-semibold text-emerald-700"
+                  >
+                    + Upload Bill
+                  </button>
+                </div>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {MONTHS.map((label, idx) => {
+                    const logged = broadbandMonths.has(idx + 1);
+                    return (
+                      <div
+                        key={label}
+                        className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold ${
+                          logged
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-slate-100 text-slate-400"
+                        }`}
+                      >
+                        {logged && <CheckCircle2 className="h-3 w-3" />}
+                        {label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 1-Tap Recurring Bill Templates */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2.5">
+                <p className="text-xs font-bold text-slate-900">
+                  1-Tap Recurring Expense Templates
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Quickly log a recurring expense now, then attach the PDF/bill
+                  in Vault anytime.
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {RECURRING_TEMPLATES.map((tpl) => {
+                    const isJustLogged = loggedId === tpl.id;
+                    return (
+                      <div
+                        key={tpl.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-900">
+                            {tpl.label}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Default {formatRM(tpl.defaultAmount)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={loggingId === tpl.id}
+                          onClick={async () => {
+                            setLoggingId(tpl.id);
+                            try {
+                              await onQuickLogTemplate({
+                                categoryId: tpl.categoryId,
+                                subCategoryId: tpl.subCategoryId,
+                                merchant: tpl.merchant,
+                                description: tpl.description,
+                                amount: tpl.defaultAmount,
+                              });
+                              setLoggedId(tpl.id);
+                              setTimeout(() => setLoggedId(null), 1800);
+                            } finally {
+                              setLoggingId(null);
+                            }
+                          }}
+                          className={`shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                            isJustLogged
+                              ? "bg-emerald-600 text-white"
+                              : "bg-slate-900 text-white active:scale-95"
+                          }`}
+                        >
+                          {isJustLogged ? (
+                            <>
+                              <Check className="h-3 w-3" /> Logged
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-3 w-3" /> Log
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* High-ROI Year-End Opportunities */}
+              {summary.opportunities.length > 0 && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                    <Sparkles className="h-4 w-4 text-emerald-600" />
+                    Highest-ROI Remaining Caps (at{" "}
+                    {Math.round(summary.marginalRate * 100)}% bracket)
+                  </div>
+                  {summary.opportunities.map((o) => (
+                    <div
+                      key={o.categoryId}
+                      className="flex items-center justify-between rounded-xl bg-white p-2.5 text-xs"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {o.categoryName} — {formatRM(o.remainingCap)} left
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          Saves up to {formatRM(o.estimatedTaxSavings)} in tax
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onQuickAdd(o.categoryId);
+                        }}
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: JOINT VS SEPARATE ASSESSMENT OPTIMIZER */}
+          {activeTab === "joint-vs-separate" && (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Compare total Malaysian household income tax under{" "}
+                <strong>Separate Assessment</strong> vs{" "}
+                <strong>Joint Assessment</strong> (using your YA{" "}
+                {profile.taxYear} figures + your spouse&apos;s estimates).
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    Spouse Annual Income (RM)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={spouseIncome}
+                    onChange={(e) => setSpouseIncome(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    Spouse Total Reliefs (RM)
+                  </label>
+                  <input
+                    type="number"
+                    min="9000"
+                    step="500"
+                    value={spouseReliefs}
+                    onChange={(e) => setSpouseReliefs(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Verdict Card */}
+              <div
+                className={`rounded-2xl border p-4 ${
+                  separateSaves >= 0
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                    : "border-indigo-200 bg-indigo-50 text-indigo-950"
+                }`}
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wider opacity-75">
+                  Recommended Filing Method
+                </p>
+                <p className="mt-1 text-lg font-bold">
+                  {separateSaves >= 0
+                    ? `Separate Assessment saves ${formatRM(separateSaves, true)}`
+                    : `Joint Assessment saves ${formatRM(Math.abs(separateSaves), true)}`}
+                </p>
+                <p className="mt-1 text-xs opacity-85">
+                  {separateSaves >= 0
+                    ? "In Malaysia, Separate Assessment almost always wins when both spouses earn income, because each spouse gets lower progressive brackets + individual RM9,000 relief."
+                    : "Joint Assessment wins here because combining income with the RM4,000 spouse relief reduces your household's total tax."}
+                </p>
+              </div>
+
+              {/* Side-by-Side Comparison */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-1.5">
+                  <p className="font-bold text-slate-900">Separate Assessment</p>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Your Tax ({Math.round(selfTaxSep.marginalRate * 100)}%)</span>
+                    <span>
+                      {formatRM(
+                        Math.max(
+                          0,
+                          selfTaxSep.tax - sepRebateSelf - summary.zakatRebate
+                        ),
+                        true
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>
+                      Spouse ({Math.round(spouseTaxSep.marginalRate * 100)}%)
+                    </span>
+                    <span>
+                      {formatRM(
+                        Math.max(0, spouseTaxSep.tax - sepRebateSpouse),
+                        true
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-900">
+                    <span>Household Total</span>
+                    <span>{formatRM(totalSeparateTax, true)}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-1.5">
+                  <p className="font-bold text-slate-900">Joint Assessment</p>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Combined Income</span>
+                    <span>{formatRM(combinedIncome)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Joint Bracket</span>
+                    <span>{Math.round(jointTaxRaw.marginalRate * 100)}%</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-900">
+                    <span>Household Total</span>
+                    <span>{formatRM(totalJointTax, true)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pro Tip on Splitting Reliefs */}
+              <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+                <strong>Pro Tip:</strong> Claim shared reliefs (like{" "}
+                <strong>Children</strong>, <strong>Childcare RM3,000</strong>,{" "}
+                <strong>SSPN</strong>, and <strong>Medical</strong>) on whoever
+                is in the higher tax bracket (
+                {selfTaxSep.marginalRate >= spouseTaxSep.marginalRate
+                  ? `You at ${Math.round(selfTaxSep.marginalRate * 100)}%`
+                  : `Your spouse at ${Math.round(spouseTaxSep.marginalRate * 100)}%`}
+                ) to maximize Ringgit saved!
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

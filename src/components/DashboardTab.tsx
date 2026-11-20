@@ -6,12 +6,16 @@ import {
   CalendarClock,
   Camera,
   CheckCircle2,
+  ClipboardList,
+  Repeat,
+  Scale,
   Sparkles,
   TrendingDown,
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { TaxCalculationResult } from "@/lib/types";
+import { FilingToolTab } from "./FilingToolsSheet";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
@@ -20,6 +24,7 @@ interface DashboardTabProps {
   missingReceiptsTotal: number;
   onQuickAdd: (categoryId?: string) => void;
   onNavigateTab: (tab: "reliefs" | "receipts" | "settings") => void;
+  onOpenTool: (tool: FilingToolTab) => void;
   onLoadSampleData: () => void;
 }
 
@@ -29,6 +34,7 @@ export function DashboardTab({
   missingReceiptsTotal,
   onQuickAdd,
   onNavigateTab,
+  onOpenTool,
   onLoadSampleData,
 }: DashboardTabProps) {
   const activeCategories = summary.categorySummaries
@@ -103,6 +109,48 @@ export function DashboardTab({
             Edit Income
           </button>
         </div>
+      </section>
+
+      {/* Quick-Launch Filing & Tax Tools */}
+      <section className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          onClick={() => onOpenTool("form-be")}
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+        >
+          <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700">
+            <ClipboardList className="h-4 w-4" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800">
+            Form BE Sheet
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenTool("year-end")}
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+        >
+          <div className="rounded-xl bg-teal-50 p-2 text-teal-700">
+            <Repeat className="h-4 w-4" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800">
+            Year-End &amp; Bills
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenTool("joint-vs-separate")}
+          className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-xs transition active:scale-[0.98]"
+        >
+          <div className="rounded-xl bg-indigo-50 p-2 text-indigo-700">
+            <Scale className="h-4 w-4" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800">
+            Joint vs Sep
+          </span>
+        </button>
       </section>
 
       {/* Empty state quick-start banner */}

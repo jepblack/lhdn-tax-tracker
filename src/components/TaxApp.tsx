@@ -25,6 +25,7 @@ import {
 import { getSupabaseClient } from "@/lib/supabase";
 import { TaxExpense, TaxProfile, TaxYear } from "@/lib/types";
 import { DashboardTab } from "./DashboardTab";
+import { FilingToolsSheet, FilingToolTab } from "./FilingToolsSheet";
 import { ReceiptScannerModal } from "./ReceiptScannerModal";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReliefsTab } from "./ReliefsTab";
@@ -53,6 +54,10 @@ export function TaxApp() {
   const [scannerSubCategoryId, setScannerSubCategoryId] = useState<
     string | undefined
   >(undefined);
+
+  // Filing tools sheet state
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsTab, setToolsTab] = useState<FilingToolTab>("form-be");
 
   // Listen to Supabase auth state + capture Google Drive provider_token
   useEffect(() => {
@@ -262,6 +267,10 @@ export function TaxApp() {
                 missingReceiptsTotal={missingReceiptsTotal}
                 onQuickAdd={(catId) => openScanner(catId)}
                 onNavigateTab={(tab) => setActiveTab(tab)}
+                onOpenTool={(tool) => {
+                  setToolsTab(tool);
+                  setToolsOpen(true);
+                }}
                 onLoadSampleData={handleLoadSampleData}
               />
             )}
@@ -279,6 +288,8 @@ export function TaxApp() {
             {activeTab === "receipts" && (
               <ReceiptsTab
                 taxYear={taxYear}
+                profile={profile}
+                summary={summary}
                 expenses={expenses}
                 onDelete={handleDeleteExpense}
                 onAddNew={() => openScanner()}
@@ -355,6 +366,33 @@ export function TaxApp() {
         existingExpenses={expenses}
         onClose={() => setScannerOpen(false)}
         onSave={handleSaveExpense}
+      />
+
+      {/* Filing & Tax Maximizer Tools Sheet */}
+      <FilingToolsSheet
+        isOpen={toolsOpen}
+        initialTab={toolsTab}
+        profile={profile}
+        summary={summary}
+        expenses={expenses}
+        onClose={() => setToolsOpen(false)}
+        onQuickAdd={(catId, subId) => openScanner(catId, subId)}
+        onQuickLogTemplate={async (tpl) => {
+          const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+          await handleSaveExpense(
+            {
+              taxYear,
+              categoryId: tpl.categoryId,
+              subCategoryId: tpl.subCategoryId || null,
+              merchant: tpl.merchant,
+              description: tpl.description,
+              amount: tpl.amount,
+              expenseDate: today,
+              aiExtracted: false,
+            },
+            null
+          );
+        }}
       />
     </div>
   );
