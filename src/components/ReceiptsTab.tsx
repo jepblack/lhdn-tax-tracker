@@ -281,7 +281,7 @@ export function ReceiptsTab({
                       }
                     }
                     const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), 16000);
+                    const timer = setTimeout(() => controller.abort(), 42000);
                     let res: Response;
                     try {
                       res = await fetch("/api/parse-annual-doc", {

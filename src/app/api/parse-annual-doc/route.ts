@@ -6,6 +6,7 @@ import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { AnnualDocExtraction, AnnualDocType } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 const GEMINI_MODEL = "gemini-3.8-flash";
 
 async function isAuthed(request: Request): Promise<boolean> {
@@ -144,12 +145,12 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
 
         let response;
         try {
-          response = await withTimeout(callGemini(), 12000);
+          response = await withTimeout(callGemini(), 35000);
         } catch (firstErr) {
           const m = firstErr instanceof Error ? firstErr.message : String(firstErr);
           if (m.includes("503") || m.includes("UNAVAILABLE")) {
             await new Promise((r) => setTimeout(r, 800));
-            response = await withTimeout(callGemini(), 10000);
+            response = await withTimeout(callGemini(), 25000);
           } else {
             throw firstErr;
           }
