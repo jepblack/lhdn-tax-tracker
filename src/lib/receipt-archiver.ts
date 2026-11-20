@@ -127,7 +127,7 @@ export function findDuplicateExpense(
     ) {
       return {
         match: exp,
-        reason: "Exact same receipt file (identical SHA-256 hash) already archived.",
+        reason: `Exact same receipt file (identical SHA-256 hash) already archived under YA ${exp.taxYear} (${exp.merchant}, ${exp.expenseDate}).`,
       };
     }
 
@@ -139,7 +139,7 @@ export function findDuplicateExpense(
     if (normInv && expInv && normInv === expInv && normMerchant === expMerchant) {
       return {
         match: exp,
-        reason: `Same receipt/invoice number (#${candidate.invoiceNumber}) from ${exp.merchant}.`,
+        reason: `Same receipt/invoice number (#${candidate.invoiceNumber}) from ${exp.merchant} already saved under YA ${exp.taxYear}.`,
       };
     }
 
@@ -154,7 +154,7 @@ export function findDuplicateExpense(
     if (sameDate && sameAmount && similarMerchant) {
       return {
         match: exp,
-        reason: `Possible duplicate: ${exp.merchant} on ${exp.expenseDate} for RM ${exp.amount.toFixed(2)}.`,
+        reason: `Possible duplicate under YA ${exp.taxYear}: ${exp.merchant} on ${exp.expenseDate} for RM ${exp.amount.toFixed(2)}.`,
       };
     }
   }

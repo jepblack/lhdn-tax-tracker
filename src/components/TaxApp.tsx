@@ -600,6 +600,9 @@ export function TaxApp() {
     }
     const created = await createExpense(expenseData, receiptFile, userId);
     setExpenses((prev) => [created, ...prev]);
+    if (created.taxYear !== taxYear && SUPPORTED_TAX_YEARS.includes(created.taxYear)) {
+      setTaxYear(created.taxYear);
+    }
   }
 
   async function handleDeleteExpense(expense: TaxExpense) {
