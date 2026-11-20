@@ -1,4 +1,4 @@
-export type TaxYear = 2025 | 2026;
+export type TaxYear = number;
 
 export interface ReliefSubCategory {
   id: string;

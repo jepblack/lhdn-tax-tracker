@@ -22,7 +22,10 @@ import {
   saveGoogleDriveToken,
   uploadAnnualDocToGoogleDrive,
 } from "@/lib/google-drive";
-import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
+import {
+  isTaxYearRetentionExpired,
+  SUPPORTED_TAX_YEARS,
+} from "@/lib/lhdn-rules";
 import {
   createExpense,
   fetchAnnualStateFromCloud,
@@ -562,6 +565,22 @@ export function TaxApp() {
     [expenses, taxYear]
   );
 
+  const expenseCountByYear = useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (const e of expenses) {
+      counts[e.taxYear] = (counts[e.taxYear] || 0) + 1;
+    }
+    return counts;
+  }, [expenses]);
+
+  const availableTaxYears = useMemo(() => {
+    const set = new Set<number>(SUPPORTED_TAX_YEARS);
+    for (const e of expenses) set.add(e.taxYear);
+    for (const d of annualDocs) set.add(d.taxYear);
+    set.add(taxYear);
+    return Array.from(set).sort((a, b) => b - a);
+  }, [expenses, annualDocs, taxYear]);
+
   const missingReceiptsTotal = useMemo(
     () => yearExpenses.filter((e) => !e.receiptPath && !e.receiptUrl).length,
     [yearExpenses]
@@ -756,23 +775,25 @@ export function TaxApp() {
               )}
             </button>
 
-            {/* Year of Assessment Switcher */}
-            <div className="flex items-center rounded-xl bg-slate-100 p-1">
-              {SUPPORTED_TAX_YEARS.map((yr) => (
-                <button
-                  key={yr}
-                  type="button"
-                  onClick={() => setTaxYear(yr)}
-                  className={`rounded-lg px-2 py-1 text-xs font-bold transition ${
-                    taxYear === yr
-                      ? "bg-white text-emerald-700 shadow-xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {yr}
-                </button>
-              ))}
-            </div>
+            {/* Dynamic Rolling 7-Year LHDN Switcher */}
+            <select
+              aria-label="Year of Assessment"
+              value={taxYear}
+              onChange={(e) => setTaxYear(Number(e.target.value))}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {availableTaxYears.map((yr) => {
+                const count = expenseCountByYear[yr] || 0;
+                const expired = isTaxYearRetentionExpired(yr);
+                return (
+                  <option key={yr} value={yr}>
+                    YA {yr}
+                    {count > 0 ? ` (${count})` : ""}
+                    {expired ? " • Expired (>7y)" : ""}
+                  </option>
+                );
+              })}
+            </select>
           </div>
         </div>
       </header>

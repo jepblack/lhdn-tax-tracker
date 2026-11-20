@@ -3,7 +3,11 @@ import {
   getGoogleDriveToken,
   saveGoogleDriveToken,
 } from "./google-drive";
-import { DEFAULT_STATUS_RELIEFS, getReliefCategories } from "./lhdn-rules";
+import {
+  DEFAULT_STATUS_RELIEFS,
+  getReliefCategories,
+  SUPPORTED_TAX_YEARS,
+} from "./lhdn-rules";
 import { buildJsonMetadataFile } from "./receipt-archiver";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 import {
@@ -392,7 +396,7 @@ export async function syncLocalDataToCloud(
 
   // 1. Sync Profile
   try {
-    for (const yr of [2025, 2026] as TaxYear[]) {
+    for (const yr of SUPPORTED_TAX_YEARS) {
       const localProf = loadLocalProfile(yr);
       if (localProf && (localProf.annualIncome !== 96000 || localProf.zakatPaid > 0 || localProf.pcbPaid !== 6200)) {
         await persistProfile(localProf, userId);
@@ -463,7 +467,7 @@ export async function syncLocalDataToCloud(
   try {
     const localDocs = loadLocalAnnualDocs();
     const localBaselines = loadLocalBaselines();
-    for (const yr of [2025, 2026] as TaxYear[]) {
+    for (const yr of SUPPORTED_TAX_YEARS) {
       const docsForYear = localDocs.filter((d) => d.taxYear === yr);
       const baselineForYear = localBaselines[String(yr)] || null;
       if (docsForYear.length > 0 || baselineForYear) {

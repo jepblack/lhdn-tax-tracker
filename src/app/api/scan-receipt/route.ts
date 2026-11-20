@@ -42,7 +42,8 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const rawYear = Number(formData.get("taxYear") || 2026);
-    const taxYear: TaxYear = rawYear === 2025 ? 2025 : 2026;
+    const taxYear: TaxYear =
+      rawYear >= 2015 && rawYear <= 2035 ? rawYear : 2026;
 
     if (!file) {
       return NextResponse.json(

@@ -1,6 +1,29 @@
 import { ReliefCategory, StatusReliefs, TaxYear } from "./types";
 
-export const SUPPORTED_TAX_YEARS: TaxYear[] = [2026, 2025];
+/**
+ * Dynamic rolling 7-year LHDN Section 82A audit window:
+ * Returns current calendar year + 7 prior Years of Assessment (e.g., 2026..2019 in 2026; 2027..2020 in 2027).
+ */
+export function getSupportedTaxYears(
+  referenceYear = new Date().getFullYear()
+): TaxYear[] {
+  const currentYear = Math.max(2026, referenceYear);
+  const years: TaxYear[] = [];
+  for (let y = currentYear; y >= currentYear - 7; y--) {
+    years.push(y);
+  }
+  return years;
+}
+
+export const SUPPORTED_TAX_YEARS: TaxYear[] = getSupportedTaxYears();
+
+export function isTaxYearRetentionExpired(
+  taxYear: TaxYear,
+  referenceYear = new Date().getFullYear()
+): boolean {
+  const currentYear = Math.max(2026, referenceYear);
+  return taxYear < currentYear - 7;
+}
 
 export const DEFAULT_STATUS_RELIEFS: StatusReliefs = {
   individual: true,
