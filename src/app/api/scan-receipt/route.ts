@@ -232,6 +232,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
     // 2. Try Gemini API if GEMINI_API_KEY is configured
     let geminiErrorMsg: string | null = null;
     if (hasGemini) {
+      let pdfExtractDebug = "n/a";
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
 
@@ -244,11 +245,12 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
               { mergePages: true }
             );
             const joined = Array.isArray(text) ? text.join("\n") : String(text || "");
+            pdfExtractDebug = `len=${joined.trim().length}`;
             if (joined.trim().length >= 20) {
               pdfExtractedText = joined.trim().slice(0, 15000);
             }
-          } catch {
-            // Fall through to inlineData PDF
+          } catch (pdfErr) {
+            pdfExtractDebug = `err=${pdfErr instanceof Error ? pdfErr.message.slice(0, 60) : "unknown"}`;
           }
         }
 
@@ -260,12 +262,8 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             ? mimeType
             : "image/jpeg";
 
-        const parts = pdfExtractedText
-          ? [
-              {
-                text: `${prompt}\n\nIMPORTANT: Return ONLY a raw valid JSON object (no markdown, no explanation).\n\nRECEIPT / INVOICE TEXT:\n${pdfExtractedText}`,
-              },
-            ]
+        const contents = pdfExtractedText
+          ? `${prompt}\n\nIMPORTANT: Return ONLY a raw valid JSON object (no markdown, no explanation).\n\nRECEIPT / INVOICE TEXT:\n${pdfExtractedText}`
           : [
               {
                 text: `${prompt}\n\nIMPORTANT: Return ONLY a raw valid JSON object (no markdown, no explanation).`,
@@ -278,7 +276,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
         try {
           response = await ai.models.generateContent({
             model: GEMINI_MODEL,
-            contents: [{ role: "user", parts }],
+            contents,
           });
         } catch (firstErr) {
           const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
@@ -286,7 +284,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             await new Promise((r) => setTimeout(r, 1500));
             response = await ai.models.generateContent({
               model: GEMINI_MODEL,
-              contents: [{ role: "user", parts }],
+              contents,
             });
           } else {
             throw firstErr;
@@ -305,7 +303,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
           );
         }
       } catch (err) {
-        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${originalByteLength}]`;
+        geminiErrorMsg = `${err instanceof Error ? err.message : String(err)} [mime=${mimeType}, bytes=${originalByteLength}, pdfText=${pdfExtractDebug}]`;
         console.warn("Gemini vision unavailable, falling back to local OCR:", err);
       }
     }
