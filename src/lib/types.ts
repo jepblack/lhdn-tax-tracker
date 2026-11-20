@@ -215,9 +215,10 @@ export interface AnnualTaxDoc {
   label: string;
   fileName: string;
   fileUrl: string;
+  storagePath?: string | null;
   mimeType: string;
   uploadedAt: string;
-  storageProvider: "gdrive" | "local";
+  storageProvider: "gdrive" | "supabase" | "local";
 }
 
 export interface AnnualDocExtraction {

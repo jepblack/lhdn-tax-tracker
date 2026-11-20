@@ -11,6 +11,7 @@ import {
   ListChecks,
   Moon,
   ReceiptText,
+  RefreshCw,
   Settings,
   Shield,
   Sun,
@@ -24,15 +25,18 @@ import {
 import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import {
   createExpense,
+  fetchAnnualStateFromCloud,
   fetchExpenses,
   fetchProfile,
   getDefaultProfile,
   getSampleExpenses,
+  persistAnnualStateToCloud,
   persistProfile,
   removeExpense,
   saveLocalExpenses,
   syncLocalDataToCloud,
   updateExpense,
+  uploadAnnualDocToSupabase,
 } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
@@ -126,7 +130,8 @@ export function TaxApp() {
   ): Promise<AnnualTaxDoc> {
     const driveToken = getGoogleDriveToken();
     let fileUrl = "";
-    let storageProvider: "gdrive" | "local" = "local";
+    let storagePath: string | null = null;
+    let storageProvider: "gdrive" | "supabase" | "local" = "local";
 
     if (driveToken) {
       try {
@@ -134,7 +139,16 @@ export function TaxApp() {
         fileUrl = res.webViewLink;
         storageProvider = "gdrive";
       } catch {
-        // fall back to local data URL
+        // fall back to Supabase Storage or local data URL
+      }
+    }
+
+    if (!fileUrl && userId) {
+      const supaRes = await uploadAnnualDocToSupabase(userId, taxYear, file);
+      if (supaRes) {
+        fileUrl = supaRes.signedUrl;
+        storagePath = supaRes.storagePath;
+        storageProvider = "supabase";
       }
     }
 
@@ -153,20 +167,28 @@ export function TaxApp() {
       label,
       fileName: file.name,
       fileUrl,
+      storagePath,
       mimeType: file.type || "application/pdf",
       uploadedAt: new Date().toISOString(),
       storageProvider,
     };
 
-    setAnnualDocs((prev) => {
-      const next = [newDoc, ...prev];
-      try {
-        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
-      } catch {
-        // ignore quota
-      }
-      return next;
-    });
+    const nextAll = [newDoc, ...annualDocs];
+    setAnnualDocs(nextAll);
+    try {
+      window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(nextAll));
+    } catch {
+      // ignore quota
+    }
+    if (userId) {
+      await persistAnnualStateToCloud(
+        taxYear,
+        nextAll.filter((d) => d.taxYear === taxYear),
+        formBeBaselines[String(taxYear)] || null,
+        profile,
+        userId
+      );
+    }
 
     return newDoc;
   }
@@ -225,6 +247,18 @@ export function TaxApp() {
         }
         return next;
       });
+      if (userId) {
+        const currentDocs = annualDocs.some((d) => d.id === doc.id)
+          ? annualDocs
+          : [doc, ...annualDocs];
+        await persistAnnualStateToCloud(
+          taxYear,
+          currentDocs.filter((d) => d.taxYear === taxYear),
+          baseline,
+          profile,
+          userId
+        );
+      }
     }
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     const provider = ext.providerName || doc.label;
@@ -350,15 +384,69 @@ export function TaxApp() {
   }
 
   function handleDeleteAnnualDoc(id: string) {
-    setAnnualDocs((prev) => {
-      const next = prev.filter((d) => d.id !== id);
-      try {
-        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
-      } catch {
-        // ignore
+    const next = annualDocs.filter((d) => d.id !== id);
+    setAnnualDocs(next);
+    try {
+      window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+    if (userId) {
+      persistAnnualStateToCloud(
+        taxYear,
+        next.filter((d) => d.taxYear === taxYear),
+        formBeBaselines[String(taxYear)] || null,
+        profile,
+        userId
+      );
+    }
+  }
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refreshAllFromCloud(uid: string | null, yr: TaxYear) {
+    const [loadedProfile, loadedExpenses, annualState] = await Promise.all([
+      fetchProfile(yr, uid),
+      fetchExpenses(uid),
+      uid ? fetchAnnualStateFromCloud(yr, uid) : Promise.resolve(null),
+    ]);
+    setProfile(loadedProfile);
+    setExpenses(loadedExpenses);
+    if (annualState) {
+      setAnnualDocs((prev) => {
+        const otherYears = prev.filter((d) => d.taxYear !== yr);
+        const merged = [...annualState.docs, ...otherYears];
+        try {
+          window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(merged));
+        } catch {
+          // ignore
+        }
+        return merged;
+      });
+      if (annualState.baseline) {
+        setFormBeBaselines((prev) => {
+          const next = { ...prev, [String(yr)]: annualState.baseline! };
+          try {
+            window.localStorage.setItem(FORM_BE_BASELINES_KEY, JSON.stringify(next));
+          } catch {
+            // ignore
+          }
+          return next;
+        });
       }
-      return next;
-    });
+    }
+    setIsLoaded(true);
+  }
+
+  async function handleManualRefresh() {
+    if (!userId || refreshing) return;
+    setRefreshing(true);
+    try {
+      await syncLocalDataToCloud(userId);
+      await refreshAllFromCloud(userId, taxYear);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   // Filing tools sheet state
@@ -382,8 +470,8 @@ export function TaxApp() {
       }
       if (uid) {
         syncLocalDataToCloud(uid).then((res) => {
-          if (res.syncedExpenses > 0) {
-            fetchExpenses(uid).then(setExpenses);
+          if (res.syncedExpenses > 0 || res.syncedProfile) {
+            refreshAllFromCloud(uid, taxYear);
           }
         });
       }
@@ -403,8 +491,8 @@ export function TaxApp() {
         }
         if (uid) {
           syncLocalDataToCloud(uid).then((res) => {
-            if (res.syncedExpenses > 0) {
-              fetchExpenses(uid).then(setExpenses);
+            if (res.syncedExpenses > 0 || res.syncedProfile) {
+              refreshAllFromCloud(uid, taxYear);
             }
           });
         }
@@ -416,17 +504,41 @@ export function TaxApp() {
     };
   }, []);
 
-  // Load profile & expenses whenever taxYear or userId changes
+  // Load profile, expenses & annual docs whenever taxYear or userId changes
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [loadedProfile, loadedExpenses] = await Promise.all([
+      const [loadedProfile, loadedExpenses, annualState] = await Promise.all([
         fetchProfile(taxYear, userId),
         fetchExpenses(userId),
+        userId ? fetchAnnualStateFromCloud(taxYear, userId) : Promise.resolve(null),
       ]);
       if (!cancelled) {
         setProfile(loadedProfile);
         setExpenses(loadedExpenses);
+        if (annualState) {
+          setAnnualDocs((prev) => {
+            const otherYears = prev.filter((d) => d.taxYear !== taxYear);
+            const merged = [...annualState.docs, ...otherYears];
+            try {
+              window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(merged));
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+          if (annualState.baseline) {
+            setFormBeBaselines((prev) => {
+              const next = { ...prev, [String(taxYear)]: annualState.baseline! };
+              try {
+                window.localStorage.setItem(FORM_BE_BASELINES_KEY, JSON.stringify(next));
+              } catch {
+                // ignore
+              }
+              return next;
+            });
+          }
+        }
         setIsLoaded(true);
       }
     }
@@ -579,16 +691,27 @@ export function TaxApp() {
 
           <div className="flex items-center gap-1.5">
             {userEmail ? (
-              <button
-                type="button"
-                onClick={() => setActiveTab("settings")}
-                title={`Signed in as ${userEmail} — tap to view Cloud Sync settings`}
-                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition"
-              >
-                <Cloud className="h-3 w-3 text-emerald-600" />
-                <span className="hidden sm:inline">{userEmail.split("@")[0]}</span>
-                <span className="sm:hidden">Synced</span>
-              </button>
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("settings")}
+                  title={`Signed in as ${userEmail} — tap to view Cloud Sync settings`}
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition"
+                >
+                  <Cloud className="h-3 w-3 text-emerald-600" />
+                  <span className="hidden sm:inline">{userEmail.split("@")[0]}</span>
+                  <span className="sm:hidden">Synced</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleManualRefresh}
+                  disabled={refreshing}
+                  title="Sync now (pull latest from cloud)"
+                  className="rounded-xl p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                </button>
+              </div>
             ) : (
               <button
                 type="button"

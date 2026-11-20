@@ -6,10 +6,18 @@ import {
 import { DEFAULT_STATUS_RELIEFS, getReliefCategories } from "./lhdn-rules";
 import { buildJsonMetadataFile } from "./receipt-archiver";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
-import { TaxExpense, TaxProfile, TaxYear } from "./types";
+import {
+  AnnualTaxDoc,
+  FormBeBaseline,
+  TaxExpense,
+  TaxProfile,
+  TaxYear,
+} from "./types";
 
 const LOCAL_EXPENSES_KEY = "cukaiku_expenses_v1";
 const LOCAL_PROFILES_KEY = "cukaiku_profiles_v1";
+const LOCAL_ANNUAL_DOCS_KEY = "cukaiku_annual_docs_v1";
+const LOCAL_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
 
 export function getDefaultProfile(taxYear: TaxYear): TaxProfile {
   return {
@@ -75,6 +83,26 @@ export function saveLocalProfile(profile: TaxProfile): void {
 
 // ---------- Cloud (Supabase) + Local Unified Data Layer ----------
 
+function loadLocalAnnualDocs(): AnnualTaxDoc[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_ANNUAL_DOCS_KEY);
+    return raw ? (JSON.parse(raw) as AnnualTaxDoc[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadLocalBaselines(): Record<string, FormBeBaseline> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LOCAL_BASELINES_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, FormBeBaseline>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchProfile(
   taxYear: TaxYear,
   userId?: string | null
@@ -89,6 +117,9 @@ export async function fetchProfile(
       .maybeSingle();
 
     if (!error && data) {
+      const rawStatus = { ...(data.status_reliefs || {}) } as Record<string, unknown>;
+      delete rawStatus._annualDocs;
+      delete rawStatus._formBeBaseline;
       return {
         taxYear,
         annualIncome: Number(data.annual_income),
@@ -96,7 +127,7 @@ export async function fetchProfile(
         pcbPaid: Number(data.pcb_paid),
         statusReliefs: {
           ...DEFAULT_STATUS_RELIEFS,
-          ...(data.status_reliefs || {}),
+          ...rawStatus,
         },
       };
     }
@@ -111,18 +142,150 @@ export async function persistProfile(
   saveLocalProfile(profile);
   const supabase = getSupabaseClient();
   if (supabase && userId) {
-    await supabase.from("tax_profiles").upsert(
+    // Preserve any synced _annualDocs / _formBeBaseline stored inside status_reliefs jsonb
+    const { data: existing } = await supabase
+      .from("tax_profiles")
+      .select("status_reliefs")
+      .eq("user_id", userId)
+      .eq("tax_year", profile.taxYear)
+      .maybeSingle();
+
+    const existingStatus = (existing?.status_reliefs || {}) as Record<string, unknown>;
+    const mergedStatus: Record<string, unknown> = {
+      ...profile.statusReliefs,
+    };
+    if (existingStatus._annualDocs !== undefined) {
+      mergedStatus._annualDocs = existingStatus._annualDocs;
+    }
+    if (existingStatus._formBeBaseline !== undefined) {
+      mergedStatus._formBeBaseline = existingStatus._formBeBaseline;
+    }
+
+    const { error } = await supabase.from("tax_profiles").upsert(
       {
         user_id: userId,
         tax_year: profile.taxYear,
         annual_income: profile.annualIncome,
         zakat_paid: profile.zakatPaid,
         pcb_paid: profile.pcbPaid,
-        status_reliefs: profile.statusReliefs,
+        status_reliefs: mergedStatus,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,tax_year" }
     );
+    if (error) {
+      console.error("Failed to persist profile to Supabase:", error);
+    }
+  }
+}
+
+export async function uploadAnnualDocToSupabase(
+  userId: string,
+  taxYear: TaxYear,
+  file: File
+): Promise<{ storagePath: string; signedUrl: string } | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !userId) return null;
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
+  const storagePath = `${userId}/AnnualDocs/${taxYear}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage
+    .from("receipts")
+    .upload(storagePath, file, { upsert: true });
+  if (error) {
+    console.error("Failed to upload annual doc to Supabase Storage:", error);
+    return null;
+  }
+  const { data: signed } = await supabase.storage
+    .from("receipts")
+    .createSignedUrl(storagePath, 3600);
+  return {
+    storagePath,
+    signedUrl: signed?.signedUrl || "",
+  };
+}
+
+export async function fetchAnnualStateFromCloud(
+  taxYear: TaxYear,
+  userId?: string | null
+): Promise<{ docs: AnnualTaxDoc[]; baseline: FormBeBaseline | null } | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !userId) return null;
+
+  const { data, error } = await supabase
+    .from("tax_profiles")
+    .select("status_reliefs")
+    .eq("user_id", userId)
+    .eq("tax_year", taxYear)
+    .maybeSingle();
+
+  if (error || !data?.status_reliefs) return null;
+  const raw = data.status_reliefs as Record<string, unknown>;
+  const rawDocs = Array.isArray(raw._annualDocs)
+    ? (raw._annualDocs as AnnualTaxDoc[])
+    : [];
+  const baseline = (raw._formBeBaseline as FormBeBaseline | null) || null;
+
+  // Refresh signed URLs for Supabase-stored annual docs
+  const docs = await Promise.all(
+    rawDocs.map(async (d) => {
+      if (d.storageProvider === "supabase" && d.storagePath) {
+        const { data: signed } = await supabase.storage
+          .from("receipts")
+          .createSignedUrl(d.storagePath, 3600);
+        if (signed?.signedUrl) {
+          return { ...d, fileUrl: signed.signedUrl };
+        }
+      }
+      return d;
+    })
+  );
+
+  return { docs, baseline };
+}
+
+export async function persistAnnualStateToCloud(
+  taxYear: TaxYear,
+  docsForYear: AnnualTaxDoc[],
+  baselineForYear: FormBeBaseline | null,
+  profile: TaxProfile,
+  userId?: string | null
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !userId) return;
+
+  // Strip huge inline base64 data URLs before saving to Postgres JSONB
+  const sanitizedDocs = docsForYear.map((d) =>
+    d.fileUrl?.startsWith("data:") ? { ...d, fileUrl: "" } : d
+  );
+
+  const { data: existing } = await supabase
+    .from("tax_profiles")
+    .select("annual_income, zakat_paid, pcb_paid, status_reliefs")
+    .eq("user_id", userId)
+    .eq("tax_year", taxYear)
+    .maybeSingle();
+
+  const existingStatus = (existing?.status_reliefs || profile.statusReliefs || {}) as Record<string, unknown>;
+  const nextStatus: Record<string, unknown> = {
+    ...existingStatus,
+    _annualDocs: sanitizedDocs,
+    _formBeBaseline: baselineForYear,
+  };
+
+  const { error } = await supabase.from("tax_profiles").upsert(
+    {
+      user_id: userId,
+      tax_year: taxYear,
+      annual_income: existing?.annual_income ?? profile.annualIncome,
+      zakat_paid: existing?.zakat_paid ?? profile.zakatPaid,
+      pcb_paid: existing?.pcb_paid ?? profile.pcbPaid,
+      status_reliefs: nextStatus,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,tax_year" }
+  );
+  if (error) {
+    console.error("Failed to persist annual docs/baseline to Supabase:", error);
   }
 }
 
@@ -235,12 +398,47 @@ export async function syncLocalDataToCloud(
             receipt_file_name: exp.receiptFileName || null,
             ai_extracted: Boolean(exp.aiExtracted),
           });
-          if (!insErr) syncedExpenses++;
+          if (!insErr) {
+            syncedExpenses++;
+          } else {
+            console.error("Failed to sync local expense:", insErr);
+          }
         }
       }
     }
   } catch (err) {
     console.warn("Could not sync local expenses to cloud:", err);
+  }
+
+  // 3. Sync Annual Docs & Form BE Baselines
+  try {
+    const localDocs = loadLocalAnnualDocs();
+    const localBaselines = loadLocalBaselines();
+    for (const yr of [2025, 2026] as TaxYear[]) {
+      const docsForYear = localDocs.filter((d) => d.taxYear === yr);
+      const baselineForYear = localBaselines[String(yr)] || null;
+      if (docsForYear.length > 0 || baselineForYear) {
+        const cloudState = await fetchAnnualStateFromCloud(yr, userId);
+        const existingDocs = cloudState?.docs || [];
+        const existingDocIds = new Set(existingDocs.map((d) => d.id));
+        const mergedDocs = [
+          ...existingDocs,
+          ...docsForYear.filter((d) => !existingDocIds.has(d.id)),
+        ];
+        const mergedBaseline = cloudState?.baseline || baselineForYear;
+        if (mergedDocs.length > existingDocs.length || (!cloudState?.baseline && baselineForYear)) {
+          await persistAnnualStateToCloud(
+            yr,
+            mergedDocs,
+            mergedBaseline,
+            loadLocalProfile(yr),
+            userId
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not sync annual docs/baselines to cloud:", err);
   }
 
   return { syncedExpenses, syncedProfile };
