@@ -273,7 +273,11 @@ export function TaxApp() {
       : {
           receiptUrl: doc.fileUrl,
           receiptPath:
-            doc.storageProvider === "gdrive" ? `gdrive:${doc.fileUrl}` : null,
+            doc.storageProvider === "gdrive"
+              ? `gdrive:${doc.fileUrl}`
+              : doc.storageProvider === "supabase"
+              ? doc.storagePath || null
+              : null,
           receiptFileName: doc.fileName,
           receiptMimeType: doc.mimeType,
           aiExtracted: true,
