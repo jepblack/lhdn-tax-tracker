@@ -66,7 +66,9 @@ const FORM_BE_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
 type ActiveTab = "dashboard" | "reliefs" | "receipts" | "settings";
 
 export function TaxApp() {
-  const [taxYear, setTaxYear] = useState<TaxYear>(2026);
+  const [taxYear, setTaxYear] = useState<TaxYear>(
+    () => SUPPORTED_TAX_YEARS[0] || 2026
+  );
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
