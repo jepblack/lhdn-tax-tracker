@@ -7,6 +7,63 @@ import { ReceiptEligibility, TaxYear } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+/**
+ * Live Gemini API Key health check (never exposes full secret — only prefix + live ping)
+ */
+export async function GET() {
+  const geminiKey = process.env.GEMINI_API_KEY?.trim() || "";
+  if (!geminiKey || geminiKey === "your-gemini-api-key") {
+    return NextResponse.json({
+      ok: false,
+      configured: false,
+      keyPrefix: null,
+      error: "GEMINI_API_KEY is not set on the server.",
+      hint: "Add GEMINI_API_KEY (starts with AIza...) in Vercel Environment Variables and redeploy.",
+    });
+  }
+
+  const keyPrefix = `${geminiKey.slice(0, 6)}...${geminiKey.slice(-4)}`;
+  const startedAt = Date.now();
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: geminiKey, vertexai: false });
+    const res = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: "Reply with OK",
+    });
+
+    return NextResponse.json({
+      ok: true,
+      configured: true,
+      keyPrefix,
+      model: "gemini-2.5-flash",
+      latencyMs: Date.now() - startedAt,
+      reply: (res.text || "OK").trim().slice(0, 30),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    let hint = "Verify your Gemini API key and redeploy Vercel.";
+    if (geminiKey.startsWith("AQ.")) {
+      hint =
+        "The server is still loading an AQ.* key. Create a standard AIza... key with 'Generative Language API' enabled, update GEMINI_API_KEY in Vercel, and Redeploy.";
+    } else if (msg.includes("API_KEY_INVALID") || msg.includes("401")) {
+      hint =
+        "Google rejected this key. Ensure 'Generative Language API' is enabled on the Google Cloud project and the key isn't restricted to 'Gemini API'.";
+    } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+      hint = "Free-tier rate limit reached temporarily — wait 1 minute and retry.";
+    }
+
+    return NextResponse.json({
+      ok: false,
+      configured: true,
+      keyPrefix,
+      latencyMs: Date.now() - startedAt,
+      error: msg.slice(0, 300),
+      hint,
+    });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -126,6 +183,7 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
     }
 
     // 2. Try Gemini API if GEMINI_API_KEY is configured
+    let geminiErrorMsg: string | null = null;
     if (hasGemini) {
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
@@ -187,6 +245,7 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
           );
         }
       } catch (err) {
+        geminiErrorMsg = err instanceof Error ? err.message : String(err);
         console.warn("Gemini vision unavailable, falling back to local OCR:", err);
       }
     }
@@ -194,13 +253,22 @@ Return strict JSON with keys: eligibility, merchant, date (YYYY-MM-DD), totalAmo
     // 3. If PDF, extract text directly on server with unpdf before falling back
     if (isPdf) {
       const pdfResult = await tryExtractPdfReceipt(arrayBuffer, taxYear);
-      if (pdfResult) return NextResponse.json(pdfResult);
+      if (pdfResult) {
+        return NextResponse.json({
+          ...pdfResult,
+          aiSkippedReason: geminiErrorMsg
+            ? `Gemini AI failed (${geminiKey?.slice(0, 6)}...): fell back to PDF text parser.`
+            : undefined,
+        });
+      }
     }
 
-    // 4. Seamless fallback to client-side free OCR (never fail with a scary 401/500)
+    // 4. Seamless fallback to client-side free OCR (include diagnostic reason!)
     return NextResponse.json({
       fallbackToLocalOcr: true,
-      aiSkippedReason: "External AI unavailable — switched automatically to built-in free OCR.",
+      aiSkippedReason: geminiErrorMsg
+        ? `Gemini AI unavailable (key ${geminiKey?.slice(0, 6)}...): ${geminiErrorMsg.slice(0, 140)}`
+        : "External AI unavailable — switched automatically to built-in free OCR.",
     });
   } catch (err) {
     console.error("Scan route error:", err);

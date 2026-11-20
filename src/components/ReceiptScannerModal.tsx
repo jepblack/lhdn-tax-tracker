@@ -205,6 +205,9 @@ export function ReceiptScannerModal({
 
         if (res.ok) {
           const data = await res.json();
+          if (data.aiSkippedReason) {
+            setScanNotice(data.aiSkippedReason);
+          }
           if (!data.fallbackToLocalOcr && data.eligibility) {
             applyScanResult(data as ReceiptScanResult);
             usedCloudAi = true;
