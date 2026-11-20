@@ -1009,10 +1009,10 @@ export function ReceiptScannerModal({
                 {isSaving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Building Searchable PDF & Archiving...
+                    Saving...
                   </>
                 ) : (
-                  `Archive PDF + JSON to YA ${targetTaxYear}`
+                  "Save Receipt"
                 )}
               </button>
             </>
