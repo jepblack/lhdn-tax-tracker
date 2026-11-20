@@ -343,14 +343,52 @@ export async function fetchExpenses(
  * Syncs any local expenses or profiles stored in browser memory to the user's Supabase cloud account.
  * This ensures that work done before signing in is not stranded in the browser.
  */
+export async function getCloudSyncStatus(userId: string): Promise<{
+  cloudExpensesCount: number;
+  cloudProfilesCount: number;
+  localExpensesCount: number;
+  error: string | null;
+}> {
+  const localExpensesCount = loadLocalExpenses().length;
+  const supabase = getSupabaseClient();
+  if (!supabase || !userId) {
+    return {
+      cloudExpensesCount: 0,
+      cloudProfilesCount: 0,
+      localExpensesCount,
+      error: "Supabase not connected or user not signed in.",
+    };
+  }
+
+  const [expRes, profRes] = await Promise.all([
+    supabase
+      .from("tax_expenses")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+    supabase
+      .from("tax_profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+  ]);
+
+  const err = expRes.error || profRes.error;
+  return {
+    cloudExpensesCount: expRes.count || 0,
+    cloudProfilesCount: profRes.count || 0,
+    localExpensesCount,
+    error: err ? `${err.code || ""} ${err.message}`.trim() : null,
+  };
+}
+
 export async function syncLocalDataToCloud(
   userId: string
-): Promise<{ syncedExpenses: number; syncedProfile: boolean }> {
+): Promise<{ syncedExpenses: number; syncedProfile: boolean; error?: string }> {
   const supabase = getSupabaseClient();
   if (!supabase || !userId) return { syncedExpenses: 0, syncedProfile: false };
 
   let syncedExpenses = 0;
   let syncedProfile = false;
+  let lastError: string | undefined;
 
   // 1. Sync Profile
   try {
@@ -362,6 +400,7 @@ export async function syncLocalDataToCloud(
       }
     }
   } catch (err) {
+    lastError = err instanceof Error ? err.message : "Failed to sync profile";
     console.warn("Could not sync local profile to cloud:", err);
   }
 
@@ -369,44 +408,50 @@ export async function syncLocalDataToCloud(
   try {
     const local = loadLocalExpenses();
     if (local.length > 0) {
-      const { data: cloudData } = await supabase
+      const { data: cloudData, error: fetchErr } = await supabase
         .from("tax_expenses")
         .select("id, expense_date, merchant, amount")
         .eq("user_id", userId);
 
-      const existingKeys = new Set(
-        (cloudData || []).map(
-          (r) => `${r.expense_date}_${r.merchant}_${Number(r.amount).toFixed(2)}`
-        )
-      );
+      if (fetchErr) {
+        lastError = `${fetchErr.code || ""} ${fetchErr.message}`.trim();
+      } else {
+        const existingKeys = new Set(
+          (cloudData || []).map(
+            (r) => `${r.expense_date}_${r.merchant}_${Number(r.amount).toFixed(2)}`
+          )
+        );
 
-      for (const exp of local) {
-        const key = `${exp.expenseDate}_${exp.merchant}_${Number(exp.amount).toFixed(2)}`;
-        if (!existingKeys.has(key)) {
-          const { error: insErr } = await supabase.from("tax_expenses").insert({
-            user_id: userId,
-            tax_year: exp.taxYear,
-            category_id: exp.categoryId,
-            sub_category_id: exp.subCategoryId || null,
-            merchant: exp.merchant,
-            description: exp.description || "",
-            amount: exp.amount,
-            expense_date: exp.expenseDate,
-            invoice_number: exp.invoiceNumber || "",
-            receipt_path: exp.receiptPath || null,
-            receipt_mime_type: exp.receiptMimeType || null,
-            receipt_file_name: exp.receiptFileName || null,
-            ai_extracted: Boolean(exp.aiExtracted),
-          });
-          if (!insErr) {
-            syncedExpenses++;
-          } else {
-            console.error("Failed to sync local expense:", insErr);
+        for (const exp of local) {
+          const key = `${exp.expenseDate}_${exp.merchant}_${Number(exp.amount).toFixed(2)}`;
+          if (!existingKeys.has(key)) {
+            const { error: insErr } = await supabase.from("tax_expenses").insert({
+              user_id: userId,
+              tax_year: exp.taxYear,
+              category_id: exp.categoryId,
+              sub_category_id: exp.subCategoryId || null,
+              merchant: exp.merchant,
+              description: exp.description || "",
+              amount: exp.amount,
+              expense_date: exp.expenseDate,
+              invoice_number: exp.invoiceNumber || "",
+              receipt_path: exp.receiptPath || null,
+              receipt_mime_type: exp.receiptMimeType || null,
+              receipt_file_name: exp.receiptFileName || null,
+              ai_extracted: Boolean(exp.aiExtracted),
+            });
+            if (!insErr) {
+              syncedExpenses++;
+            } else {
+              lastError = `${insErr.code || ""} ${insErr.message}`.trim();
+              console.error("Failed to sync local expense:", insErr);
+            }
           }
         }
       }
     }
   } catch (err) {
+    lastError = err instanceof Error ? err.message : "Failed to sync expenses";
     console.warn("Could not sync local expenses to cloud:", err);
   }
 
@@ -441,7 +486,7 @@ export async function syncLocalDataToCloud(
     console.warn("Could not sync annual docs/baselines to cloud:", err);
   }
 
-  return { syncedExpenses, syncedProfile };
+  return { syncedExpenses, syncedProfile, error: lastError };
 }
 
 export async function createExpense(

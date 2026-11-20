@@ -27,7 +27,7 @@ import {
   parseMalaysianPayslipText,
   PayslipExtraction,
 } from "@/lib/payslip-parser";
-import { syncLocalDataToCloud } from "@/lib/storage";
+import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { TaxExpense, TaxProfile } from "@/lib/types";
 
@@ -288,13 +288,17 @@ export function SettingsTab({
     setMigrateMsg(null);
     try {
       const res = await syncLocalDataToCloud(session.user.id);
-      if (res.syncedExpenses > 0) {
-        setMigrateMsg(`Successfully pushed ${res.syncedExpenses} local receipt(s) to cloud! They are now available across all your devices.`);
+      const status = await getCloudSyncStatus(session.user.id);
+      const errNote = res.error || status.error;
+      if (errNote) {
+        setMigrateMsg(`Cloud sync error: ${errNote} (Cloud: ${status.cloudExpensesCount} expenses, Local: ${status.localExpensesCount})`);
+      } else if (res.syncedExpenses > 0) {
+        setMigrateMsg(`Pushed ${res.syncedExpenses} local receipt(s) to cloud! Total in cloud: ${status.cloudExpensesCount} expenses, ${status.cloudProfilesCount} profiles.`);
       } else {
-        setMigrateMsg("All receipts and profile details are already up to date in the cloud.");
+        setMigrateMsg(`Cloud is up to date (${status.cloudExpensesCount} expenses, ${status.cloudProfilesCount} profiles in cloud; ${status.localExpensesCount} in local cache). User ID: ${session.user.id.slice(0, 8)}...`);
       }
-    } catch {
-      setMigrateMsg("Failed to push local records to cloud. Please check connection.");
+    } catch (err) {
+      setMigrateMsg(err instanceof Error ? err.message : "Failed to push local records to cloud.");
     } finally {
       setMigratingLocal(false);
     }
