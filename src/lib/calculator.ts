@@ -259,7 +259,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function formatRM(amount: number, showDecimals = false): string {
+export function formatRM(amount: number, showDecimals = true): string {
   return `RM ${amount.toLocaleString("en-MY", {
     minimumFractionDigits: showDecimals ? 2 : 0,
     maximumFractionDigits: showDecimals ? 2 : 0,
