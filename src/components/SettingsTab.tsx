@@ -64,36 +64,6 @@ export function SettingsTab({
   const [showPayslipText, setShowPayslipText] = useState(false);
   const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
 
-  // Live Gemini AI Key Tester state
-  const [aiTesting, setAiTesting] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<{
-    ok: boolean;
-    configured: boolean;
-    keyPrefix: string | null;
-    model?: string;
-    latencyMs?: number;
-    error?: string;
-    hint?: string;
-  } | null>(null);
-
-  async function handleTestAiKey() {
-    setAiTesting(true);
-    try {
-      const res = await fetch("/api/scan-receipt", { method: "GET" });
-      const data = await res.json();
-      setAiTestResult(data);
-    } catch {
-      setAiTestResult({
-        ok: false,
-        configured: false,
-        keyPrefix: null,
-        error: "Could not reach /api/scan-receipt.",
-      });
-    } finally {
-      setAiTesting(false);
-    }
-  }
-
   async function handlePayslipUpload(file: File | undefined) {
     if (!file) return;
     setPayslipFile(file);
@@ -537,71 +507,6 @@ export function SettingsTab({
             onChange={(v) => updateStatus("disabledChildren", v)}
           />
         </div>
-      </section>
-
-      {/* AI Receipt Scanner (Gemini Vision) Diagnostics */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-sm font-bold text-slate-900">
-              AI Receipt Scanner (Gemini Vision)
-            </h2>
-          </div>
-          <button
-            type="button"
-            disabled={aiTesting}
-            onClick={handleTestAiKey}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white active:scale-95 disabled:opacity-60"
-          >
-            {aiTesting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            Test AI Key
-          </button>
-        </div>
-
-        <p className="text-xs text-slate-500">
-          Verify which <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px]">GEMINI_API_KEY</code> is loaded on the server and test live receipt-vision connectivity.
-        </p>
-
-        {aiTestResult && (
-          <div
-            className={`space-y-1.5 rounded-xl border p-3 text-xs ${
-              aiTestResult.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-rose-200 bg-rose-50 text-rose-900"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2 font-semibold">
-              <span className="flex items-center gap-1.5">
-                {aiTestResult.ok ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 text-rose-600" />
-                )}
-                {aiTestResult.ok
-                  ? `Connected (${aiTestResult.model} • ${aiTestResult.latencyMs}ms)`
-                  : "Gemini AI Key Not Working"}
-              </span>
-              {aiTestResult.keyPrefix && (
-                <span className="rounded bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
-                  {aiTestResult.keyPrefix}
-                </span>
-              )}
-            </div>
-            {aiTestResult.hint && (
-              <p className="text-[11px] font-medium">{aiTestResult.hint}</p>
-            )}
-            {aiTestResult.error && (
-              <p className="break-words font-mono text-[10px] opacity-80">
-                {aiTestResult.error}
-              </p>
-            )}
-          </div>
-        )}
       </section>
 
       {/* Cloud Sync (Supabase) */}

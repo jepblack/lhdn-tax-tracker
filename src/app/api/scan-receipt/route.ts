@@ -9,59 +9,6 @@ export const runtime = "nodejs";
 
 const GEMINI_MODEL = "gemini-3.8-flash";
 
-/**
- * Live Gemini API Key health check (never exposes full secret — only prefix + live ping)
- */
-export async function GET() {
-  const geminiKey = process.env.GEMINI_API_KEY?.trim() || "";
-  if (!geminiKey || geminiKey === "your-gemini-api-key") {
-    return NextResponse.json({
-      ok: false,
-      configured: false,
-      keyPrefix: null,
-      error: "GEMINI_API_KEY is not set on the server.",
-      hint: "Add GEMINI_API_KEY in Vercel Environment Variables and redeploy.",
-    });
-  }
-
-  const keyPrefix = `${geminiKey.slice(0, 6)}...${geminiKey.slice(-4)}`;
-  const startedAt = Date.now();
-
-  try {
-    const ai = new GoogleGenAI({ apiKey: geminiKey, vertexai: false });
-    const res = await generateFastWithGemini(ai, "Reply OK", 16);
-
-    return NextResponse.json({
-      ok: true,
-      configured: true,
-      keyPrefix,
-      model: GEMINI_MODEL,
-      latencyMs: Date.now() - startedAt,
-      reply: (res.text || "OK").trim().slice(0, 30),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    let hint = "Verify your Gemini API key and redeploy Vercel.";
-    if (msg.includes("API_KEY_INVALID") || msg.includes("401")) {
-      hint =
-        "Google rejected this key. Create a fresh key in Google AI Studio (aistudio.google.com/apikey), update GEMINI_API_KEY in Vercel, and Redeploy.";
-    } else if (msg.includes("404")) {
-      hint = `Model ${GEMINI_MODEL} returned 404 — check Google's error message below for the recommended model ID.`;
-    } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-      hint = "Free-tier rate limit reached temporarily — wait 1 minute and retry.";
-    }
-
-    return NextResponse.json({
-      ok: false,
-      configured: true,
-      keyPrefix,
-      latencyMs: Date.now() - startedAt,
-      error: msg.slice(0, 300),
-      hint,
-    });
-  }
-}
-
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
