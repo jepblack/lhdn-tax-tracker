@@ -24,6 +24,7 @@ import {
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -257,8 +258,18 @@ export function ReceiptsTab({
                   slot.type !== "other_doc"
                 ) {
                   try {
+                    // For PDFs (especially scanned EA Forms), render Page 1 to JPEG for reliable Gemini Vision reading
+                    let fileForAi: File = file;
+                    const isPdfFile =
+                      file.type === "application/pdf" ||
+                      file.name.toLowerCase().endsWith(".pdf");
+                    if (isPdfFile) {
+                      const renderedJpeg = await renderPdfFirstPageToJpeg(file);
+                      if (renderedJpeg) fileForAi = renderedJpeg;
+                    }
+
                     const fd = new FormData();
-                    fd.append("file", file);
+                    fd.append("file", fileForAi);
                     fd.append("docType", slot.type);
                     fd.append("taxYear", String(taxYear));
                     const headers: Record<string, string> = {};

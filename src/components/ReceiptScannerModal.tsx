@@ -18,6 +18,7 @@ import {
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { runLocalReceiptOcr } from "@/lib/local-ocr";
+import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import {
   buildArchiveBaseFilename,
   buildSearchableReceiptPdf,
@@ -273,10 +274,21 @@ export function ReceiptScannerModal({
 
     setIsScanning(true);
     try {
-      // Step 1: Try cloud AI vision if configured on server (normalize large/exotic images to JPEG + attach auth token)
+      // Step 1: Try cloud AI vision if configured on server (render PDFs or resize images to crisp JPEG)
       let usedCloudAi = false;
+      let fileForOcr: File = file;
       try {
-        const uploadFile = await normalizeImageForAiUpload(file);
+        let uploadFile: File;
+        const isPdf =
+          file.type === "application/pdf" ||
+          file.name.toLowerCase().endsWith(".pdf");
+        if (isPdf) {
+          const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
+          uploadFile = renderedJpeg || file;
+          if (renderedJpeg) fileForOcr = renderedJpeg;
+        } else {
+          uploadFile = await normalizeImageForAiUpload(file);
+        }
         const formData = new FormData();
         formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
@@ -313,7 +325,7 @@ export function ReceiptScannerModal({
       // Step 2: Seamless On-Device Free OCR + Malaysian LHDN Rule Engine
       if (!usedCloudAi) {
         const localResult = await runLocalReceiptOcr(
-          file,
+          fileForOcr,
           targetTaxYear,
           (pct, text) => {
             setScanProgress(pct);
