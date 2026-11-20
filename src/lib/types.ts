@@ -160,7 +160,14 @@ export interface TaxCalculationResult {
   opportunities: ReliefOpportunity[];
 }
 
-export type ReceiptEligibility = "eligible" | "partial" | "rejected";
+export type ReceiptEligibility = "eligible" | "partial" | "uncertain" | "rejected";
+
+export interface SuggestedReliefOption {
+  categoryId: string;
+  subCategoryId?: string | null;
+  label: string;
+  reason: string;
+}
 
 export interface ReceiptScanResult {
   eligibility: ReceiptEligibility;
@@ -172,6 +179,7 @@ export interface ReceiptScanResult {
   description?: string;
   suggestedCategoryId: string | null;
   suggestedSubCategoryId?: string | null;
+  suggestedOptions?: SuggestedReliefOption[];
   confidence: "high" | "medium" | "low";
   reasoning: string;
   rejectionReason?: string;

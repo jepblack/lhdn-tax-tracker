@@ -632,6 +632,83 @@ export function ReceiptScannerModal({
             </div>
           )}
 
+          {/* VERDICT 4: UNCERTAIN — SUGGEST CLOSEST CATEGORIES & ASK USER */}
+          {scanResult && scanResult.eligibility === "uncertain" && (
+            <div className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-xs text-indigo-950">
+              <div className="flex items-start gap-2.5">
+                <div className="rounded-xl bg-indigo-100 p-2 text-indigo-700">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      Confirm Category
+                    </span>
+                    <EngineBadge engine={scanResult.scanEngine} />
+                  </div>
+                  <p className="mt-1.5 font-semibold text-indigo-950">
+                    Unable to confirm the exact purpose of this receipt
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-indigo-800">
+                    {scanResult.reasoning}
+                  </p>
+                </div>
+              </div>
+
+              {scanResult.suggestedOptions &&
+                scanResult.suggestedOptions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-indigo-900">
+                      Tap the closest LHDN relief (or pick any below):
+                    </p>
+                    <div className="space-y-1.5">
+                      {scanResult.suggestedOptions.map((opt, idx) => {
+                        const isSelected =
+                          categoryId === opt.categoryId &&
+                          (!opt.subCategoryId ||
+                            subCategoryId === opt.subCategoryId);
+                        return (
+                          <button
+                            key={`${opt.categoryId}-${opt.subCategoryId || idx}`}
+                            type="button"
+                            onClick={() => {
+                              setCategoryId(opt.categoryId);
+                              setSubCategoryId(opt.subCategoryId || "");
+                            }}
+                            className={`flex w-full items-start justify-between gap-2 rounded-xl border p-2.5 text-left transition ${
+                              isSelected
+                                ? "border-indigo-600 bg-white ring-2 ring-indigo-500/20"
+                                : "border-indigo-200/80 bg-white/75 hover:bg-white"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900">
+                                {opt.label}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-slate-600">
+                                {opt.reason}
+                              </p>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+              <button
+                type="button"
+                onClick={resetScan}
+                className="w-full rounded-xl border border-indigo-200 bg-white/80 py-2 text-[11px] font-semibold text-indigo-800 hover:bg-white"
+              >
+                Not claimable — Discard Receipt
+              </button>
+            </div>
+          )}
+
           {/* VERDICT 3: ELIGIBLE */}
           {scanResult && scanResult.eligibility === "eligible" && (
             <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950">

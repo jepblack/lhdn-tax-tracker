@@ -143,7 +143,9 @@ Primary archiveCategory list (assign ONE only when clearly supported):
 medical, dental, education, donation, insurance, sports, books, computer_or_phone, childcare, travel, business_expense, personal, other.
 
 Strict Eligibility Rules:
-- Reject (eligibility="rejected", claimableAmount=0, suggestedCategoryId="") if non-receipt, food/dining/cafes, groceries, petrol/tolls/parking/travel, general retail/clothing/utilities, mobile phone plans (only home broadband qualifies), smartwatches/wearables, general electronics (TV/earbuds/consoles), OTC supplements/minor flu GP visits, cosmetic dental, or entertainment/streaming.
+- Use eligibility="rejected" (claimableAmount=0, suggestedCategoryId="") ONLY when clearly non-claimable: non-receipt, food/dining/cafes, groceries, petrol/tolls/parking/travel, general retail/clothing/utilities, mobile phone plans (only home broadband qualifies), smartwatches/wearables, general electronics (TV/earbuds/consoles), OTC supplements/minor flu GP visits, cosmetic dental, or entertainment/streaming.
+- Use eligibility="uncertain" when the receipt is a valid payment/invoice/transfer (e.g., DuitNow/FPX transfer, generic Sdn Bhd merchant, clinic without itemized treatment, or vague online order) and its exact LHDN purpose cannot be confirmed from the receipt alone:
+  - Set claimableAmount to totalAmount, needsReview=true, and provide 2 to 3 closest plausible LHDN relief choices in suggestedOptions (using valid categoryId and subCategoryId from the list above) so the user can choose or discard.
 - Sports gear/gym/courts -> "sports" (NOT "lifestyle").
 - Home broadband/PC/smartphone/tablet/books -> "lifestyle".
 - Dental -> "medical_self" / "med_dental"; Vaccination -> "med_vaccination"; Checkup/mental health/BP monitor -> "med_checkup".
@@ -157,7 +159,7 @@ Privacy & Quality Control Rules:
 
 Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
 {
-  "eligibility": "eligible" | "partial" | "rejected",
+  "eligibility": "eligible" | "partial" | "uncertain" | "rejected",
   "merchant": string,
   "merchantRegistrationOrTaxId": string,
   "date": "YYYY-MM-DD" or "",
@@ -174,6 +176,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
   "items": [{"description": string, "quantity": number, "unit_price": number, "amount": number}],
   "suggestedCategoryId": string,
   "suggestedSubCategoryId": string,
+  "suggestedOptions": [{"categoryId": string, "subCategoryId": string, "label": string, "reason": string}],
   "confidence": "high" | "medium" | "low",
   "needsReview": boolean,
   "reviewReason": string,
@@ -386,20 +389,51 @@ function normalizeAiPayload(
 ) {
   const rawElig = String(parsed.eligibility || "rejected");
   const eligibility: ReceiptEligibility =
-    rawElig === "eligible" || rawElig === "partial" || rawElig === "rejected"
+    rawElig === "eligible" ||
+    rawElig === "partial" ||
+    rawElig === "uncertain" ||
+    rawElig === "rejected"
       ? rawElig
       : "rejected";
+
+  const rawOptions = Array.isArray(parsed.suggestedOptions)
+    ? parsed.suggestedOptions
+    : [];
+  const suggestedOptions = rawOptions
+    .filter((o): o is Record<string, unknown> => Boolean(o && typeof o === "object"))
+    .map((o) => {
+      const cat = categories.find((c) => c.id === o.categoryId);
+      if (!cat) return null;
+      const sub = cat.subCategories?.find((s) => s.id === o.subCategoryId);
+      return {
+        categoryId: cat.id,
+        subCategoryId: sub ? sub.id : cat.subCategories?.[0]?.id || null,
+        label:
+          String(o.label || "").trim() ||
+          (sub ? `${cat.shortName} — ${sub.name}` : cat.shortName),
+        reason: String(o.reason || "").trim() || cat.description,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => Boolean(x))
+    .slice(0, 3);
 
   const validCat =
     eligibility === "rejected"
       ? undefined
-      : categories.find((c) => c.id === parsed.suggestedCategoryId);
+      : categories.find((c) => c.id === parsed.suggestedCategoryId) ||
+        (suggestedOptions[0]
+          ? categories.find((c) => c.id === suggestedOptions[0].categoryId)
+          : undefined);
   const validSub = validCat?.subCategories?.find(
-    (s) => s.id === parsed.suggestedSubCategoryId
+    (s) =>
+      s.id === parsed.suggestedSubCategoryId ||
+      s.id === suggestedOptions[0]?.subCategoryId
   );
 
   const finalEligibility: ReceiptEligibility =
-    eligibility !== "rejected" && !validCat ? "rejected" : eligibility;
+    eligibility !== "rejected" && eligibility !== "uncertain" && !validCat
+      ? "uncertain"
+      : eligibility;
 
   const totalAmount = Number(parsed.totalAmount) || 0;
   const claimableAmount =
@@ -460,6 +494,7 @@ function normalizeAiPayload(
     items,
     suggestedCategoryId: validCat ? validCat.id : null,
     suggestedSubCategoryId: validSub ? validSub.id : null,
+    suggestedOptions,
     confidence:
       parsed.confidence === "high" ||
       parsed.confidence === "medium" ||

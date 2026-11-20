@@ -785,22 +785,67 @@ export function parseAndClassifyReceiptText(
     }
   }
 
-  // 4. Unknown receipt — reject safely so user doesn't claim non-qualifying spend, with 1-tap override
+  // 4. Unknown receipt purpose — mark uncertain and suggest closest LHDN categories to ask the user
+  const clinicHint = /\b(klinik|clinic|poliklinik|dr\.|doctor|medical|pharmacy|farmasi)\b/i.test(lower);
+  const suggestedOptions = clinicHint
+    ? [
+        {
+          categoryId: "medical_self",
+          subCategoryId: "med_checkup",
+          label: "Medical — Check-Up / Screening",
+          reason: "Complete medical check-up, blood test, or mental health (RM1,000 sub-limit).",
+        },
+        {
+          categoryId: "medical_self",
+          subCategoryId: "med_vaccination",
+          label: "Medical — Vaccination",
+          reason: "Qualifying vaccines like Influenza, HPV, or Pneumococcal (RM1,000 sub-limit).",
+        },
+        {
+          categoryId: "parents_medical",
+          subCategoryId: "parents_treatment",
+          label: "Parents Medical / Care",
+          reason: "Medical treatment or care for parents/grandparents (RM8,000 cap).",
+        },
+      ]
+    : [
+        {
+          categoryId: "lifestyle",
+          subCategoryId: "lifestyle_tech",
+          label: "Lifestyle — Tech / Books / Broadband",
+          reason: "PC, smartphone, tablet, books, or home internet (RM2,500 cap).",
+        },
+        {
+          categoryId: "sports",
+          subCategoryId: "sports_equipment",
+          label: "Sports — Equipment / Gym / Court",
+          reason: "Sports gear, gym membership, or court rental (RM1,000 separate cap).",
+        },
+        {
+          categoryId: "medical_self",
+          subCategoryId: "med_checkup",
+          label: "Medical — Check-Up / Dental / Serious",
+          reason: "Qualifying medical, dental, or health screening expense.",
+        },
+      ];
+
   return {
-    eligibility: "rejected",
+    eligibility: "uncertain",
     merchant: merchant || "Unknown Merchant",
     date,
-    amount: 0,
+    amount: totalAmount,
     totalAmount,
     invoiceNumber,
     description: "",
-    suggestedCategoryId: null,
-    suggestedSubCategoryId: null,
+    suggestedCategoryId: suggestedOptions[0].categoryId,
+    suggestedSubCategoryId: suggestedOptions[0].subCategoryId,
+    suggestedOptions,
     confidence: "low",
+    needsReview: true,
+    reviewReason:
+      "Receipt purpose could not be confirmed automatically — please select the closest LHDN category below or discard if non-claimable.",
     reasoning:
-      "Could not match this receipt to a qualifying Malaysian LHDN personal tax relief category.",
-    rejectionReason:
-      "This receipt did not match any qualifying LHDN relief category (Lifestyle, Sports, Medical, Insurance, Childcare, etc.). If it genuinely qualifies, tap 'Override & log manually anyway' below.",
+      "Couldn't confirm the exact purpose from this receipt. Pick the closest LHDN relief below, or discard if it isn't claimable.",
     scanEngine: "local-ocr",
     rawText,
   };
