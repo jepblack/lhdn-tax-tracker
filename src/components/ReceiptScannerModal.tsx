@@ -1049,7 +1049,7 @@ async function normalizeImageForAiUpload(file: File): Promise<File> {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
-      const maxDim = 1600;
+      const maxDim = 1024;
       let { width, height } = img;
       if (width > maxDim || height > maxDim) {
         if (width > height) {
@@ -1084,7 +1084,7 @@ async function normalizeImageForAiUpload(file: File): Promise<File> {
           }
         },
         "image/jpeg",
-        0.85
+        0.78
       );
     };
     img.onerror = () => {

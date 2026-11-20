@@ -29,10 +29,7 @@ export async function GET() {
 
   try {
     const ai = new GoogleGenAI({ apiKey: geminiKey, vertexai: false });
-    const res = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: "Reply with OK",
-    });
+    const res = await generateFastWithGemini(ai, "Reply OK", 16);
 
     return NextResponse.json({
       ok: true,
@@ -273,21 +270,15 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
               { inlineData: { mimeType: supportedMime, data: base64Data } },
             ];
 
-        // Automatic 1-retry on transient 503 UNAVAILABLE spikes
+        // Automatic 1-retry on transient 503 UNAVAILABLE spikes + fast low-thinking config
         let response;
         try {
-          response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents,
-          });
+          response = await generateFastWithGemini(ai, contents, 1200);
         } catch (firstErr) {
           const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
           if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
-            await new Promise((r) => setTimeout(r, 1500));
-            response = await ai.models.generateContent({
-              model: GEMINI_MODEL,
-              contents,
-            });
+            await new Promise((r) => setTimeout(r, 1200));
+            response = await generateFastWithGemini(ai, contents, 1200);
           } else {
             throw firstErr;
           }
@@ -339,6 +330,38 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
       fallbackToLocalOcr: true,
       aiSkippedReason: "Switched automatically to built-in free OCR.",
     });
+  }
+}
+
+async function generateFastWithGemini(
+  ai: GoogleGenAI,
+  contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
+  maxOutputTokens: number
+) {
+  // Disable thinking tokens for fast (~1-3s) receipt extraction; gracefully fall back if model rejects thinkingConfig
+  try {
+    return await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: {
+        temperature: 0.1,
+        maxOutputTokens,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("400") || msg.includes("INVALID_ARGUMENT")) {
+      return await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          temperature: 0.1,
+          maxOutputTokens,
+        },
+      });
+    }
+    throw err;
   }
 }
 
