@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
@@ -7,6 +7,7 @@ import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
 import { ReceiptEligibility, TaxYear } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const GEMINI_MODEL = "gemini-3.8-flash";
 
@@ -323,7 +324,7 @@ async function generateFastWithGemini(
   contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
   maxOutputTokens: number
 ) {
-  // Disable thinking tokens for fast (~1-3s) receipt extraction; gracefully fall back if model rejects thinkingConfig
+  // Gemini 3.x uses thinkingLevel: MINIMAL for fastest (~1-3s) structured extraction
   try {
     return await ai.models.generateContent({
       model: GEMINI_MODEL,
@@ -331,7 +332,7 @@ async function generateFastWithGemini(
       config: {
         temperature: 0.1,
         maxOutputTokens,
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       },
     });
   } catch (err) {

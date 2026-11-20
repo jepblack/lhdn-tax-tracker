@@ -283,12 +283,15 @@ export function ReceiptScannerModal({
           file.type === "application/pdf" ||
           file.name.toLowerCase().endsWith(".pdf");
         if (isPdf) {
+          setScanStatusText("Rendering PDF page...");
           const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
           uploadFile = renderedJpeg || file;
           if (renderedJpeg) fileForOcr = renderedJpeg;
         } else {
+          setScanStatusText("Optimizing photo...");
           uploadFile = await normalizeImageForAiUpload(file);
         }
+        setScanStatusText("Scanning with Gemini AI Vision...");
         const formData = new FormData();
         formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
@@ -302,11 +305,19 @@ export function ReceiptScannerModal({
           }
         }
 
-        const res = await fetch("/api/scan-receipt", {
-          method: "POST",
-          headers,
-          body: formData,
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 22000);
+        let res: Response;
+        try {
+          res = await fetch("/api/scan-receipt", {
+            method: "POST",
+            headers,
+            body: formData,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
 
         if (res.ok) {
           const data = await res.json();

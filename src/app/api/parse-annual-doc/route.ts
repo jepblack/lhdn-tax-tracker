@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
@@ -119,7 +119,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               config: {
                 temperature: 0.1,
                 maxOutputTokens: 600,
-                thinkingConfig: { thinkingBudget: 0 },
+                thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
               },
             });
           } catch (cfgErr) {
