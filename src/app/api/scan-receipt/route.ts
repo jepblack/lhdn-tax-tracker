@@ -2,6 +2,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
+import { callGroqJson } from "@/lib/groq-vision";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
 import { ReceiptEligibility, TaxYear } from "@/lib/types";
@@ -59,9 +60,11 @@ export async function POST(request: Request) {
       });
     }
 
+    const groqKey = process.env.GROQ_API_KEY?.trim();
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
     const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
+    const hasGroq = Boolean(groqKey && groqKey !== "your-groq-api-key");
     const hasGemini = Boolean(
       geminiKey && geminiKey !== "your-gemini-api-key"
     );
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
       file.type === "application/pdf" ||
       file.name.toLowerCase().endsWith(".pdf");
 
-    if (!hasGemini && !hasOpenAi) {
+    if (!hasGroq && !hasGemini && !hasOpenAi) {
       if (isPdf) {
         const pdfResult = await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
         if (pdfResult) return NextResponse.json(pdfResult);
@@ -168,6 +171,41 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
   "rejectionReason": string,
   "excludedItems": string[]
 }`;
+
+    // 0. Try Groq Vision (Llama 4 Scout, ~1s) first when GROQ_API_KEY is configured
+    if (hasGroq) {
+      try {
+        let pdfTextForGroq: string | null = null;
+        if (isPdf) {
+          try {
+            const { text } = await extractText(
+              new Uint8Array(arrayBuffer.slice(0)),
+              { mergePages: true }
+            );
+            const joined = (Array.isArray(text) ? text.join("\n") : String(text || ""))
+              .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+              .trim();
+            if (joined.length >= 20) pdfTextForGroq = joined;
+          } catch {
+            pdfTextForGroq = null;
+          }
+        }
+
+        if (pdfTextForGroq || mimeType.startsWith("image/")) {
+          const parsed = await callGroqJson({
+            apiKey: groqKey!,
+            prompt,
+            textContent: pdfTextForGroq,
+            imageBase64: pdfTextForGroq ? null : base64Data,
+            imageMimeType: mimeType,
+            maxTokens: 1200,
+          });
+          return NextResponse.json(normalizeAiPayload(parsed, categories));
+        }
+      } catch (groqErr) {
+        console.warn("Groq vision failed, falling back to Gemini:", groqErr);
+      }
+    }
 
     // 1. Try OpenAI Vision if OPENAI_API_KEY is configured (image receipts)
     if (hasOpenAi && mimeType.startsWith("image/")) {

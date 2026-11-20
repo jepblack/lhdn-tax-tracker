@@ -2,6 +2,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
+import { callGroqJson } from "@/lib/groq-vision";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { AnnualDocExtraction, AnnualDocType } from "@/lib/types";
 
@@ -69,16 +70,14 @@ export async function POST(request: Request) {
       }
     }
 
+    const groqKey = process.env.GROQ_API_KEY?.trim();
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
     const authed = await isAuthed(request);
+    const canUseGroq = Boolean(groqKey && groqKey !== "your-groq-api-key") && authed;
     const canUseGemini =
       Boolean(geminiKey && geminiKey !== "your-gemini-api-key") && authed;
 
-    let geminiFailReason = "";
-    if (canUseGemini) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
-        const prompt = `You are a Malaysian LHDN personal tax document parser for YA ${taxYear}.
+    const prompt = `You are a Malaysian LHDN personal tax document parser for YA ${taxYear}.
 Document type uploaded: "${docType}".
 Extract ONLY visibly printed annual MYR figures from this document. Never guess or fabricate numbers; return 0 for any field not present.
 
@@ -96,6 +95,31 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
   "summaryNote": string (short 1-sentence summary of what was extracted),
   "confidence": "high" | "medium" | "low"
 }`;
+
+    // 1. Try Groq Vision (~1s) first if GROQ_API_KEY is configured
+    if (canUseGroq && (pdfText.length >= 20 || file.type.startsWith("image/"))) {
+      try {
+        const parsed = await callGroqJson({
+          apiKey: groqKey!,
+          prompt,
+          textContent: pdfText.length >= 20 ? pdfText : null,
+          imageBase64:
+            pdfText.length >= 20
+              ? null
+              : Buffer.from(arrayBuffer).toString("base64"),
+          imageMimeType: file.type || "image/jpeg",
+          maxTokens: 600,
+        });
+        return NextResponse.json(normalizeAnnualExtraction(parsed, docType, "Groq Vision"));
+      } catch (groqErr) {
+        console.warn("Groq annual doc parse failed, falling back to Gemini:", groqErr);
+      }
+    }
+
+    let geminiFailReason = "";
+    if (canUseGemini) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
 
         const contents = pdfText.length >= 20
           ? `${prompt}\n\nDOCUMENT TEXT:\n${pdfText.slice(0, 15000)}`
@@ -159,28 +183,9 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
         if (response.text) {
           const match = response.text.match(/\{[\s\S]*\}/);
           const parsed = JSON.parse((match ? match[0] : response.text).trim());
-          const extraction: AnnualDocExtraction = {
-            docType,
-            providerName: String(parsed.providerName || ""),
-            annualIncome: Number(parsed.annualIncome) || 0,
-            pcbPaid: Number(parsed.pcbPaid) || 0,
-            zakatPaid: Number(parsed.zakatPaid) || 0,
-            epfEmployee: Number(parsed.epfEmployee) || 0,
-            socsoEisEmployee: Number(parsed.socsoEisEmployee) || 0,
-            lifeInsuranceAmount: Number(parsed.lifeInsuranceAmount) || 0,
-            medicalInsuranceAmount: Number(parsed.medicalInsuranceAmount) || 0,
-            housingLoanInterest: Number(parsed.housingLoanInterest) || 0,
-            summaryNote:
-              String(parsed.summaryNote || "") ||
-              "Extracted annual figures via Gemini AI.",
-            confidence:
-              parsed.confidence === "high" ||
-              parsed.confidence === "medium" ||
-              parsed.confidence === "low"
-                ? parsed.confidence
-                : "medium",
-          };
-          return NextResponse.json(extraction);
+          return NextResponse.json(
+            normalizeAnnualExtraction(parsed, docType, "Gemini AI")
+          );
         }
       } catch (err) {
         geminiFailReason = err instanceof Error ? err.message.slice(0, 140) : "AI error";
@@ -222,4 +227,32 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
     console.error("Annual doc parse error:", err);
     return NextResponse.json({ skipped: true });
   }
+}
+
+function normalizeAnnualExtraction(
+  parsed: Record<string, unknown>,
+  docType: AnnualDocType,
+  engineName: string
+): AnnualDocExtraction {
+  return {
+    docType,
+    providerName: String(parsed.providerName || ""),
+    annualIncome: Number(parsed.annualIncome) || 0,
+    pcbPaid: Number(parsed.pcbPaid) || 0,
+    zakatPaid: Number(parsed.zakatPaid) || 0,
+    epfEmployee: Number(parsed.epfEmployee) || 0,
+    socsoEisEmployee: Number(parsed.socsoEisEmployee) || 0,
+    lifeInsuranceAmount: Number(parsed.lifeInsuranceAmount) || 0,
+    medicalInsuranceAmount: Number(parsed.medicalInsuranceAmount) || 0,
+    housingLoanInterest: Number(parsed.housingLoanInterest) || 0,
+    summaryNote:
+      String(parsed.summaryNote || "") ||
+      `Extracted annual figures via ${engineName}.`,
+    confidence:
+      parsed.confidence === "high" ||
+      parsed.confidence === "medium" ||
+      parsed.confidence === "low"
+        ? parsed.confidence
+        : "medium",
+  };
 }
