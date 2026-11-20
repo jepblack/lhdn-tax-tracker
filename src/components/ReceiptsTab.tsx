@@ -99,6 +99,7 @@ export function ReceiptsTab({
   } | null>(null);
   const [applyingExtraction, setApplyingExtraction] = useState(false);
   const [extractionAppliedMsg, setExtractionAppliedMsg] = useState<string | null>(null);
+  const [docNotice, setDocNotice] = useState<string | null>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const activeDocSlotRef = useRef<{ type: AnnualDocType; label: string } | null>(null);
 
@@ -242,6 +243,7 @@ export function ReceiptsTab({
               setUploadingDocType(slot.type);
               setPendingExtraction(null);
               setExtractionAppliedMsg(null);
+              setDocNotice(null);
               try {
                 const savedDoc = await onUploadAnnualDoc(
                   slot.type,
@@ -290,18 +292,46 @@ export function ReceiptsTab({
                             extraction: ext,
                             doc: savedDoc,
                           });
+                        } else {
+                          setDocNotice(
+                            `${slot.label} archived, but no RM figures were detected automatically. You can enter them under Profile.`
+                          );
                         }
+                      } else if (data.skipReason) {
+                        setDocNotice(data.skipReason);
                       }
+                    } else {
+                      setDocNotice(
+                        `${slot.label} archived, but automatic extraction failed (HTTP ${res.status}). Try uploading a screenshot/photo of it instead.`
+                      );
                     }
                   } catch {
-                    // Non-fatal: file is still archived cleanly
+                    setDocNotice(
+                      `${slot.label} archived! Could not reach extractor right now.`
+                    );
                   }
+                } else {
+                  setExtractionAppliedMsg(`${slot.label} archived to Vault!`);
                 }
               } finally {
                 setUploadingDocType(null);
               }
             }}
           />
+
+          {uploadingDocType && (
+            <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+              <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+              <span>Archiving document &amp; extracting LHDN figures...</span>
+            </div>
+          )}
+
+          {docNotice && (
+            <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <span>{docNotice}</span>
+            </div>
+          )}
 
           {extractionAppliedMsg && (
             <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-900">

@@ -69,10 +69,11 @@ export async function POST(request: Request) {
     }
 
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const authed = await isAuthed(request);
     const canUseGemini =
-      Boolean(geminiKey && geminiKey !== "your-gemini-api-key") &&
-      (await isAuthed(request));
+      Boolean(geminiKey && geminiKey !== "your-gemini-api-key") && authed;
 
+    let geminiFailReason = "";
     if (canUseGemini) {
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
@@ -109,23 +110,41 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               },
             ];
 
+        const callGemini = async () => {
+          try {
+            return await ai.models.generateContent({
+              model: GEMINI_MODEL,
+              contents,
+              config: {
+                temperature: 0.1,
+                maxOutputTokens: 600,
+                thinkingConfig: { thinkingBudget: 0 },
+              },
+            });
+          } catch (cfgErr) {
+            const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+            if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
+              return await ai.models.generateContent({
+                model: GEMINI_MODEL,
+                contents,
+                config: { temperature: 0.1, maxOutputTokens: 600 },
+              });
+            }
+            throw cfgErr;
+          }
+        };
+
         let response;
         try {
-          response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents,
-            config: {
-              temperature: 0.1,
-              maxOutputTokens: 600,
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          });
-        } catch {
-          response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents,
-            config: { temperature: 0.1, maxOutputTokens: 600 },
-          });
+          response = await callGemini();
+        } catch (firstErr) {
+          const m = firstErr instanceof Error ? firstErr.message : String(firstErr);
+          if (m.includes("503") || m.includes("UNAVAILABLE")) {
+            await new Promise((r) => setTimeout(r, 1200));
+            response = await callGemini();
+          } else {
+            throw firstErr;
+          }
         }
 
         if (response.text) {
@@ -155,6 +174,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
           return NextResponse.json(extraction);
         }
       } catch (err) {
+        geminiFailReason = err instanceof Error ? err.message.slice(0, 140) : "AI error";
         console.warn("Annual doc Gemini parse failed, trying fallback:", err);
       }
     }
@@ -180,7 +200,15 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
       return NextResponse.json(extraction);
     }
 
-    return NextResponse.json({ skipped: true });
+    const skipReason = !authed
+      ? "Document archived! Sign in with Google under Profile to enable Gemini AI extraction for annual documents."
+      : isPdf && pdfText.length < 20
+      ? "Document archived, but this PDF has no readable text (it may be password-protected or a scanned image). Take a screenshot of your EA Form and upload the image instead!"
+      : geminiFailReason
+      ? `Document archived, but AI extraction hit an error (${geminiFailReason}). Try uploading a screenshot/photo or re-uploading in a moment.`
+      : "Document archived! No numeric tax figures were detected automatically.";
+
+    return NextResponse.json({ skipped: true, skipReason });
   } catch (err) {
     console.error("Annual doc parse error:", err);
     return NextResponse.json({ skipped: true });
