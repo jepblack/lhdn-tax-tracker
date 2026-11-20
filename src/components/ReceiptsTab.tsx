@@ -269,11 +269,19 @@ export function ReceiptsTab({
                         headers["Authorization"] = `Bearer ${sess.session.access_token}`;
                       }
                     }
-                    const res = await fetch("/api/parse-annual-doc", {
-                      method: "POST",
-                      headers,
-                      body: fd,
-                    });
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 16000);
+                    let res: Response;
+                    try {
+                      res = await fetch("/api/parse-annual-doc", {
+                        method: "POST",
+                        headers,
+                        body: fd,
+                        signal: controller.signal,
+                      });
+                    } finally {
+                      clearTimeout(timer);
+                    }
                     if (res.ok) {
                       const data = await res.json();
                       if (!data.skipped && data.docType) {
@@ -544,14 +552,15 @@ export function ReceiptsTab({
                           {doc.fileName}
                         </span>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <a
-                            href={doc.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openFileSafely(doc.fileUrl, doc.fileName)
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs hover:bg-emerald-50"
                           >
                             Open <ExternalLink className="h-2.5 w-2.5" />
-                          </a>
+                          </button>
                           <button
                             type="button"
                             onClick={() => onDeleteAnnualDoc(doc.id)}
@@ -864,16 +873,20 @@ export function ReceiptsTab({
                   <p className="text-sm font-semibold text-slate-800">
                     {previewExpense.receiptFileName || "Receipt PDF"}
                   </p>
-                  <a
-                    href={previewExpense.receiptUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openFileSafely(
+                        previewExpense.receiptUrl!,
+                        previewExpense.receiptFileName || "receipt.pdf"
+                      )
+                    }
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
                   >
                     {previewExpense.receiptUrl.includes("drive.google.com")
                       ? "Open in Google Drive"
                       : "Open PDF in New Tab"}
-                  </a>
+                  </button>
                 </div>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -889,4 +902,44 @@ export function ReceiptsTab({
       )}
     </div>
   );
+}
+
+/**
+ * Safely opens http(s) URLs or base64 data: URLs in a new tab.
+ * Modern Chrome/Safari block top-level navigation to data: URLs (showing a blank tab),
+ * so we convert data: URLs to a real Blob URL first.
+ */
+function openFileSafely(fileUrl: string, fileName: string): void {
+  if (!fileUrl) return;
+  if (!fileUrl.startsWith("data:")) {
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  try {
+    const [header, base64] = fileUrl.split(",");
+    const mimeMatch = header.match(/data:([^;]+);/i);
+    const mimeType = mimeMatch ? mimeMatch[1] : "application/pdf";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+    const opened = window.open(blobUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      // Fallback download if popup blocker blocked window.open
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      link.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  } catch {
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.download = fileName;
+    link.click();
+  }
 }

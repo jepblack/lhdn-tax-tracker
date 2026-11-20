@@ -134,14 +134,22 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
           }
         };
 
+        const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
+          Promise.race([
+            promise,
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("AI_TIMEOUT")), ms)
+            ),
+          ]);
+
         let response;
         try {
-          response = await callGemini();
+          response = await withTimeout(callGemini(), 12000);
         } catch (firstErr) {
           const m = firstErr instanceof Error ? firstErr.message : String(firstErr);
           if (m.includes("503") || m.includes("UNAVAILABLE")) {
-            await new Promise((r) => setTimeout(r, 1200));
-            response = await callGemini();
+            await new Promise((r) => setTimeout(r, 800));
+            response = await withTimeout(callGemini(), 10000);
           } else {
             throw firstErr;
           }
