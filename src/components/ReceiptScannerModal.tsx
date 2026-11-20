@@ -396,7 +396,6 @@ export function ReceiptScannerModal({
       const missingKeyFields: string[] = [];
       if (!expenseDate) missingKeyFields.push("transaction date");
       if (!invoiceNumber.trim()) missingKeyFields.push("receipt number");
-      if (!paymentMethod.trim()) missingKeyFields.push("payment method");
 
       const needsReview =
         Boolean(scanResult?.needsReview) ||

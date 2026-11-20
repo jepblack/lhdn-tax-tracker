@@ -108,10 +108,14 @@ export function ReceiptsTab({
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
 
+  const isReviewRequired = (e: TaxExpense) =>
+    Boolean(e.metadata?.needs_review) &&
+    e.metadata?.review_reason !== "Missing: payment method";
+
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
   const filtered = yearExpenses.filter((e) => {
     if (filterMode === "missing" && (e.receiptPath || e.receiptUrl)) return false;
-    if (filterMode === "review" && !e.metadata?.needs_review) return false;
+    if (filterMode === "review" && !isReviewRequired(e)) return false;
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     const catName = catMap.get(e.categoryId)?.name.toLowerCase() || "";
@@ -127,9 +131,7 @@ export function ReceiptsTab({
   const missingCount = yearExpenses.filter(
     (e) => !e.receiptPath && !e.receiptUrl
   ).length;
-  const reviewCount = yearExpenses.filter(
-    (e) => e.metadata?.needs_review
-  ).length;
+  const reviewCount = yearExpenses.filter((e) => isReviewRequired(e)).length;
 
   return (
     <div className="space-y-4 pb-6">
@@ -785,9 +787,9 @@ export function ReceiptsTab({
                           <Sparkles className="h-2.5 w-2.5" /> AI Read
                         </span>
                       )}
-                      {exp.metadata?.needs_review && (
+                      {isReviewRequired(exp) && (
                         <span
-                          title={exp.metadata.review_reason}
+                          title={exp.metadata?.review_reason}
                           className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
                         >
                           <AlertTriangle className="h-2.5 w-2.5" /> Review
