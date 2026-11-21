@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowUpCircle,
   CheckCircle2,
+  ChevronDown,
   Cloud,
   CloudOff,
   Crown,
@@ -69,6 +70,7 @@ export function SettingsTab({
   const [authStatus, setAuthStatus] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [gisReady, setGisReady] = useState(false);
+  const [showEmailAuth, setShowEmailAuth] = useState(false);
 
   // Payslip upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
@@ -999,42 +1001,57 @@ export function SettingsTab({
                   </button>
                 )}
               </div>
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-400">
-                <div className="h-px flex-1 bg-slate-200" />
-                <span>or email &amp; password</span>
-                <div className="h-px flex-1 bg-slate-200" />
-              </div>
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-              />
-              <div className="flex gap-2">
+              {/* Collapsed Email & Password Fallback */}
+              <div className="pt-1">
                 <button
                   type="button"
-                  disabled={authLoading}
-                  onClick={() => handleAuth("signin")}
-                  className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-semibold text-white"
+                  onClick={() => setShowEmailAuth((prev) => !prev)}
+                  className="flex w-full items-center justify-center gap-1.5 py-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition"
                 >
-                  Sign In
+                  <span>Use email &amp; password instead</span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                      showEmailAuth ? "rotate-180" : ""
+                    }`}
+                  />
                 </button>
-                <button
-                  type="button"
-                  disabled={authLoading}
-                  onClick={() => handleAuth("signup")}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700"
-                >
-                  Create Account
-                </button>
+
+                {showEmailAuth && (
+                  <div className="mt-2.5 space-y-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={authLoading}
+                        onClick={() => handleAuth("signin")}
+                        className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
+                      >
+                        Sign In
+                      </button>
+                      <button
+                        type="button"
+                        disabled={authLoading}
+                        onClick={() => handleAuth("signup")}
+                        className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95"
+                      >
+                        Create Account
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               {authStatus && (
                 <p className="text-xs text-emerald-700">{authStatus}</p>
