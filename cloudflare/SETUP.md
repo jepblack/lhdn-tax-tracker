@@ -1,6 +1,6 @@
 # Branded Supabase Auth & Domain Setup for cukaiku.my
 
-This setup connects **`cukaiku.my`** to Vercel and runs a Cloudflare Worker on **`auth.cukaiku.my`** so Google OAuth displays **cukaiku.my** instead of `pgybpfnhabzgpepxdjp.supabase.co` — completely free.
+This setup connects **`cukaiku.my`** to Vercel and runs a Cloudflare Worker on **`auth.cukaiku.my`** so Google OAuth displays **cukaiku.my** instead of `pgybpfnhabzgpfepxdjp.supabase.co` — completely free.
 
 ---
 

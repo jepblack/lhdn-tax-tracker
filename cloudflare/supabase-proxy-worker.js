@@ -1,15 +1,15 @@
 /**
  * Cloudflare Worker: Supabase Branded Auth & API Reverse Proxy
  *
- * Hides `pgybpfnhabzgpepxdjp.supabase.co` behind `https://auth.cukaiku.my`
+ * Hides `pgybpfnhabzgpfepxdjp.supabase.co` behind `https://auth.cukaiku.my`
  * on Cloudflare's Free Plan.
  *
  * Route pattern in Cloudflare Workers:
  *   auth.cukaiku.my/*
  */
 
-const SUPABASE_ORIGIN = "https://pgybpfnhabzgpepxdjp.supabase.co";
-const SUPABASE_HOST = "pgybpfnhabzgpepxdjp.supabase.co";
+const SUPABASE_ORIGIN = "https://pgybpfnhabzgpfepxdjp.supabase.co";
+const SUPABASE_HOST = "pgybpfnhabzgpfepxdjp.supabase.co";
 
 export default {
   async fetch(request) {
