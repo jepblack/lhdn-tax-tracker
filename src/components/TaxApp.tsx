@@ -57,6 +57,20 @@ import {
   updateExpense,
   uploadAnnualDocToSupabase,
 } from "@/lib/storage";
+import {
+  DEFAULT_PERSONALIZATION,
+  getCurrentYearMonth,
+  getUiCopy,
+  LIFE_STAGE_PRESETS,
+  LifeStagePresetId,
+  loadPersonalization,
+  loadRecurringBills,
+  RecurringBillTemplate,
+  savePersonalization,
+  saveRecurringBills,
+  STARTER_RECURRING_BILLS,
+  UserPersonalization,
+} from "@/lib/personalization";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
   AnnualDocExtraction,
@@ -100,6 +114,13 @@ export function TaxApp() {
   );
   const [expenses, setExpenses] = useState<TaxExpense[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [personalization, setPersonalization] = useState<UserPersonalization>(
+    DEFAULT_PERSONALIZATION
+  );
+  const [recurringBills, setRecurringBills] = useState<RecurringBillTemplate[]>(
+    STARTER_RECURRING_BILLS
+  );
+  const copy = getUiCopy(personalization.language);
 
   // Scanner modal state
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -175,6 +196,9 @@ export function TaxApp() {
       if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
       const savedBaselines = window.localStorage.getItem(FORM_BE_BASELINES_KEY);
       if (savedBaselines) setFormBeBaselines(JSON.parse(savedBaselines));
+
+      setPersonalization(loadPersonalization());
+      setRecurringBills(loadRecurringBills());
 
       refreshOfflineQueueCount();
 
@@ -901,6 +925,70 @@ export function TaxApp() {
     }
   }
 
+  function handleUpdatePersonalization(next: UserPersonalization) {
+    setPersonalization(next);
+    savePersonalization(next);
+  }
+
+  async function handleApplyLifeStage(presetId: LifeStagePresetId) {
+    const preset = LIFE_STAGE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    handleUpdatePersonalization({
+      ...personalization,
+      lifeStage: presetId,
+      pinnedCategoryIds: preset.pinnedCategoryIds,
+    });
+    const nextProfile: TaxProfile = {
+      ...profile,
+      taxpayerMode: preset.taxpayerMode,
+      statusReliefs: {
+        ...profile.statusReliefs,
+        ...preset.statusReliefsPatch,
+      },
+    };
+    await handleUpdateProfile(nextProfile);
+  }
+
+  function handleTogglePinCategory(categoryId: string) {
+    const exists = personalization.pinnedCategoryIds.includes(categoryId);
+    const nextPinned = exists
+      ? personalization.pinnedCategoryIds.filter((id) => id !== categoryId)
+      : [...personalization.pinnedCategoryIds, categoryId];
+    handleUpdatePersonalization({
+      ...personalization,
+      pinnedCategoryIds: nextPinned,
+    });
+  }
+
+  function handleSaveRecurringBills(bills: RecurringBillTemplate[]) {
+    setRecurringBills(bills);
+    saveRecurringBills(bills);
+  }
+
+  async function handleLogRecurringBill(bill: RecurringBillTemplate) {
+    const currentMonth = getCurrentYearMonth();
+    if (bill.lastLoggedMonth === currentMonth) return;
+    const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    await handleSaveExpense(
+      {
+        taxYear,
+        categoryId: bill.categoryId,
+        subCategoryId: bill.subCategoryId || null,
+        merchant: bill.merchant,
+        description: `${bill.description} (${currentMonth})`,
+        amount: bill.amount,
+        expenseDate: today,
+        invoiceNumber: `RECUR-${bill.id}-${currentMonth}`,
+        aiExtracted: false,
+      },
+      null
+    );
+    const updatedBills = recurringBills.map((b) =>
+      b.id === bill.id ? { ...b, lastLoggedMonth: currentMonth } : b
+    );
+    handleSaveRecurringBills(updatedBills);
+  }
+
   function handleLoadSampleData() {
     const samples = getSampleExpenses(taxYear);
     const otherYears = expenses.filter((e) => e.taxYear !== taxYear);
@@ -916,15 +1004,15 @@ export function TaxApp() {
   }
 
   const desktopNavItems = [
-    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+    { id: "dashboard" as const, label: copy.navDashboard, icon: LayoutDashboard },
     {
       id: "receipts" as const,
-      label: "Receipts",
+      label: copy.navReceipts,
       icon: ReceiptText,
       badge: missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined,
     },
-    { id: "reliefs" as const, label: "Reliefs", icon: ListChecks },
-    { id: "settings" as const, label: "Submissions & Profile", icon: FileCheck2 },
+    { id: "reliefs" as const, label: copy.navReliefs, icon: ListChecks },
+    { id: "settings" as const, label: copy.navSubmissionsDesktop, icon: FileCheck2 },
   ];
 
   return (
@@ -956,7 +1044,7 @@ export function TaxApp() {
                   </span>
                 </div>
                 <p className="truncate text-[11px] text-slate-500">
-                  LHDN Relief &amp; e-Invoice Vault
+                  {copy.tagline}
                 </p>
               </div>
             </div>
@@ -1039,6 +1127,19 @@ export function TaxApp() {
                 </button>
               </div>
 
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdatePersonalization({
+                    ...personalization,
+                    language: personalization.language === "en" ? "bm" : "en",
+                  })
+                }
+                title="Switch language (English / Bahasa Melayu)"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-700 hover:bg-slate-100"
+              >
+                {personalization.language === "en" ? "EN" : "BM"}
+              </button>
               <button
                 type="button"
                 onClick={() => setGuideOpen(true)}
@@ -1264,9 +1365,14 @@ export function TaxApp() {
                     profile.zakatPaid > 0
                   }
                   hasCloudSync={Boolean(userEmail)}
+                  personalization={personalization}
+                  recurringBills={recurringBills}
                   onChangeTaxpayerMode={(mode) =>
                     handleUpdateProfile({ ...profile, taxpayerMode: mode })
                   }
+                  onApplyLifeStage={handleApplyLifeStage}
+                  onUpdatePersonalization={handleUpdatePersonalization}
+                  onLogRecurringBill={handleLogRecurringBill}
                   onQuickAdd={(catId, subId) => openScanner(catId, subId)}
                   onDropFileForScan={(file) =>
                     openScanner(undefined, undefined, "ocr", file)
@@ -1289,6 +1395,8 @@ export function TaxApp() {
                 <ReliefsTab
                   summaries={summary.categorySummaries}
                   marginalRate={summary.marginalRate}
+                  pinnedCategoryIds={personalization.pinnedCategoryIds}
+                  onTogglePinCategory={handleTogglePinCategory}
                   onAddExpenseForCategory={(catId, subId) =>
                     openScanner(catId, subId)
                   }
@@ -1324,6 +1432,11 @@ export function TaxApp() {
                   expenses={expenses}
                   userEmail={userEmail}
                   driveConnected={driveConnected}
+                  personalization={personalization}
+                  recurringBills={recurringBills}
+                  onUpdatePersonalization={handleUpdatePersonalization}
+                  onApplyLifeStage={handleApplyLifeStage}
+                  onSaveRecurringBills={handleSaveRecurringBills}
                   onUpdateProfile={handleUpdateProfile}
                   onOpenUpgrade={openUpgradeModal}
                   onLogPayslipReliefs={handleLogPayslipReliefs}

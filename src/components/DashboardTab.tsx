@@ -18,12 +18,23 @@ import {
   Scale,
   SlidersHorizontal,
   Sparkles,
+  Star,
+  Target,
   TrendingDown,
   UserCheck,
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { matchPartnerOffersToOpportunities } from "@/lib/monetization";
+import {
+  getCurrentYearMonth,
+  getUiCopy,
+  isNearPayday,
+  LIFE_STAGE_PRESETS,
+  LifeStagePresetId,
+  RecurringBillTemplate,
+  UserPersonalization,
+} from "@/lib/personalization";
 import {
   TaxCalculationResult,
   TaxExpense,
@@ -44,7 +55,12 @@ interface DashboardTabProps {
   missingReceiptsTotal: number;
   profileCustomized: boolean;
   hasCloudSync: boolean;
+  personalization: UserPersonalization;
+  recurringBills: RecurringBillTemplate[];
   onChangeTaxpayerMode: (mode: TaxpayerMode) => void;
+  onApplyLifeStage: (presetId: LifeStagePresetId) => void;
+  onUpdatePersonalization: (next: UserPersonalization) => void;
+  onLogRecurringBill: (bill: RecurringBillTemplate) => Promise<void>;
   onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
   onDropFileForScan: (file: File) => void;
   onOpenMyInvoisQr: () => void;
@@ -64,7 +80,12 @@ export function DashboardTab({
   missingReceiptsTotal,
   profileCustomized,
   hasCloudSync,
+  personalization,
+  recurringBills,
   onChangeTaxpayerMode,
+  onApplyLifeStage,
+  onUpdatePersonalization,
+  onLogRecurringBill,
   onQuickAdd,
   onDropFileForScan,
   onOpenMyInvoisQr,
@@ -79,6 +100,12 @@ export function DashboardTab({
   const [freelancerView, setFreelancerView] = useState<"personal" | "business">(
     "personal"
   );
+  const [loggingBillId, setLoggingBillId] = useState<string | null>(null);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState(String(personalization.taxSavingGoal));
+  const copy = getUiCopy(personalization.language);
+  const currentMonth = getCurrentYearMonth();
+  const nearPayday = isNearPayday(personalization.paydayDay);
 
   const activeCategories = summary.categorySummaries
     .filter((c) => c.spent > 0)
@@ -120,16 +147,8 @@ export function DashboardTab({
       !String(e.description || "").toLowerCase().includes("myinvois")
   ).length;
 
-  // Key Bento Relief Categories (Lifestyle, Medical, SSPN, EV/Green Tech, EPF/Insurance)
-  const keyBentoIds = [
-    "lifestyle",
-    "medical_self",
-    "epf_life_insurance",
-    "edu_med_insurance",
-    "sspn",
-    "ev_composting",
-  ];
-  const bentoCategories = keyBentoIds
+  // User-Pinned Bento Relief Categories (customized via Life-Stage Preset or ★ in Reliefs tab)
+  const bentoCategories = personalization.pinnedCategoryIds
     .map((id) =>
       summary.categorySummaries.find((c) => c.category.id === id)
     )
@@ -159,6 +178,78 @@ export function DashboardTab({
         onLoadSampleData={onLoadSampleData}
         onOpenGuideModal={onOpenGuideModal}
       />
+
+      {/* Payday Reminder Banner (if within ±2 days of user's configured Payday) */}
+      {nearPayday && (
+        <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-3 text-xs text-emerald-950 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+              <CalendarClock className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="font-bold">{copy.paydayBanner}</p>
+              <p className="text-[11px] text-emerald-800">
+                Payday set to day {personalization.paydayDay} each month in Settings.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab("settings")}
+            className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
+          >
+            Upload Payslip
+          </button>
+        </section>
+      )}
+
+      {/* 1-Tap Life-Stage Preset Selector (shown until chosen, always changeable in Settings) */}
+      {!personalization.lifeStage && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-emerald-600" />
+              <h2 className="text-xs font-bold text-slate-900">
+                {copy.lifeStageTitle}
+              </h2>
+              <InfoHint
+                align="left"
+                title="Personalize in 1 Tap"
+                text="Pick the life stage that matches you. CukaiKu automatically sets Form e-BE/e-B, status reliefs, and pins the most relevant LHDN categories to your Dashboard."
+              />
+            </div>
+            <span className="text-[10px] font-semibold text-slate-400">
+              Change anytime in Settings
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {LIFE_STAGE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => onApplyLifeStage(preset.id)}
+                className="flex flex-col justify-between rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-left transition hover:border-emerald-400 hover:bg-emerald-50/40 active:scale-[0.99]"
+              >
+                <div className="flex items-center justify-between gap-1.5 w-full">
+                  <span className="text-xs font-bold text-slate-900">
+                    {personalization.language === "bm"
+                      ? preset.titleBm
+                      : preset.titleEn}
+                  </span>
+                  <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                    {preset.badge}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-slate-600">
+                  {personalization.language === "bm"
+                    ? preset.subtitleBm
+                    : preset.subtitleEn}
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Desktop (>= 1024px) Prominent Drag & Drop PDF / e-Invoice Dropzone Card */}
       <section
@@ -574,15 +665,21 @@ export function DashboardTab({
       ) : (
         <section className="space-y-2.5">
           <div className="flex items-center justify-between px-0.5">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Key LHDN Relief Caps (Bento Grid)
+            <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+              <span>{copy.pinnedCapsTitle}</span>
+              <InfoHint
+                align="left"
+                title="Your Pinned Relief Caps"
+                text="Tap any card to quickly scan a receipt for it, or tap 'Customize Pins' to star/unstar categories in the Reliefs tab."
+              />
             </h2>
             <button
               type="button"
               onClick={() => onNavigateTab("reliefs")}
-              className="flex items-center gap-1 text-xs font-bold text-emerald-700"
+              className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800"
             >
-              View All 15 <ArrowRight className="h-3.5 w-3.5" />
+              <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+              {copy.customizePins} <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -676,6 +773,156 @@ export function DashboardTab({
 
       {/* Right / Action & Insights Column */}
       <div className="space-y-4 md:col-span-5">
+      {/* Personal Tax-Saving Goal Card */}
+      {personalization.taxSavingGoal > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Target className="h-4 w-4 text-emerald-600" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                {copy.goalTitle}
+              </h2>
+              <InfoHint
+                title="Custom Tax-Saving Target"
+                text="Set a personal goal for how much tax you want to save this Year of Assessment by claiming LHDN reliefs."
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setGoalDraft(String(personalization.taxSavingGoal));
+                setEditingGoal((v) => !v);
+              }}
+              className="text-[11px] font-semibold text-emerald-700 hover:underline"
+            >
+              {editingGoal ? "Cancel" : "Edit"}
+            </button>
+          </div>
+
+          {editingGoal ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="100"
+                step="100"
+                value={goalDraft}
+                onChange={(e) => setGoalDraft(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-900"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const val = Math.max(100, Number(goalDraft) || 1500);
+                  onUpdatePersonalization({
+                    ...personalization,
+                    taxSavingGoal: val,
+                  });
+                  setEditingGoal(false);
+                }}
+                className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            (() => {
+              const goalPct = Math.min(
+                100,
+                Math.round(
+                  (summary.taxSavedByExpenseReliefs /
+                    personalization.taxSavingGoal) *
+                    100
+                )
+              );
+              return (
+                <>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="privacy-sensitive font-extrabold text-emerald-700">
+                      {formatRM(summary.taxSavedByExpenseReliefs)} saved
+                    </span>
+                    <span className="text-slate-500">
+                      Goal: {formatRM(personalization.taxSavingGoal)} ({goalPct}
+                      %)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-600 transition-all duration-300"
+                      style={{ width: `${goalPct}%` }}
+                    />
+                  </div>
+                </>
+              );
+            })()
+          )}
+        </section>
+      )}
+
+      {/* 1-Tap Monthly Recurring Bills */}
+      {recurringBills.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Repeat className="h-4 w-4 text-emerald-600" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                {copy.recurringTitle}
+              </h2>
+              <InfoHint
+                title="1-Tap Monthly Bills"
+                text="Log repeating tax-deductible bills (internet, gym, medical insurance) in 1 tap. Each bill locks for the month once logged so it never double-counts."
+              />
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+              {currentMonth}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {recurringBills.map((bill) => {
+              const isLoggedThisMonth = bill.lastLoggedMonth === currentMonth;
+              const isBusy = loggingBillId === bill.id;
+              return (
+                <div
+                  key={bill.id}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-slate-900">
+                      {bill.merchant}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {formatRM(bill.amount)} • {bill.description}
+                    </p>
+                  </div>
+                  {isLoggedThisMonth ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-800">
+                      <CheckCircle2 className="h-3 w-3" />
+                      {copy.loggedThisMonth}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={async () => {
+                        setLoggingBillId(bill.id);
+                        try {
+                          await onLogRecurringBill(bill);
+                        } finally {
+                          setLoggingBillId(null);
+                        }
+                      }}
+                      className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-slate-800 active:scale-95 disabled:opacity-50"
+                    >
+                      {isBusy ? "Logging..." : `+ ${copy.logBillNow}`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Missing Receipts Warning */}
       {missingReceiptsTotal > 0 && (
         <button

@@ -30,6 +30,12 @@ import {
   PayslipExtraction,
 } from "@/lib/payslip-parser";
 import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
+import {
+  LIFE_STAGE_PRESETS,
+  LifeStagePresetId,
+  RecurringBillTemplate,
+  UserPersonalization,
+} from "@/lib/personalization";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { TaxExpense, TaxProfile, UserSubscription } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
@@ -40,6 +46,11 @@ interface SettingsTabProps {
   expenses: TaxExpense[];
   userEmail: string | null;
   driveConnected: boolean;
+  personalization: UserPersonalization;
+  recurringBills: RecurringBillTemplate[];
+  onUpdatePersonalization: (next: UserPersonalization) => void;
+  onApplyLifeStage: (presetId: LifeStagePresetId) => void;
+  onSaveRecurringBills: (bills: RecurringBillTemplate[]) => void;
   onUpdateProfile: (next: TaxProfile) => Promise<void>;
   onOpenUpgrade: (reason?: string) => void;
   onLogPayslipReliefs: (
@@ -57,6 +68,11 @@ export function SettingsTab({
   expenses,
   userEmail,
   driveConnected,
+  personalization,
+  recurringBills,
+  onUpdatePersonalization,
+  onApplyLifeStage,
+  onSaveRecurringBills,
   onUpdateProfile,
   onOpenUpgrade,
   onLogPayslipReliefs,
@@ -72,6 +88,9 @@ export function SettingsTab({
   const [authLoading, setAuthLoading] = useState(false);
   const [gisReady, setGisReady] = useState(false);
   const [showEmailAuth, setShowEmailAuth] = useState(false);
+  const [newBillMerchant, setNewBillMerchant] = useState("");
+  const [newBillAmount, setNewBillAmount] = useState("");
+  const [newBillCategory, setNewBillCategory] = useState("lifestyle");
 
   // Payslip upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
@@ -509,6 +528,241 @@ export function SettingsTab({
               Business + personal reliefs • Deadline 30 June{" "}
               {profile.taxYear + 1} • CP500 instalments
             </p>
+          </button>
+        </div>
+      </section>
+
+      {/* Personalization: Life-Stage Presets, Language, Tax Goal & Payday */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4 text-emerald-600" />
+            <h2 className="text-sm font-bold text-slate-900">
+              Personalization &amp; Smart Reminders
+            </h2>
+            <InfoHint
+              title="Tailor CukaiKu to You"
+              text="Choose a life-stage preset, switch EN/BM language, set a tax-saving goal, and add payday or monthly recurring bill shortcuts."
+            />
+          </div>
+          <div className="inline-flex rounded-xl bg-slate-100 p-0.5">
+            <button
+              type="button"
+              onClick={() =>
+                onUpdatePersonalization({ ...personalization, language: "en" })
+              }
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                personalization.language === "en"
+                  ? "bg-white text-emerald-700 shadow-2xs"
+                  : "text-slate-500"
+              }`}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onUpdatePersonalization({ ...personalization, language: "bm" })
+              }
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                personalization.language === "bm"
+                  ? "bg-white text-emerald-700 shadow-2xs"
+                  : "text-slate-500"
+              }`}
+            >
+              BM
+            </button>
+          </div>
+        </div>
+
+        {/* Life-Stage Presets */}
+        <div>
+          <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-slate-700">
+            <span>1-Tap Life-Stage Preset</span>
+            <InfoHint
+              align="left"
+              title="Auto-Configures Your App"
+              text="Selecting a preset updates your e-BE/e-B mode, status reliefs, and pins the best LHDN categories to your Dashboard."
+            />
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {LIFE_STAGE_PRESETS.map((preset) => {
+              const active = personalization.lifeStage === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => onApplyLifeStage(preset.id)}
+                  className={`rounded-xl border p-2.5 text-left transition ${
+                    active
+                      ? "border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600"
+                      : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs font-bold text-slate-900">
+                      {personalization.language === "bm"
+                        ? preset.titleBm
+                        : preset.titleEn}
+                    </span>
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                      {preset.badge}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {personalization.language === "bm"
+                      ? preset.subtitleBm
+                      : preset.subtitleEn}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tax-Saving Goal & Payday */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
+              <span>Tax-Saving Goal (RM)</span>
+              <InfoHint
+                align="left"
+                title="Personal Target"
+                text="Shows a progress bar on your Dashboard tracking how close you are to your yearly tax-saving target."
+              />
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={personalization.taxSavingGoal}
+              onChange={(e) =>
+                onUpdatePersonalization({
+                  ...personalization,
+                  taxSavingGoal: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
+            />
+          </div>
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
+              <span>Monthly Payday Reminder (Day 1–31)</span>
+              <InfoHint
+                align="right"
+                title="Payday Nudge"
+                text="Displays a gentle banner on your Dashboard around your payday reminding you to log your latest payslip & monthly bills."
+              />
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="31"
+              placeholder="e.g. 25 (optional)"
+              value={personalization.paydayDay ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const parsed = raw ? Math.min(31, Math.max(1, Number(raw))) : null;
+                onUpdatePersonalization({
+                  ...personalization,
+                  paydayDay: parsed,
+                });
+              }}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
+            />
+          </div>
+        </div>
+
+        {/* Monthly Recurring Bills Manager */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1 text-xs font-bold text-slate-800">
+              <span>1-Tap Monthly Recurring Bills</span>
+              <InfoHint
+                align="left"
+                title="Quick Monthly Logging"
+                text="Bills saved here appear on your Dashboard so you can log them in 1 tap once a month without re-typing."
+              />
+            </span>
+            <span className="text-[10px] font-semibold text-slate-500">
+              {recurringBills.length} saved
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            {recurringBills.map((bill) => (
+              <div
+                key={bill.id}
+                className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-xs border border-slate-200/70"
+              >
+                <span className="truncate font-medium text-slate-800">
+                  {bill.merchant} — <strong>{formatRM(bill.amount)}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSaveRecurringBills(
+                      recurringBills.filter((b) => b.id !== bill.id)
+                    )
+                  }
+                  className="text-[11px] font-semibold text-rose-600 hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-4">
+            <input
+              type="text"
+              placeholder="Merchant (e.g. Taska)"
+              value={newBillMerchant}
+              onChange={(e) => setNewBillMerchant(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs sm:col-span-2"
+            />
+            <input
+              type="number"
+              min="1"
+              placeholder="RM / month"
+              value={newBillAmount}
+              onChange={(e) => setNewBillAmount(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+            />
+            <select
+              value={newBillCategory}
+              onChange={(e) => setNewBillCategory(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
+            >
+              <option value="lifestyle">Lifestyle</option>
+              <option value="sports">Sports / Gym</option>
+              <option value="edu_med_insurance">Med Insurance</option>
+              <option value="childcare">Childcare</option>
+              <option value="sspn">SSPN</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const amt = Number(newBillAmount);
+              if (!newBillMerchant.trim() || !amt || amt <= 0) return;
+              onSaveRecurringBills([
+                ...recurringBills,
+                {
+                  id: `tpl-${Date.now()}`,
+                  merchant: newBillMerchant.trim(),
+                  categoryId: newBillCategory,
+                  subCategoryId: null,
+                  amount: amt,
+                  description: "Monthly recurring bill",
+                },
+              ]);
+              setNewBillMerchant("");
+              setNewBillAmount("");
+            }}
+            className="w-full rounded-lg border border-emerald-300 bg-emerald-50 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+          >
+            + Add Recurring Bill
           </button>
         </div>
       </section>

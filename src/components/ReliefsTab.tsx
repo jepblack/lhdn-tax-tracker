@@ -8,14 +8,18 @@ import {
   ChevronUp,
   Info,
   Plus,
+  Star,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { CategorySummary } from "@/lib/types";
+import { InfoHint } from "./InfoHint";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface ReliefsTabProps {
   summaries: CategorySummary[];
   marginalRate: number;
+  pinnedCategoryIds: string[];
+  onTogglePinCategory: (categoryId: string) => void;
   onAddExpenseForCategory: (categoryId: string, subCategoryId?: string) => void;
 }
 
@@ -31,6 +35,8 @@ const GROUP_FILTERS = [
 export function ReliefsTab({
   summaries,
   marginalRate,
+  pinnedCategoryIds,
+  onTogglePinCategory,
   onAddExpenseForCategory,
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
@@ -43,6 +49,22 @@ export function ReliefsTab({
 
   return (
     <div className="space-y-4 pb-6">
+      {/* Pinning Guidance Strip */}
+      <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-600 shadow-2xs">
+        <span className="flex items-center gap-1.5">
+          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+          <span>
+            Tap <strong>★</strong> on any relief to pin it onto your Dashboard (
+            <strong>{pinnedCategoryIds.length}</strong> pinned)
+          </span>
+        </span>
+        <InfoHint
+          align="right"
+          title="Pin Your Favorite Reliefs"
+          text="Hide caps you don't use and pin the ones that matter to your life stage (e.g. Lifestyle, Medical, SSPN, Childcare, or First-Home Interest)."
+        />
+      </div>
+
       {/* Group Filter Pills */}
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
         {GROUP_FILTERS.map((f) => {
@@ -110,7 +132,40 @@ export function ReliefsTab({
                       </p>
                     </div>
                   </div>
-                  <div className="shrink-0 text-slate-400">
+                  <div className="flex shrink-0 items-center gap-1.5 text-slate-400">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      title={
+                        pinnedCategoryIds.includes(item.category.id)
+                          ? "Pinned to Dashboard (tap to unpin)"
+                          : "Pin to Dashboard"
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePinCategory(item.category.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onTogglePinCategory(item.category.id);
+                        }
+                      }}
+                      className={`rounded-lg p-1.5 transition ${
+                        pinnedCategoryIds.includes(item.category.id)
+                          ? "bg-amber-50 text-amber-500 hover:bg-amber-100"
+                          : "text-slate-300 hover:bg-slate-100 hover:text-amber-500"
+                      }`}
+                    >
+                      <Star
+                        className={`h-4 w-4 ${
+                          pinnedCategoryIds.includes(item.category.id)
+                            ? "fill-amber-400 text-amber-500"
+                            : ""
+                        }`}
+                      />
+                    </span>
                     {isExpanded ? (
                       <ChevronUp className="h-4 w-4" />
                     ) : (
