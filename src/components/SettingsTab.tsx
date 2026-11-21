@@ -32,6 +32,7 @@ import {
 import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { TaxExpense, TaxProfile, UserSubscription } from "@/lib/types";
+import { InfoHint } from "./InfoHint";
 
 interface SettingsTabProps {
   profile: TaxProfile;
@@ -641,9 +642,12 @@ export function SettingsTab({
               <button
                 type="button"
                 onClick={() => handleApplyPayslip(false)}
-                className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white active:scale-[0.99]"
+                className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99]"
               >
-                Apply Income & PCB
+                <span className="text-xs font-bold">Apply Income &amp; PCB</span>
+                <span className="text-[10px] font-medium text-emerald-100">
+                  Profile numbers only
+                </span>
               </button>
               {(payslipData.ytdEpf > 0 ||
                 payslipData.employeeEpf > 0 ||
@@ -652,9 +656,14 @@ export function SettingsTab({
                 <button
                   type="button"
                   onClick={() => handleApplyPayslip(true)}
-                  className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white active:scale-[0.99]"
+                  className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99]"
                 >
-                  Apply + Log EPF & SOCSO
+                  <span className="text-xs font-bold">
+                    Apply + Log EPF &amp; SOCSO
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-300">
+                    Updates YTD reliefs (no duplicates)
+                  </span>
                 </button>
               )}
             </div>
@@ -682,8 +691,13 @@ export function SettingsTab({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              Annual Income (RM)
+            <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
+              <span>Annual Income (RM)</span>
+              <InfoHint
+                title="Annual Gross Income"
+                align="left"
+                text="Total yearly salary, bonus, or freelance revenue before EPF & tax deductions (from your EA Form or payslip)."
+              />
             </label>
             <input
               type="number"
@@ -697,8 +711,12 @@ export function SettingsTab({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              PCB / MTD Paid YTD (RM)
+            <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
+              <span>PCB / MTD Paid YTD (RM)</span>
+              <InfoHint
+                title="Monthly Tax Deduction (PCB)"
+                text="Potongan Cukai Berjadual — income tax already deducted from your monthly salary. Increases your LHDN refund or lowers balance due."
+              />
             </label>
             <input
               type="number"
@@ -712,8 +730,13 @@ export function SettingsTab({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              Zakat / Fitrah Rebate (RM)
+            <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
+              <span>Zakat / Fitrah Rebate (RM)</span>
+              <InfoHint
+                title="100% Tax Rebate"
+                align="right"
+                text="Official Zakat / Fitrah receipts give a direct RM-for-RM rebate off your final LHDN tax payable (not just a relief deduction)."
+              />
             </label>
             <input
               type="number"

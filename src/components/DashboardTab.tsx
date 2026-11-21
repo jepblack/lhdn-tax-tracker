@@ -31,6 +31,7 @@ import {
   UserSubscription,
 } from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
+import { InfoHint } from "./InfoHint";
 import { QuickStartChecklist } from "./QuickStartGuide";
 import { ReliefIcon } from "./ReliefIcon";
 
@@ -345,10 +346,18 @@ export function DashboardTab({
       <section className="rounded-2xl bg-gradient-to-br from-[#0F294A] via-emerald-800 to-teal-900 p-5 text-white shadow-lg shadow-emerald-950/20">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-emerald-100/90">
-              {taxpayerMode === "e-B" && freelancerView === "business"
-                ? `YA ${summary.taxYear} Business Deductible Expenses (Sec 33)`
-                : `YA ${summary.taxYear} Total Claimable Reliefs`}
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-emerald-100/90">
+              <span>
+                {taxpayerMode === "e-B" && freelancerView === "business"
+                  ? `YA ${summary.taxYear} Business Deductible Expenses (Sec 33)`
+                  : `YA ${summary.taxYear} Total Claimable Reliefs`}
+              </span>
+              <InfoHint
+                light
+                align="left"
+                title="How Tax Reliefs Work"
+                text="Approved LHDN deductions (Lifestyle, Medical, EPF, SSPN, etc.) subtract from your taxable income before calculating your tax bracket."
+              />
             </p>
             <p className="privacy-sensitive mt-1 text-3xl font-bold tracking-tight">
               {taxpayerMode === "e-B" && freelancerView === "business"
@@ -366,8 +375,14 @@ export function DashboardTab({
             </p>
           </div>
           <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right backdrop-blur-sm">
-            <p className="text-[10px] uppercase tracking-wider text-emerald-100">
-              Tax Bracket
+            <p className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-wider text-emerald-100">
+              <span>Tax Bracket</span>
+              <InfoHint
+                light
+                align="right"
+                title="Marginal Tax Rate"
+                text="Your top LHDN tax bracket (%). Every RM 100 of new relief saves you this percentage directly in tax!"
+              />
             </p>
             <p className="privacy-sensitive text-lg font-bold">
               {Math.round(summary.marginalRate * 100)}%
