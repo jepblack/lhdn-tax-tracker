@@ -1,11 +1,11 @@
 /**
  * Cloudflare Worker: Supabase Branded Auth & API Reverse Proxy
  *
- * Hides `pgybpfnhabzgpepxdjp.supabase.co` behind your own domain
- * (e.g. `https://auth.yourdomain.my`) on Cloudflare's Free Plan.
+ * Hides `pgybpfnhabzgpepxdjp.supabase.co` behind `https://auth.cukaiku.my`
+ * on Cloudflare's Free Plan.
  *
  * Route pattern in Cloudflare Workers:
- *   auth.yourdomain.my/*
+ *   auth.cukaiku.my/*
  */
 
 const SUPABASE_ORIGIN = "https://pgybpfnhabzgpepxdjp.supabase.co";
