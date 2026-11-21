@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Archive,
   CalendarClock,
+  Crown,
   Download,
   ExternalLink,
   Eye,
@@ -24,6 +25,7 @@ import {
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { isProOrFamily } from "@/lib/monetization";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
@@ -37,6 +39,7 @@ import {
   TaxExpense,
   TaxProfile,
   TaxYear,
+  UserSubscription,
 } from "@/lib/types";
 
 const ANNUAL_DOC_SLOTS: Array<{ type: AnnualDocType; label: string; hint: string }> = [
@@ -52,6 +55,7 @@ interface ReceiptsTabProps {
   taxYear: TaxYear;
   profile: TaxProfile;
   summary: TaxCalculationResult;
+  subscription: UserSubscription;
   expenses: TaxExpense[];
   annualDocs: AnnualTaxDoc[];
   onUploadAnnualDoc: (
@@ -66,6 +70,7 @@ interface ReceiptsTabProps {
   onDeleteAnnualDoc: (id: string) => void;
   onOpenBatchImport: () => void;
   onOpenMyInvoisQr: () => void;
+  onOpenUpgrade: (reason?: string) => void;
   onEdit: (expense: TaxExpense) => void;
   onDelete: (expense: TaxExpense) => Promise<void>;
   onAddNew: () => void;
@@ -75,6 +80,7 @@ export function ReceiptsTab({
   taxYear,
   profile,
   summary,
+  subscription,
   expenses,
   annualDocs,
   onUploadAnnualDoc,
@@ -82,6 +88,7 @@ export function ReceiptsTab({
   onDeleteAnnualDoc,
   onOpenBatchImport,
   onOpenMyInvoisQr,
+  onOpenUpgrade,
   onEdit,
   onDelete,
   onAddNew,
@@ -164,6 +171,12 @@ export function ReceiptsTab({
           <button
             type="button"
             onClick={async () => {
+              if (!isProOrFamily(subscription)) {
+                onOpenUpgrade(
+                  "1-Click LHDN 7-Year Audit Pack ZIP (categorized PDFs + JSON metadata + Form BE worksheet) is included in CukaiKu Pro Pass."
+                );
+                return;
+              }
               setExportingZip(true);
               try {
                 await exportAuditPackZip(profile, summary, expenses);
@@ -176,6 +189,8 @@ export function ReceiptsTab({
           >
             {exportingZip ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : !isProOrFamily(subscription) ? (
+              <Crown className="h-3.5 w-3.5 text-amber-300" />
             ) : (
               <Archive className="h-3.5 w-3.5" />
             )}
@@ -222,10 +237,22 @@ export function ReceiptsTab({
           </button>
           <button
             type="button"
-            onClick={onOpenBatchImport}
+            onClick={() => {
+              if (!isProOrFamily(subscription)) {
+                onOpenUpgrade(
+                  "Batch Multi-Receipt Import & AI Auto-Classification is a CukaiKu Pro feature."
+                );
+                return;
+              }
+              onOpenBatchImport();
+            }}
             className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-xs active:scale-95"
           >
-            <Files className="h-3.5 w-3.5 text-emerald-600" />
+            {!isProOrFamily(subscription) ? (
+              <Crown className="h-3.5 w-3.5 text-amber-500" />
+            ) : (
+              <Files className="h-3.5 w-3.5 text-emerald-600" />
+            )}
             Batch
           </button>
         </div>

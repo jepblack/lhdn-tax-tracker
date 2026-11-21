@@ -8,6 +8,7 @@ import {
   Camera,
   CheckCircle2,
   Cpu,
+  Crown,
   FileText,
   Loader2,
   RotateCcw,
@@ -35,11 +36,13 @@ import {
   ReceiptScanResult,
   TaxExpense,
   TaxYear,
+  UserSubscription,
 } from "@/lib/types";
 
 interface ReceiptScannerModalProps {
   isOpen: boolean;
   taxYear: TaxYear;
+  subscription: UserSubscription;
   initialCategoryId?: string;
   initialSubCategoryId?: string;
   prefillInvoiceNumber?: string;
@@ -48,6 +51,8 @@ interface ReceiptScannerModalProps {
   categorySummaries: CategorySummary[];
   existingExpenses: TaxExpense[];
   onClose: () => void;
+  onAiScanCompleted: () => Promise<void>;
+  onOpenUpgrade: (reason?: string) => void;
   onSave: (
     expense: Omit<TaxExpense, "id" | "createdAt">,
     receiptFile: File | null,
@@ -58,6 +63,7 @@ interface ReceiptScannerModalProps {
 export function ReceiptScannerModal({
   isOpen,
   taxYear,
+  subscription,
   initialCategoryId,
   initialSubCategoryId,
   prefillInvoiceNumber,
@@ -66,6 +72,8 @@ export function ReceiptScannerModal({
   categorySummaries,
   existingExpenses,
   onClose,
+  onAiScanCompleted,
+  onOpenUpgrade,
   onSave,
 }: ReceiptScannerModalProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -295,6 +303,8 @@ export function ReceiptScannerModal({
         const formData = new FormData();
         formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
+        formData.append("planTier", subscription.planTier);
+        formData.append("aiScansUsed", String(subscription.aiScansUsed));
 
         const headers: Record<string, string> = {};
         const supabase = getSupabaseClient();
@@ -327,6 +337,7 @@ export function ReceiptScannerModal({
           if (!data.fallbackToLocalOcr && data.eligibility) {
             applyScanResult(data as ReceiptScanResult);
             usedCloudAi = true;
+            await onAiScanCompleted();
           }
         }
       } catch {
@@ -821,9 +832,26 @@ export function ReceiptScannerModal({
           )}
 
           {scanNotice && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <span>{scanNotice}</span>
+            <div className="flex items-start justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <span>{scanNotice}</span>
+              </div>
+              {subscription.planTier === "free" &&
+                subscription.aiScansUsed >= subscription.aiScansLimit && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenUpgrade(
+                        "You've used all 5 free AI Vision receipt scans. Upgrade to CukaiKu Pro for 300 AI Vision scans + 7-Year LHDN Audit Pack!"
+                      )
+                    }
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs active:scale-95"
+                  >
+                    <Crown className="h-3 w-3" />
+                    Upgrade
+                  </button>
+                )}
             </div>
           )}
 

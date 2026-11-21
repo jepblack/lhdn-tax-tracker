@@ -136,6 +136,33 @@ export interface ReliefOpportunity {
   tip: string;
 }
 
+export type PlanTier = "free" | "pro" | "family";
+
+export type PaymentGatewayId = "stripe" | "billplz" | "chip" | "demo";
+
+export interface UserSubscription {
+  planTier: PlanTier;
+  aiScansUsed: number;
+  aiScansLimit: number; // e.g. 5 for free, 500 for pro/family
+  expiresAt?: string | null;
+  gateway?: PaymentGatewayId | null;
+  updatedAt: string;
+}
+
+export interface PartnerOffer {
+  id: string;
+  categoryId: string;
+  subCategoryId?: string;
+  partnerName: string;
+  badgeText: string;
+  headline: string;
+  description: string;
+  ctaLabel: string;
+  affiliateUrl: string;
+  promoCode?: string;
+  maxReliefAmount: number;
+}
+
 export interface TaxCalculationResult {
   taxYear: TaxYear;
   annualIncome: number;
@@ -198,6 +225,10 @@ export interface ReceiptScanResult {
   needsReview?: boolean;
   reviewReason?: string;
   imageQualityIssue?: string;
+  quotaExceeded?: boolean;
+  aiScansUsed?: number;
+  aiScansLimit?: number;
+  planTier?: PlanTier;
 }
 
 export type AnnualDocType =

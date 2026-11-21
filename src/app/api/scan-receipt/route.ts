@@ -5,35 +5,150 @@ import { extractText } from "unpdf";
 import { callGroqJson } from "@/lib/groq-vision";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
-import { ReceiptEligibility, TaxYear } from "@/lib/types";
+import {
+  FAMILY_AI_SCAN_LIMIT,
+  FREE_AI_SCAN_LIMIT,
+  PRO_AI_SCAN_LIMIT,
+} from "@/lib/monetization";
+import { PlanTier, ReceiptEligibility, TaxYear } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GEMINI_MODEL = "gemini-3.8-flash";
 
-async function verifyAuthenticatedUser(request: Request): Promise<boolean> {
+interface AuthAndQuotaStatus {
+  allowed: boolean;
+  quotaExceeded: boolean;
+  planTier: PlanTier;
+  aiScansUsed: number;
+  aiScansLimit: number;
+  userId: string | null;
+  reason?: string;
+}
+
+async function checkUserAuthAndQuota(
+  request: Request,
+  clientPlanTier: PlanTier,
+  clientScansUsed: number
+): Promise<AuthAndQuotaStatus> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  // If Supabase auth isn't configured (pure local dev), allow scanning
-  if (
-    !supabaseUrl ||
-    !supabaseKey ||
-    supabaseUrl.includes("your-project-id")
-  ) {
-    return true;
+  const isSupabaseLive = Boolean(
+    supabaseUrl &&
+      supabaseKey &&
+      !supabaseUrl.includes("your-project-id")
+  );
+
+  const defaultLimit =
+    clientPlanTier === "family"
+      ? FAMILY_AI_SCAN_LIMIT
+      : clientPlanTier === "pro"
+      ? PRO_AI_SCAN_LIMIT
+      : FREE_AI_SCAN_LIMIT;
+
+  if (!isSupabaseLive) {
+    const exceeded =
+      clientPlanTier === "free" && clientScansUsed >= FREE_AI_SCAN_LIMIT;
+    return {
+      allowed: !exceeded,
+      quotaExceeded: exceeded,
+      planTier: clientPlanTier,
+      aiScansUsed: clientScansUsed,
+      aiScansLimit: defaultLimit,
+      userId: null,
+      reason: exceeded
+        ? `Free plan limit reached (${FREE_AI_SCAN_LIMIT}/${FREE_AI_SCAN_LIMIT} AI Vision scans used). Upgrade to CukaiKu Pro for ${PRO_AI_SCAN_LIMIT} AI scans + 7-year Audit Pack, or continue with built-in Free OCR.`
+        : undefined,
+    };
   }
 
   const authHeader = request.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return false;
+  if (!token) {
+    // Allow guest trial scans up to FREE_AI_SCAN_LIMIT
+    const exceeded =
+      clientPlanTier === "free" && clientScansUsed >= FREE_AI_SCAN_LIMIT;
+    return {
+      allowed: !exceeded,
+      quotaExceeded: exceeded,
+      planTier: clientPlanTier,
+      aiScansUsed: clientScansUsed,
+      aiScansLimit: defaultLimit,
+      userId: null,
+      reason: exceeded
+        ? `Free trial limit reached (${FREE_AI_SCAN_LIMIT}/${FREE_AI_SCAN_LIMIT} AI Vision scans). Upgrade to CukaiKu Pro for unlimited AI Vision & Cloud Audit Vault!`
+        : undefined,
+    };
+  }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const { data, error } = await supabase.auth.getUser(token);
-    return Boolean(!error && data.user);
+    const supabase = createClient(supabaseUrl!, supabaseKey!, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !authData.user) {
+      const exceeded =
+        clientPlanTier === "free" && clientScansUsed >= FREE_AI_SCAN_LIMIT;
+      return {
+        allowed: !exceeded,
+        quotaExceeded: exceeded,
+        planTier: clientPlanTier,
+        aiScansUsed: clientScansUsed,
+        aiScansLimit: defaultLimit,
+        userId: null,
+      };
+    }
+
+    const uid = authData.user.id;
+    let tier: PlanTier = clientPlanTier;
+    let used = clientScansUsed;
+    let limit = defaultLimit;
+
+    const { data: subRow } = await supabase
+      .from("user_subscriptions")
+      .select("plan_tier, ai_scans_used, ai_scans_limit")
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (subRow) {
+      tier =
+        subRow.plan_tier === "pro" || subRow.plan_tier === "family"
+          ? subRow.plan_tier
+          : clientPlanTier !== "free"
+          ? clientPlanTier
+          : "free";
+      used = Math.max(clientScansUsed, Number(subRow.ai_scans_used) || 0);
+      limit =
+        Number(subRow.ai_scans_limit) ||
+        (tier === "family"
+          ? FAMILY_AI_SCAN_LIMIT
+          : tier === "pro"
+          ? PRO_AI_SCAN_LIMIT
+          : FREE_AI_SCAN_LIMIT);
+    }
+
+    const exceeded = tier === "free" && used >= FREE_AI_SCAN_LIMIT;
+    return {
+      allowed: !exceeded,
+      quotaExceeded: exceeded,
+      planTier: tier,
+      aiScansUsed: used,
+      aiScansLimit: limit,
+      userId: uid,
+      reason: exceeded
+        ? `You've used all ${FREE_AI_SCAN_LIMIT} free AI Vision scans. Upgrade to CukaiKu Pro (RM 29/yr) for ${PRO_AI_SCAN_LIMIT} AI scans + 1-click LHDN Audit ZIP, or keep using built-in Free OCR!`
+        : undefined,
+    };
   } catch {
-    return false;
+    return {
+      allowed: true,
+      quotaExceeded: false,
+      planTier: clientPlanTier,
+      aiScansUsed: clientScansUsed,
+      aiScansLimit: defaultLimit,
+      userId: null,
+    };
   }
 }
 
@@ -52,12 +167,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const isAuthed = await verifyAuthenticatedUser(request);
-    if (!isAuthed) {
+    const rawPlan = String(formData.get("planTier") || "free");
+    const clientPlanTier: PlanTier =
+      rawPlan === "pro" || rawPlan === "family" ? rawPlan : "free";
+    const clientScansUsed = Math.max(0, Number(formData.get("aiScansUsed") || 0));
+
+    const quota = await checkUserAuthAndQuota(
+      request,
+      clientPlanTier,
+      clientScansUsed
+    );
+    if (!quota.allowed) {
       return NextResponse.json({
         fallbackToLocalOcr: true,
+        quotaExceeded: true,
+        planTier: quota.planTier,
+        aiScansUsed: quota.aiScansUsed,
+        aiScansLimit: quota.aiScansLimit,
         aiSkippedReason:
-          "Sign in under Profile to use Gemini AI Vision (using built-in free OCR for guests).",
+          quota.reason ||
+          `Free AI Vision quota reached (${quota.aiScansUsed}/${quota.aiScansLimit}). Switched to built-in Free OCR — upgrade to CukaiKu Pro for unlimited AI Vision!`,
       });
     }
 

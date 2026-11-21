@@ -81,3 +81,25 @@ create policy "Users delete own receipts"
     bucket_id = 'receipts'
     and auth.uid()::text = (storage.foldername(name))[1]
   );
+
+-- 5. User Subscriptions & AI Quota Tracking (Monetization & Paywall)
+create table if not exists public.user_subscriptions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  plan_tier text not null default 'free' check (plan_tier in ('free', 'pro', 'family')),
+  ai_scans_used integer not null default 0 check (ai_scans_used >= 0),
+  ai_scans_limit integer not null default 5 check (ai_scans_limit >= 0),
+  gateway text default null,
+  payment_ref text default null,
+  expires_at timestamptz default null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+grant select, insert, update on table public.user_subscriptions to authenticated;
+
+alter table public.user_subscriptions enable row level security;
+
+create policy "Users view and manage own subscription"
+  on public.user_subscriptions for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

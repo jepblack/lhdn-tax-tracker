@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Cloud,
   CloudOff,
+  Crown,
   Database,
   FileUp,
   Loader2,
@@ -29,14 +30,16 @@ import {
 } from "@/lib/payslip-parser";
 import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
-import { TaxExpense, TaxProfile } from "@/lib/types";
+import { TaxExpense, TaxProfile, UserSubscription } from "@/lib/types";
 
 interface SettingsTabProps {
   profile: TaxProfile;
+  subscription: UserSubscription;
   expenses: TaxExpense[];
   userEmail: string | null;
   driveConnected: boolean;
   onUpdateProfile: (next: TaxProfile) => Promise<void>;
+  onOpenUpgrade: (reason?: string) => void;
   onLogPayslipReliefs: (
     epfAmount: number,
     socsoAmount: number,
@@ -48,10 +51,12 @@ interface SettingsTabProps {
 
 export function SettingsTab({
   profile,
+  subscription,
   expenses,
   userEmail,
   driveConnected,
   onUpdateProfile,
+  onOpenUpgrade,
   onLogPayslipReliefs,
   onLoadSampleData,
   onClearLocalData,
@@ -320,6 +325,43 @@ export function SettingsTab({
 
   return (
     <div className="space-y-4 pb-6">
+      {/* CukaiKu Subscription & AI Quota Card */}
+      <section className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-900 via-emerald-800 to-teal-900 p-4 text-white shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <div className="rounded-xl bg-amber-400/20 p-2 text-amber-300 ring-1 ring-amber-300/40">
+              <Crown className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold">
+                  CukaiKu{" "}
+                  {subscription.planTier === "family"
+                    ? "Family & Joint Pass"
+                    : subscription.planTier === "pro"
+                    ? "Pro Pass"
+                    : "Free Starter"}
+                </h2>
+                <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-100">
+                  {subscription.planTier}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-emerald-100/85">
+                {subscription.aiScansUsed} / {subscription.aiScansLimit} AI
+                Vision Scans used • Unlimited Free On-Device OCR
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenUpgrade()}
+            className="shrink-0 rounded-xl bg-amber-400 px-3 py-2 text-xs font-extrabold text-slate-950 shadow-xs hover:bg-amber-300 active:scale-95"
+          >
+            {subscription.planTier === "free" ? "Upgrade (RM 29)" : "Manage Pass"}
+          </button>
+        </div>
+      </section>
+
       {/* Income, PCB & Zakat + Payslip Extractor */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
         <div className="flex items-start justify-between gap-2">

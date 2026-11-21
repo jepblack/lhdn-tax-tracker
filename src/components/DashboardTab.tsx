@@ -7,6 +7,9 @@ import {
   Camera,
   CheckCircle2,
   ClipboardList,
+  Crown,
+  ExternalLink,
+  Gift,
   Repeat,
   Scale,
   SlidersHorizontal,
@@ -15,32 +18,42 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
-import { TaxCalculationResult } from "@/lib/types";
+import { matchPartnerOffersToOpportunities } from "@/lib/monetization";
+import { TaxCalculationResult, UserSubscription } from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
   summary: TaxCalculationResult;
+  subscription: UserSubscription;
   expenseCount: number;
   missingReceiptsTotal: number;
-  onQuickAdd: (categoryId?: string) => void;
+  onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
   onNavigateTab: (tab: "reliefs" | "receipts" | "settings") => void;
   onOpenTool: (tool: FilingToolTab) => void;
+  onOpenUpgrade: (reason?: string) => void;
   onLoadSampleData: () => void;
 }
 
 export function DashboardTab({
   summary,
+  subscription,
   expenseCount,
   missingReceiptsTotal,
   onQuickAdd,
   onNavigateTab,
   onOpenTool,
+  onOpenUpgrade,
   onLoadSampleData,
 }: DashboardTabProps) {
   const activeCategories = summary.categorySummaries
     .filter((c) => c.spent > 0)
     .sort((a, b) => b.percentUsed - a.percentUsed);
+
+  const partnerMatches = matchPartnerOffersToOpportunities(
+    summary.opportunities,
+    summary.marginalRate
+  );
 
   return (
     <div className="space-y-4 pb-6">
@@ -260,6 +273,128 @@ export function DashboardTab({
                 </button>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* Contextual Tax-Saving Partner Offers (Affiliate / Lead-Gen Recommendations Engine) */}
+      {partnerMatches.length > 0 && (
+        <section className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/60 p-4 shadow-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-emerald-600 p-1.5 text-white">
+                <Gift className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Tax-Saving Partner Perks
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Matched to your {Math.round(summary.marginalRate * 100)}% tax
+                  bracket &amp; unused YA {summary.taxYear} caps
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+              Verified Reliefs
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2.5">
+            {partnerMatches.slice(0, 3).map(({ offer, remainingCap, estimatedTaxSaved }) => {
+              const isInternalQuickAction = offer.affiliateUrl.startsWith("#");
+              return (
+                <div
+                  key={offer.id}
+                  className="rounded-xl border border-emerald-200/70 bg-white p-3 shadow-2xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200/60">
+                          {offer.partnerName}
+                        </span>
+                        <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900">
+                          Get back ~{formatRM(estimatedTaxSaved)} tax
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-bold text-slate-900">
+                        {offer.headline}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed">
+                        {offer.description} ({formatRM(remainingCap)} unused cap)
+                      </p>
+                      {offer.promoCode && (
+                        <p className="mt-1 text-[10px] font-semibold text-emerald-700">
+                          Promo code:{" "}
+                          <code className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono font-bold">
+                            {offer.promoCode}
+                          </code>
+                        </p>
+                      )}
+                    </div>
+
+                    {isInternalQuickAction ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onQuickAdd(offer.categoryId, offer.subCategoryId)
+                        }
+                        className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs active:scale-95"
+                      >
+                        {offer.ctaLabel}
+                      </button>
+                    ) : (
+                      <a
+                        href={offer.affiliateUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95"
+                      >
+                        <span>{offer.ctaLabel}</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Freemium AI Quota & Pro Pass Upgrade Card */}
+      {subscription.planTier === "free" && (
+        <section className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-emerald-50 p-4 shadow-xs">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="rounded-xl bg-amber-400/25 p-2 text-amber-800">
+                <Crown className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-bold text-slate-900">
+                    Free Starter Plan ({subscription.aiScansUsed}/
+                    {subscription.aiScansLimit} AI Vision Scans)
+                  </p>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-600">
+                  Unlock 300 AI Vision scans, 1-click LHDN 7-Year Audit ZIP, and
+                  Batch Import for RM 29/yr.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onOpenUpgrade(
+                  "Upgrade to CukaiKu Pro Pass for 300 AI Vision receipt scans and 1-click 7-Year LHDN Audit Pack ZIP."
+                )
+              }
+              className="shrink-0 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 active:scale-95"
+            >
+              Go Pro
+            </button>
           </div>
         </section>
       )}

@@ -5,6 +5,7 @@ import {
   Camera,
   Cloud,
   CloudOff,
+  Crown,
   Eye,
   EyeOff,
   LayoutDashboard,
@@ -27,6 +28,12 @@ import {
   SUPPORTED_TAX_YEARS,
 } from "@/lib/lhdn-rules";
 import {
+  fetchSubscription,
+  getDefaultSubscription,
+  incrementAiScanUsage,
+  persistSubscription,
+} from "@/lib/monetization";
+import {
   createExpense,
   fetchAnnualStateFromCloud,
   fetchExpenses,
@@ -47,14 +54,18 @@ import {
   AnnualDocType,
   AnnualTaxDoc,
   FormBeBaseline,
+  PaymentGatewayId,
+  PlanTier,
   TaxExpense,
   TaxProfile,
   TaxYear,
+  UserSubscription,
 } from "@/lib/types";
 import { BatchImportModal } from "./BatchImportModal";
 import { DashboardTab } from "./DashboardTab";
 import { FilingToolsSheet, FilingToolTab } from "./FilingToolsSheet";
 import { MyInvoisQrModal } from "./MyInvoisQrModal";
+import { PricingModal } from "./PricingModal";
 import { ReceiptScannerModal } from "./ReceiptScannerModal";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReliefsTab } from "./ReliefsTab";
@@ -95,6 +106,11 @@ export function TaxApp() {
   // Batch import, MyInvois QR, Annual Docs, Dark Mode & Privacy Blur
   const [batchOpen, setBatchOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [pricingReason, setPricingReason] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<UserSubscription>(() =>
+    getDefaultSubscription()
+  );
   const [annualDocs, setAnnualDocs] = useState<AnnualTaxDoc[]>([]);
   const [formBeBaselines, setFormBeBaselines] = useState<
     Record<string, FormBeBaseline>
@@ -102,7 +118,7 @@ export function TaxApp() {
   const [privacyBlur, setPrivacyBlur] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load dark mode preference, annual docs & Form BE baselines on mount
+  // Load dark mode preference, annual docs, Form BE baselines & redirect upgrades on mount
   useEffect(() => {
     try {
       const savedTheme = window.localStorage.getItem("cukaiku_theme_v1");
@@ -114,10 +130,57 @@ export function TaxApp() {
       if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
       const savedBaselines = window.localStorage.getItem(FORM_BE_BASELINES_KEY);
       if (savedBaselines) setFormBeBaselines(JSON.parse(savedBaselines));
+
+      const params = new URLSearchParams(window.location.search);
+      const upgraded = params.get("upgraded");
+      const gatewayParam = params.get("gateway") as PaymentGatewayId | null;
+      if (upgraded === "pro" || upgraded === "family") {
+        persistSubscription(
+          {
+            ...getDefaultSubscription(),
+            planTier: upgraded,
+            gateway: gatewayParam || "stripe",
+            expiresAt: new Date(
+              Date.now() + 365 * 24 * 60 * 60 * 1000
+            ).toISOString(),
+          },
+          null
+        ).then((sub) => setSubscription(sub));
+        window.history.replaceState({}, "", window.location.pathname);
+      }
     } catch {
       // ignore
     }
   }, []);
+
+  function openUpgradeModal(reason?: string) {
+    setPricingReason(reason || null);
+    setPricingOpen(true);
+  }
+
+  async function handleUpgradeSuccess(
+    nextTier: PlanTier,
+    gateway: PaymentGatewayId
+  ) {
+    const nextSub = await persistSubscription(
+      {
+        ...subscription,
+        planTier: nextTier,
+        gateway,
+        expiresAt:
+          nextTier === "free"
+            ? null
+            : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      userId
+    );
+    setSubscription(nextSub);
+  }
+
+  async function handleAiScanCompleted() {
+    const nextSub = await incrementAiScanUsage(subscription, userId);
+    setSubscription(nextSub);
+  }
 
   function toggleDarkMode() {
     setDarkMode((prev) => {
@@ -414,13 +477,16 @@ export function TaxApp() {
   const [refreshing, setRefreshing] = useState(false);
 
   async function refreshAllFromCloud(uid: string | null, yr: TaxYear) {
-    const [loadedProfile, loadedExpenses, annualState] = await Promise.all([
-      fetchProfile(yr, uid),
-      fetchExpenses(uid),
-      uid ? fetchAnnualStateFromCloud(yr, uid) : Promise.resolve(null),
-    ]);
+    const [loadedProfile, loadedExpenses, annualState, loadedSub] =
+      await Promise.all([
+        fetchProfile(yr, uid),
+        fetchExpenses(uid),
+        uid ? fetchAnnualStateFromCloud(yr, uid) : Promise.resolve(null),
+        fetchSubscription(uid),
+      ]);
     setProfile(loadedProfile);
     setExpenses(loadedExpenses);
+    setSubscription(loadedSub);
     if (annualState) {
       setAnnualDocs((prev) => {
         const otherYears = prev.filter((d) => d.taxYear !== yr);
@@ -517,14 +583,17 @@ export function TaxApp() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [loadedProfile, loadedExpenses, annualState] = await Promise.all([
-        fetchProfile(taxYear, userId),
-        fetchExpenses(userId),
-        userId ? fetchAnnualStateFromCloud(taxYear, userId) : Promise.resolve(null),
-      ]);
+      const [loadedProfile, loadedExpenses, annualState, loadedSub] =
+        await Promise.all([
+          fetchProfile(taxYear, userId),
+          fetchExpenses(userId),
+          userId ? fetchAnnualStateFromCloud(taxYear, userId) : Promise.resolve(null),
+          fetchSubscription(userId),
+        ]);
       if (!cancelled) {
         setProfile(loadedProfile);
         setExpenses(loadedExpenses);
+        setSubscription(loadedSub);
         if (annualState) {
           setAnnualDocs((prev) => {
             const otherYears = prev.filter((d) => d.taxYear !== taxYear);
@@ -754,6 +823,31 @@ export function TaxApp() {
 
             <button
               type="button"
+              onClick={() => openUpgradeModal()}
+              title={
+                subscription.planTier === "free"
+                  ? `Free Plan (${subscription.aiScansUsed}/${subscription.aiScansLimit} AI Scans used) — Tap to upgrade to Pro`
+                  : `CukaiKu ${subscription.planTier.toUpperCase()} Pass Active`
+              }
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
+                subscription.planTier === "free"
+                  ? "bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
+                  : "bg-emerald-700 text-amber-300 shadow-2xs"
+              }`}
+            >
+              <Crown className="h-3 w-3" />
+              <span>
+                {subscription.planTier === "free"
+                  ? `Pro • ${Math.max(
+                      0,
+                      subscription.aiScansLimit - subscription.aiScansUsed
+                    )} AI`
+                  : subscription.planTier}
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setPrivacyBlur((v) => !v)}
               title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
               className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
@@ -813,14 +907,16 @@ export function TaxApp() {
             {activeTab === "dashboard" && (
               <DashboardTab
                 summary={summary}
+                subscription={subscription}
                 expenseCount={yearExpenses.length}
                 missingReceiptsTotal={missingReceiptsTotal}
-                onQuickAdd={(catId) => openScanner(catId)}
+                onQuickAdd={(catId, subId) => openScanner(catId, subId)}
                 onNavigateTab={(tab) => setActiveTab(tab)}
                 onOpenTool={(tool) => {
                   setToolsTab(tool);
                   setToolsOpen(true);
                 }}
+                onOpenUpgrade={openUpgradeModal}
                 onLoadSampleData={handleLoadSampleData}
               />
             )}
@@ -840,6 +936,7 @@ export function TaxApp() {
                 taxYear={taxYear}
                 profile={profile}
                 summary={summary}
+                subscription={subscription}
                 expenses={expenses}
                 annualDocs={annualDocs}
                 onUploadAnnualDoc={handleUploadAnnualDoc}
@@ -847,6 +944,7 @@ export function TaxApp() {
                 onDeleteAnnualDoc={handleDeleteAnnualDoc}
                 onOpenBatchImport={() => setBatchOpen(true)}
                 onOpenMyInvoisQr={() => setQrOpen(true)}
+                onOpenUpgrade={openUpgradeModal}
                 onEdit={openEditExpense}
                 onDelete={handleDeleteExpense}
                 onAddNew={() => openScanner()}
@@ -856,10 +954,12 @@ export function TaxApp() {
             {activeTab === "settings" && (
               <SettingsTab
                 profile={profile}
+                subscription={subscription}
                 expenses={expenses}
                 userEmail={userEmail}
                 driveConnected={driveConnected}
                 onUpdateProfile={handleUpdateProfile}
+                onOpenUpgrade={openUpgradeModal}
                 onLogPayslipReliefs={handleLogPayslipReliefs}
                 onLoadSampleData={handleLoadSampleData}
                 onClearLocalData={handleClearLocalData}
@@ -917,6 +1017,7 @@ export function TaxApp() {
       <ReceiptScannerModal
         isOpen={scannerOpen}
         taxYear={taxYear}
+        subscription={subscription}
         initialCategoryId={scannerCategoryId}
         initialSubCategoryId={scannerSubCategoryId}
         prefillInvoiceNumber={prefillInvoice}
@@ -930,7 +1031,27 @@ export function TaxApp() {
           setPrefillInvoice(undefined);
           setPrefillDesc(undefined);
         }}
+        onAiScanCompleted={handleAiScanCompleted}
+        onOpenUpgrade={(reason) => {
+          setScannerOpen(false);
+          openUpgradeModal(reason);
+        }}
         onSave={handleSaveExpense}
+      />
+
+      {/* Pricing & Malaysia Payment Checkout Modal */}
+      <PricingModal
+        isOpen={pricingOpen}
+        taxYear={taxYear}
+        subscription={subscription}
+        userEmail={userEmail}
+        userId={userId}
+        triggerReason={pricingReason}
+        onClose={() => {
+          setPricingOpen(false);
+          setPricingReason(null);
+        }}
+        onUpgradeSuccess={handleUpgradeSuccess}
       />
 
       {/* Batch Multi-Receipt Import Modal */}
