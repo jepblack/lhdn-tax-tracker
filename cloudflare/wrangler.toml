@@ -1,0 +1,7 @@
+name = "cukaiku-auth-proxy"
+main = "supabase-proxy-worker.js"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "auth.cukaiku.my/*", zone_name = "cukaiku.my" }
+]
