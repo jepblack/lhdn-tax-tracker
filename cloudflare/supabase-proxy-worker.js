@@ -42,11 +42,25 @@ export default {
 
     // Clone response headers so we can rewrite Location redirects
     const responseHeaders = new Headers(response.headers);
-    const location = responseHeaders.get("Location");
-    if (location && location.includes(SUPABASE_HOST)) {
+    let location = responseHeaders.get("Location");
+    if (location && (location.includes(SUPABASE_HOST) || location.includes(encodeURIComponent(SUPABASE_HOST)))) {
+      const encodedSupabaseOrigin = encodeURIComponent(SUPABASE_ORIGIN);
+      const encodedProxyOrigin = encodeURIComponent(`https://${proxyHost}`);
+      
+      location = location
+        .replaceAll(encodedSupabaseOrigin, encodedProxyOrigin)
+        .replaceAll(SUPABASE_ORIGIN, `https://${proxyHost}`)
+        .replaceAll(SUPABASE_HOST, proxyHost);
+        
+      responseHeaders.set("Location", location);
+    }
+
+    // Rewrite Set-Cookie domain if present
+    const setCookie = responseHeaders.get("Set-Cookie");
+    if (setCookie && setCookie.includes("supabase.co")) {
       responseHeaders.set(
-        "Location",
-        location.replaceAll(SUPABASE_ORIGIN, `https://${proxyHost}`)
+        "Set-Cookie",
+        setCookie.replaceAll(".supabase.co", `.${proxyHost}`)
       );
     }
 
