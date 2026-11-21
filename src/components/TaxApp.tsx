@@ -433,7 +433,8 @@ export function TaxApp() {
       : `Extracted from ${doc.label}`;
 
     if (ext.epfEmployee > 0) {
-      await handleSaveExpense(
+      await upsertStatutoryRelief(
+        "epf",
         {
           taxYear,
           categoryId: "epf_life_insurance",
@@ -449,7 +450,8 @@ export function TaxApp() {
     }
 
     if (ext.socsoEisEmployee > 0) {
-      await handleSaveExpense(
+      await upsertStatutoryRelief(
+        "socso",
         {
           taxYear,
           categoryId: "socso",
@@ -807,6 +809,54 @@ export function TaxApp() {
     await persistProfile(next, userId);
   }
 
+  function findExistingStatutoryRelief(
+    targetYear: number,
+    kind: "epf" | "socso"
+  ): TaxExpense | undefined {
+    return expenses.find((e) => {
+      if (e.taxYear !== targetYear) return false;
+      if (kind === "epf") {
+        return (
+          e.invoiceNumber === `PAYSLIP-EPF-${targetYear}` ||
+          (e.categoryId === "epf_life_insurance" &&
+            e.subCategoryId === "epf_mandatory" &&
+            (e.merchant.toLowerCase().includes("epf") ||
+              e.merchant.toLowerCase().includes("kwsp")))
+        );
+      }
+      return (
+        e.invoiceNumber === `PAYSLIP-SOCSO-${targetYear}` ||
+        (e.categoryId === "socso" &&
+          (e.merchant.toLowerCase().includes("socso") ||
+            e.merchant.toLowerCase().includes("perkeso")))
+      );
+    });
+  }
+
+  async function upsertStatutoryRelief(
+    kind: "epf" | "socso",
+    payload: Omit<TaxExpense, "id" | "createdAt">,
+    file: File | null
+  ) {
+    const existing = findExistingStatutoryRelief(payload.taxYear, kind);
+    if (existing) {
+      await handleSaveExpense(
+        {
+          ...existing,
+          ...payload,
+          receiptUrl: file ? existing.receiptUrl : payload.receiptUrl ?? existing.receiptUrl,
+          receiptPath: file ? existing.receiptPath : payload.receiptPath ?? existing.receiptPath,
+          receiptFileName: file ? file.name : payload.receiptFileName ?? existing.receiptFileName,
+          receiptMimeType: file ? file.type : payload.receiptMimeType ?? existing.receiptMimeType,
+        },
+        file,
+        existing.id
+      );
+      return;
+    }
+    await handleSaveExpense(payload, file);
+  }
+
   async function handleLogPayslipReliefs(
     epfAmount: number,
     socsoAmount: number,
@@ -814,40 +864,40 @@ export function TaxApp() {
   ) {
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     if (epfAmount > 0) {
-      const epfExpense = await createExpense(
+      await upsertStatutoryRelief(
+        "epf",
         {
           taxYear,
           categoryId: "epf_life_insurance",
           subCategoryId: "epf_mandatory",
           merchant: "KWSP / EPF (Payslip YTD)",
-          description: "Auto-extracted from uploaded payslip / EA Form",
+          description:
+            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD, never double-counted)",
           amount: epfAmount,
           expenseDate: today,
           invoiceNumber: `PAYSLIP-EPF-${taxYear}`,
           aiExtracted: true,
         },
-        payslipFile,
-        userId
+        payslipFile
       );
-      setExpenses((prev) => [epfExpense, ...prev]);
     }
     if (socsoAmount > 0) {
-      const socsoExpense = await createExpense(
+      await upsertStatutoryRelief(
+        "socso",
         {
           taxYear,
           categoryId: "socso",
           subCategoryId: null,
           merchant: "PERKESO / SOCSO & EIS (Payslip YTD)",
-          description: "Auto-extracted from uploaded payslip / EA Form",
+          description:
+            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD, never double-counted)",
           amount: socsoAmount,
           expenseDate: today,
           invoiceNumber: `PAYSLIP-SOCSO-${taxYear}`,
           aiExtracted: true,
         },
-        payslipFile,
-        userId
+        payslipFile
       );
-      setExpenses((prev) => [socsoExpense, ...prev]);
     }
   }
 

@@ -187,7 +187,7 @@ export function SettingsTab({
 
     setAppliedBanner(
       includeReliefs
-        ? "Applied income, PCB/Zakat & logged EPF/SOCSO reliefs!"
+        ? "Applied income, PCB/Zakat & updated EPF/SOCSO reliefs in-place (no duplicates)!"
         : "Applied income, PCB & Zakat to your YA " + profile.taxYear + " profile!"
     );
     setPayslipData(null);
