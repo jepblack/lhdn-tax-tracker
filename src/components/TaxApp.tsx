@@ -872,8 +872,12 @@ export function TaxApp() {
           {/* Primary Row: Brand + Quick Controls */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-white shadow-xs">
-                <Shield className="h-5 w-5" />
+              <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-xs ring-1 ring-slate-200/80">
+                <img
+                  src="/icon.png"
+                  alt="CukaiKu Logo"
+                  className="h-full w-full object-contain p-0.5"
+                />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">

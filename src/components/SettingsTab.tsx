@@ -808,6 +808,21 @@ export function SettingsTab({
             </div>
           ) : (
             <div className="space-y-2.5">
+              <div className="flex items-center gap-3 pb-1">
+                <img
+                  src="/icon.png"
+                  alt="CukaiKu"
+                  className="h-10 w-10 shrink-0 rounded-xl object-contain shadow-xs border border-slate-200"
+                />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    CukaiKu Cloud Vault
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Sync receipts securely across your phone and PC
+                  </p>
+                </div>
+              </div>
               <div className="rounded-xl bg-amber-50/90 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
                 <p className="font-semibold flex items-center gap-1.5">
                   <CloudOff className="h-3.5 w-3.5 text-amber-600" />

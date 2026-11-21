@@ -156,8 +156,12 @@ export function PricingModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 px-5 py-4 text-white">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400/20 text-amber-300 ring-1 ring-amber-300/40">
-              <Crown className="h-5 w-5" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-xs ring-1 ring-white/20">
+              <img
+                src="/icon.png"
+                alt="CukaiKu Logo"
+                className="h-full w-full object-contain p-0.5"
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
