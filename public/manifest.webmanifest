@@ -4,8 +4,8 @@
   "description": "Personal Malaysia LHDN tax relief tracker, sub-limit maximizer, and 7-year receipt vault.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#059669",
+  "background_color": "#F6F8FA",
+  "theme_color": "#F6F8FA",
   "orientation": "portrait",
   "icons": [
     {
@@ -13,6 +13,34 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Scan Receipt / e-Invoice",
+      "short_name": "Scan Receipt",
+      "description": "Snap a receipt or scan an LHDN MyInvois QR code",
+      "url": "/?scan=camera",
+      "icons": [
+        {
+          "src": "/icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Scan MyInvois QR",
+      "short_name": "MyInvois QR",
+      "description": "Validate and attach LHDN MyInvois e-Invoice QR",
+      "url": "/?scan=qr",
+      "icons": [
+        {
+          "src": "/icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
     }
   ],
   "share_target": {

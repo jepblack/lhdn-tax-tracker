@@ -1,24 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 import {
   AlertCircle,
   AlertTriangle,
   Ban,
+  Briefcase,
   Camera,
   CheckCircle2,
   Cpu,
   Crown,
+  ExternalLink,
   FileText,
   Loader2,
+  QrCode,
   RotateCcw,
   Sparkles,
   Upload,
+  UserCheck,
+  WifiOff,
   X,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { runLocalReceiptOcr } from "@/lib/local-ocr";
+import { enqueueOfflineReceipt } from "@/lib/offline-queue";
 import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import {
   buildArchiveBaseFilename,
@@ -32,9 +39,11 @@ import { getSupabaseClient } from "@/lib/supabase";
 import {
   ArchiveCategory,
   CategorySummary,
+  ExpenseClaimType,
   LhdnReceiptMetadata,
   ReceiptScanResult,
   TaxExpense,
+  TaxpayerMode,
   TaxYear,
   UserSubscription,
 } from "@/lib/types";
@@ -42,9 +51,12 @@ import {
 interface ReceiptScannerModalProps {
   isOpen: boolean;
   taxYear: TaxYear;
+  taxpayerMode?: TaxpayerMode;
   subscription: UserSubscription;
   initialCategoryId?: string;
   initialSubCategoryId?: string;
+  initialScannerMode?: "ocr" | "qr";
+  initialFile?: File | null;
   prefillInvoiceNumber?: string;
   prefillDescription?: string;
   editingExpense?: TaxExpense | null;
@@ -53,6 +65,7 @@ interface ReceiptScannerModalProps {
   onClose: () => void;
   onAiScanCompleted: () => Promise<void>;
   onOpenUpgrade: (reason?: string) => void;
+  onOfflineQueued?: () => void;
   onSave: (
     expense: Omit<TaxExpense, "id" | "createdAt">,
     receiptFile: File | null,
@@ -63,9 +76,12 @@ interface ReceiptScannerModalProps {
 export function ReceiptScannerModal({
   isOpen,
   taxYear,
+  taxpayerMode = "e-BE",
   subscription,
   initialCategoryId,
   initialSubCategoryId,
+  initialScannerMode = "ocr",
+  initialFile,
   prefillInvoiceNumber,
   prefillDescription,
   editingExpense,
@@ -74,6 +90,7 @@ export function ReceiptScannerModal({
   onClose,
   onAiScanCompleted,
   onOpenUpgrade,
+  onOfflineQueued,
   onSave,
 }: ReceiptScannerModalProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -120,14 +137,48 @@ export function ReceiptScannerModal({
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Full-Screen Viewfinder Mode Toggle (Receipt OCR vs MyInvois QR), Claim Type (e-B), and Offline Queue state
+  const [scannerMode, setScannerMode] = useState<"ocr" | "qr">(initialScannerMode);
+  const [claimType, setClaimType] = useState<ExpenseClaimType>("personal_relief");
+  const [myInvoisUuid, setMyInvoisUuid] = useState<string>("");
+  const [manualQrUrl, setManualQrUrl] = useState<string>("");
+  const [qrDetectedUrl, setQrDetectedUrl] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [sheetExpanded, setSheetExpanded] = useState<boolean>(true);
+  const dragStartYRef = useRef<number | null>(null);
+
   const isGeneralScanMode = !initialCategoryId;
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsOffline(!window.navigator.onLine);
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
+      setScannerMode(initialScannerMode || "ocr");
+      setSheetExpanded(true);
+      setManualQrUrl("");
+      setQrDetectedUrl(null);
       if (editingExpense) {
         setTargetTaxYear(editingExpense.taxYear);
         setCategoryId(editingExpense.categoryId);
         setSubCategoryId(editingExpense.subCategoryId || "");
+        setClaimType(
+          editingExpense.claimType ||
+            (editingExpense.categoryId === "business_expense"
+              ? "business_deductible"
+              : "personal_relief")
+        );
+        setMyInvoisUuid(editingExpense.myInvoisUuid || "");
         setMerchant(editingExpense.merchant);
         setAmount(String(editingExpense.amount));
         setExpenseDate(editingExpense.expenseDate);
@@ -150,6 +201,10 @@ export function ReceiptScannerModal({
         setSubCategoryId(
           initialSubCategoryId || cat?.subCategories?.[0]?.id || ""
         );
+        setClaimType(
+          catId === "business_expense" ? "business_deductible" : "personal_relief"
+        );
+        setMyInvoisUuid(prefillInvoiceNumber || "");
         setMerchant("");
         setAmount("");
         setExpenseDate(`${taxYear}-${new Date().toISOString().slice(5, 10)}`);
@@ -174,9 +229,86 @@ export function ReceiptScannerModal({
       setScanNotice(null);
       setScanProgress(0);
     }
-  }, [isOpen, initialCategoryId, initialSubCategoryId, editingExpense, taxYear]);
+  }, [
+    isOpen,
+    initialCategoryId,
+    initialSubCategoryId,
+    initialScannerMode,
+    editingExpense,
+    taxYear,
+    prefillInvoiceNumber,
+    prefillDescription,
+  ]);
+
+  // Auto-process initialFile when passed from Desktop Drag-and-Drop Dropzone
+  useEffect(() => {
+    if (isOpen && initialFile && !editingExpense) {
+      handleFileSelected(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialFile]);
 
   if (!isOpen) return null;
+
+  function parseMyInvoisQrText(text: string): {
+    rawUrl: string;
+    invoiceUuid: string;
+    isOfficial: boolean;
+  } {
+    const trimmed = text.trim();
+    const isOfficial = /myinvois\.hasil\.gov\.my/i.test(trimmed);
+    const uuidMatch = trimmed.match(
+      /myinvois\.hasil\.gov\.my\/([A-Z0-9\-]{8,40})/i
+    );
+    const fallbackId = trimmed.split("/").filter(Boolean).pop() || trimmed;
+    return {
+      rawUrl: trimmed,
+      invoiceUuid: (uuidMatch ? uuidMatch[1] : fallbackId).slice(0, 32),
+      isOfficial,
+    };
+  }
+
+  async function tryDecodeMyInvoisQrFromFile(
+    file: File
+  ): Promise<string | null> {
+    if (!file.type.startsWith("image/")) return null;
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height);
+        URL.revokeObjectURL(url);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        resolve(code?.data || null);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  }
 
   const selectedCategory = categories.find((c) => c.id === categoryId);
   const selectedCatSummary = categorySummaries.find(
@@ -279,6 +411,27 @@ export function ReceiptScannerModal({
     } else {
       setPreviewUrl(null);
     }
+
+    // Attempt MyInvois QR code extraction automatically (or primarily when in QR mode)
+    tryDecodeMyInvoisQrFromFile(file).then((qrText) => {
+      if (qrText) {
+        const parsedQr = parseMyInvoisQrText(qrText);
+        setQrDetectedUrl(parsedQr.rawUrl);
+        setMyInvoisUuid(parsedQr.invoiceUuid);
+        setInvoiceNumber((prev) => prev || parsedQr.invoiceUuid);
+        setDescription((prev) =>
+          prev
+            ? prev
+            : `MyInvois e-Invoice (${
+                parsedQr.isOfficial ? "Verified LHDN" : "QR"
+              }): ${parsedQr.rawUrl}`
+        );
+      } else if (scannerMode === "qr") {
+        setScanNotice(
+          "No MyInvois QR detected in frame — running OCR on the receipt text instead, or paste the MyInvois URL below."
+        );
+      }
+    });
 
     setIsScanning(true);
     try {
@@ -472,34 +625,53 @@ export function ReceiptScannerModal({
         }
       }
 
-      await onSave(
-        {
-          taxYear: targetTaxYear,
-          categoryId,
-          subCategoryId: subCategoryId || null,
-          merchant: merchant.trim(),
-          description: maskSensitiveText(description.trim()),
-          amount: numericAmount,
-          expenseDate,
-          invoiceNumber: invoiceNumber.trim(),
-          receiptPath: archivedPdfFile
-            ? undefined
-            : editingExpense?.receiptPath || null,
-          receiptUrl: archivedPdfFile
-            ? undefined
-            : editingExpense?.receiptUrl || null,
-          receiptFileName: archivedPdfFile
-            ? filePdfName
-            : editingExpense?.receiptFileName || null,
-          receiptMimeType: archivedPdfFile
-            ? "application/pdf"
-            : editingExpense?.receiptMimeType || null,
-          metadata,
-          aiExtracted: Boolean(scanResult) || Boolean(editingExpense?.aiExtracted),
-        },
-        archivedPdfFile,
-        editingExpense?.id
-      );
+      const expensePayload: Omit<TaxExpense, "id" | "createdAt"> = {
+        taxYear: targetTaxYear,
+        categoryId:
+          claimType === "business_deductible" ? "business_expense" : categoryId,
+        subCategoryId:
+          claimType === "business_deductible"
+            ? "business_deductible"
+            : subCategoryId || null,
+        claimType,
+        myInvoisUuid: myInvoisUuid.trim() || null,
+        offlineQueued: isOffline,
+        merchant: merchant.trim(),
+        description: maskSensitiveText(description.trim()),
+        amount: numericAmount,
+        expenseDate,
+        invoiceNumber: invoiceNumber.trim() || myInvoisUuid.trim(),
+        receiptPath: archivedPdfFile
+          ? undefined
+          : editingExpense?.receiptPath || null,
+        receiptUrl: archivedPdfFile
+          ? undefined
+          : editingExpense?.receiptUrl || null,
+        receiptFileName: archivedPdfFile
+          ? filePdfName
+          : editingExpense?.receiptFileName || null,
+        receiptMimeType: archivedPdfFile
+          ? "application/pdf"
+          : editingExpense?.receiptMimeType || null,
+        metadata,
+        aiExtracted:
+          Boolean(scanResult) || Boolean(editingExpense?.aiExtracted),
+      };
+
+      // If offline, queue in IndexedDB for automatic background sync when online
+      if (isOffline && !editingExpense) {
+        await enqueueOfflineReceipt({
+          id: `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          queuedAt: new Date().toISOString(),
+          expense: expensePayload,
+          fileBlob: archivedPdfFile || null,
+          fileName: archivedPdfFile?.name || null,
+          fileMimeType: archivedPdfFile?.type || null,
+        });
+        onOfflineQueued?.();
+      }
+
+      await onSave(expensePayload, archivedPdfFile, editingExpense?.id);
       onClose();
     } finally {
       setIsSaving(false);
@@ -511,35 +683,176 @@ export function ReceiptScannerModal({
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              {editingExpense
-                ? "Edit Receipt / Attach Proof"
-                : isGeneralScanMode
-                ? "Smart LHDN Receipt Scanner"
-                : "Scan or Log Receipt"}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Built-in free OCR + LHDN rule engine (auto-routes or rejects)
-            </p>
+    <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col justify-end bg-slate-950/90 backdrop-blur-xs sm:items-center sm:justify-center sm:p-4">
+      {/* Full-Screen Viewfinder Header & Framing Guide (Mobile 100dvh feel) */}
+      <div
+        className={`relative flex flex-col items-center justify-between px-4 pt-safe text-white transition-all duration-300 sm:hidden ${
+          sheetExpanded ? "py-3" : "flex-1 py-6"
+        }`}
+      >
+        <div className="flex w-full items-center justify-between gap-2 pt-2">
+          {/* Segmented Mode Toggle: Receipt Photo (OCR) vs MyInvois QR */}
+          <div className="inline-flex rounded-full bg-white/10 p-1 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => setScannerMode("ocr")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition ${
+                scannerMode === "ocr"
+                  ? "bg-emerald-500 text-white shadow-xs"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <Camera className="h-3.5 w-3.5" />
+              Receipt OCR
+            </button>
+            <button
+              type="button"
+              onClick={() => setScannerMode("qr")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition ${
+                scannerMode === "qr"
+                  ? "bg-emerald-500 text-white shadow-xs"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <QrCode className="h-3.5 w-3.5" />
+              MyInvois QR
+            </button>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-full bg-white/15 p-2 text-white backdrop-blur-md"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
+        </div>
+
+        {/* Rectangular Receipt / QR Framing Guide */}
+        <div
+          onClick={() => cameraInputRef.current?.click()}
+          className={`my-2 flex w-full max-w-xs cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-400/80 bg-slate-900/60 p-4 text-center transition ${
+            sheetExpanded ? "h-28" : "h-64"
+          }`}
+        >
+          {previewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={previewUrl}
+              alt="Captured receipt frame"
+              className="h-full w-full rounded-xl object-contain"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-1.5">
+              {scannerMode === "qr" ? (
+                <QrCode className="h-7 w-7 text-emerald-400" />
+              ) : (
+                <Camera className="h-7 w-7 text-emerald-400" />
+              )}
+              <p className="text-xs font-bold text-emerald-300">
+                {scannerMode === "qr"
+                  ? "Tap to Frame LHDN MyInvois QR Code"
+                  : "Tap to Frame Receipt within Guide"}
+              </p>
+              <p className="text-[10px] text-slate-300">
+                Auto-compresses (~300KB) for 7-year LHDN vault
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Draggable Post-Scan Bottom Sheet */}
+      <div
+        className={`flex w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl transition-all duration-300 sm:max-h-[90vh] sm:rounded-3xl ${
+          sheetExpanded ? "max-h-[82dvh]" : "max-h-[46dvh]"
+        }`}
+      >
+        {/* Drag Handle for Mobile Bottom Sheet */}
+        <div
+          onTouchStart={(e) => {
+            dragStartYRef.current = e.touches[0]?.clientY ?? null;
+          }}
+          onTouchEnd={(e) => {
+            if (dragStartYRef.current === null) return;
+            const endY = e.changedTouches[0]?.clientY ?? dragStartYRef.current;
+            const delta = endY - dragStartYRef.current;
+            if (delta > 35) setSheetExpanded(false);
+            else if (delta < -35) setSheetExpanded(true);
+            dragStartYRef.current = null;
+          }}
+          onClick={() => setSheetExpanded((v) => !v)}
+          className="flex cursor-grab flex-col items-center pt-2.5 pb-1 sm:hidden"
+        >
+          <div className="h-1.5 w-10 rounded-full bg-slate-300" />
+        </div>
+
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-slate-900">
+                {editingExpense
+                  ? "Edit Receipt / Attach Proof"
+                  : scannerMode === "qr"
+                  ? "MyInvois QR & Receipt Scanner"
+                  : isGeneralScanMode
+                  ? "Smart LHDN Receipt Scanner"
+                  : "Scan or Log Receipt"}
+              </h2>
+              {isOffline && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                  <WifiOff className="h-3 w-3 text-amber-700" />
+                  Offline Queue
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">
+              {isOffline
+                ? "Saved offline in IndexedDB — will sync automatically when online"
+                : "Client-side ~300KB compression + AI / LHDN rule engine"}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {/* Desktop Mode Switcher (OCR vs QR) */}
+            <div className="hidden sm:inline-flex rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setScannerMode("ocr")}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  scannerMode === "ocr"
+                    ? "bg-white text-emerald-700 shadow-2xs"
+                    : "text-slate-600"
+                }`}
+              >
+                Receipt OCR
+              </button>
+              <button
+                type="button"
+                onClick={() => setScannerMode("qr")}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  scannerMode === "qr"
+                    ? "bg-white text-emerald-700 shadow-2xs"
+                    : "text-slate-600"
+                }`}
+              >
+                MyInvois QR
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}
         <form
           onSubmit={handleSubmit}
-          className="flex-1 space-y-4 overflow-y-auto px-5 py-4"
+          className="flex-1 space-y-4 overflow-y-auto px-5 py-4 pb-safe"
         >
           {/* Hidden File Inputs */}
           <input
@@ -571,8 +884,16 @@ export function ReceiptScannerModal({
               onClick={() => cameraInputRef.current?.click()}
               className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/70 p-4 text-emerald-800 transition active:scale-[0.98]"
             >
-              <Camera className="h-6 w-6 text-emerald-600" />
-              <span className="text-xs font-semibold">Snap Any Receipt</span>
+              {scannerMode === "qr" ? (
+                <QrCode className="h-6 w-6 text-emerald-600" />
+              ) : (
+                <Camera className="h-6 w-6 text-emerald-600" />
+              )}
+              <span className="text-xs font-semibold">
+                {scannerMode === "qr"
+                  ? "Snap MyInvois QR"
+                  : "Snap Any Receipt"}
+              </span>
             </button>
 
             <button
@@ -584,6 +905,66 @@ export function ReceiptScannerModal({
               <span className="text-xs font-semibold">Upload Photo / PDF</span>
             </button>
           </div>
+
+          {/* Manual MyInvois QR Validation Link input when in QR Mode or QR detected */}
+          {(scannerMode === "qr" || qrDetectedUrl || myInvoisUuid) && (
+            <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900">
+                  <QrCode className="h-3.5 w-3.5 text-emerald-600" />
+                  {qrDetectedUrl || myInvoisUuid
+                    ? "LHDN MyInvois e-Invoice Linked"
+                    : "Paste MyInvois Validation Link"}
+                </span>
+                {qrDetectedUrl && qrDetectedUrl.startsWith("http") && (
+                  <a
+                    href={qrDetectedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 underline"
+                  >
+                    Verify Portal <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+              {myInvoisUuid && (
+                <p className="font-mono text-[11px] text-emerald-800">
+                  UUID: {myInvoisUuid}
+                </p>
+              )}
+              {scannerMode === "qr" && (
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="https://myinvois.hasil.gov.my/..."
+                    value={manualQrUrl}
+                    onChange={(e) => setManualQrUrl(e.target.value)}
+                    className="flex-1 rounded-xl border border-emerald-200 bg-white px-2.5 py-1.5 text-xs"
+                  />
+                  <button
+                    type="button"
+                    disabled={!manualQrUrl.trim()}
+                    onClick={() => {
+                      const p = parseMyInvoisQrText(manualQrUrl);
+                      setQrDetectedUrl(p.rawUrl);
+                      setMyInvoisUuid(p.invoiceUuid);
+                      setInvoiceNumber((prev) => prev || p.invoiceUuid);
+                      setDescription(
+                        (prev) =>
+                          prev ||
+                          `MyInvois e-Invoice (${
+                            p.isOfficial ? "Verified LHDN" : "QR"
+                          }): ${p.rawUrl}`
+                      );
+                    }}
+                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+                  >
+                    Link QR
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Attached File Preview */}
           {receiptFile && (
@@ -930,50 +1311,103 @@ export function ReceiptScannerModal({
               )}
 
               <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    LHDN Relief Category (YA {targetTaxYear})
-                  </label>
-                  <select
-                    value={categoryId}
-                    onChange={(e) => {
-                      const nextCatId = e.target.value;
-                      setCategoryId(nextCatId);
-                      const nextCat = categories.find(
-                        (c) => c.id === nextCatId
-                      );
-                      setSubCategoryId(nextCat?.subCategories?.[0]?.id || "");
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
-                  >
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        [{cat.formBeRef}] {cat.name} (Cap{" "}
-                        {formatRM(cat.maxLimit)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Freelancer / Mixed Income (e-B) Classification Toggle */}
+                {(taxpayerMode === "e-B" ||
+                  claimType === "business_deductible") && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
+                    <p className="mb-1.5 text-[11px] font-bold text-slate-700">
+                      Form e-B Classification (Prevent Double-Claiming)
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setClaimType("personal_relief")}
+                        className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+                          claimType === "personal_relief"
+                            ? "bg-brand-primary text-white shadow-xs"
+                            : "bg-white text-slate-600 border border-slate-200"
+                        }`}
+                      >
+                        <UserCheck className="h-3.5 w-3.5" />
+                        Personal Tax Relief
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setClaimType("business_deductible")}
+                        className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+                          claimType === "business_deductible"
+                            ? "bg-emerald-600 text-white shadow-xs"
+                            : "bg-white text-slate-600 border border-slate-200"
+                        }`}
+                      >
+                        <Briefcase className="h-3.5 w-3.5" />
+                        Business Expense (Sec 33)
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                {selectedCategory?.subCategories &&
-                  selectedCategory.subCategories.length > 0 && (
+                {claimType === "personal_relief" ? (
+                  <>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-700">
-                        Sub-Category (Sub-Limit)
+                        LHDN Relief Category (YA {targetTaxYear})
                       </label>
                       <select
-                        value={subCategoryId}
-                        onChange={(e) => setSubCategoryId(e.target.value)}
+                        value={categoryId}
+                        onChange={(e) => {
+                          const nextCatId = e.target.value;
+                          setCategoryId(nextCatId);
+                          const nextCat = categories.find(
+                            (c) => c.id === nextCatId
+                          );
+                          setSubCategoryId(
+                            nextCat?.subCategories?.[0]?.id || ""
+                          );
+                        }}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
                       >
-                        {selectedCategory.subCategories.map((sub) => (
-                          <option key={sub.id} value={sub.id}>
-                            {sub.name} (Sub-cap {formatRM(sub.maxLimit)})
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            [{cat.formBeRef}] {cat.name} (Cap{" "}
+                            {formatRM(cat.maxLimit)})
                           </option>
                         ))}
                       </select>
                     </div>
-                  )}
+
+                    {selectedCategory?.subCategories &&
+                      selectedCategory.subCategories.length > 0 && (
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-700">
+                            Sub-Category (Sub-Limit)
+                          </label>
+                          <select
+                            value={subCategoryId}
+                            onChange={(e) => setSubCategoryId(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                          >
+                            {selectedCategory.subCategories.map((sub) => (
+                              <option key={sub.id} value={sub.id}>
+                                {sub.name} (Sub-cap {formatRM(sub.maxLimit)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950">
+                    <p className="font-bold">
+                      Allowable Business Deductible Expense (LHDN Section 33)
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-emerald-800">
+                      Logged under Form B Business P&amp;L deductions and
+                      excluded from personal relief caps so it is never
+                      double-claimed.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
@@ -1221,8 +1655,8 @@ function EngineBadge({ engine }: { engine?: "ai" | "local-ocr" }) {
 }
 
 /**
- * Converts/resizes image uploads to a clean JPEG (<= 1600px) so phone photos
- * stay well under Vercel's 4.5MB limit and always use a Gemini-supported MIME type.
+ * Client-Side Image Compression (~300KB target JPEG) so captured receipt photos
+ * optimize 7-year LHDN retention storage and upload fast over mobile connections.
  */
 async function normalizeImageForAiUpload(file: File): Promise<File> {
   if (!file.type.startsWith("image/")) return file;
@@ -1231,7 +1665,7 @@ async function normalizeImageForAiUpload(file: File): Promise<File> {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
-      const maxDim = 1024;
+      const maxDim = 1280;
       let { width, height } = img;
       if (width > maxDim || height > maxDim) {
         if (width > height) {
@@ -1252,22 +1686,32 @@ async function normalizeImageForAiUpload(file: File): Promise<File> {
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => {
-          URL.revokeObjectURL(objectUrl);
-          if (blob) {
+
+      const TARGET_BYTES = 300 * 1024; // ~300KB target
+      const encodeWithQuality = (q: number) => {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              URL.revokeObjectURL(objectUrl);
+              resolve(file);
+              return;
+            }
+            if (blob.size > TARGET_BYTES && q > 0.52) {
+              encodeWithQuality(Number((q - 0.14).toFixed(2)));
+              return;
+            }
+            URL.revokeObjectURL(objectUrl);
             resolve(
               new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
                 type: "image/jpeg",
               })
             );
-          } else {
-            resolve(file);
-          }
-        },
-        "image/jpeg",
-        0.78
-      );
+          },
+          "image/jpeg",
+          q
+        );
+      };
+      encodeWithQuality(0.76);
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);

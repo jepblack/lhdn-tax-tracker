@@ -32,11 +32,16 @@ export interface StatusReliefs {
   disabledChildrenHigherEd: number;
 }
 
+export type TaxpayerMode = "e-BE" | "e-B";
+
+export type ExpenseClaimType = "personal_relief" | "business_deductible";
+
 export interface TaxProfile {
   taxYear: TaxYear;
   annualIncome: number;
   zakatPaid: number;
   pcbPaid: number;
+  taxpayerMode?: TaxpayerMode;
   statusReliefs: StatusReliefs;
 }
 
@@ -90,6 +95,9 @@ export interface TaxExpense {
   taxYear: TaxYear;
   categoryId: string;
   subCategoryId?: string | null;
+  claimType?: ExpenseClaimType;
+  myInvoisUuid?: string | null;
+  offlineQueued?: boolean;
   merchant: string;
   description: string;
   amount: number;

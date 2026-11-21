@@ -59,7 +59,12 @@ export function calculateTaxSummary(
   profile: TaxProfile,
   allExpenses: TaxExpense[]
 ): TaxCalculationResult {
-  const yearExpenses = allExpenses.filter((e) => e.taxYear === profile.taxYear);
+  const yearExpenses = allExpenses.filter(
+    (e) =>
+      e.taxYear === profile.taxYear &&
+      e.claimType !== "business_deductible" &&
+      e.categoryId !== "business_expense"
+  );
   const categories = getReliefCategories(profile.taxYear).map((cat) =>
     cat.id === "approved_donations"
       ? {

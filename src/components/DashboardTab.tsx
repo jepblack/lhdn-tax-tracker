@@ -1,34 +1,49 @@
 "use client";
 
+import { useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  Briefcase,
   CalendarClock,
   Camera,
   CheckCircle2,
   ClipboardList,
   Crown,
   ExternalLink,
+  FileUp,
   Gift,
+  QrCode,
   Repeat,
   Scale,
   SlidersHorizontal,
   Sparkles,
   TrendingDown,
+  UserCheck,
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
 import { matchPartnerOffersToOpportunities } from "@/lib/monetization";
-import { TaxCalculationResult, UserSubscription } from "@/lib/types";
+import {
+  TaxCalculationResult,
+  TaxExpense,
+  TaxpayerMode,
+  UserSubscription,
+} from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
   summary: TaxCalculationResult;
   subscription: UserSubscription;
+  taxpayerMode: TaxpayerMode;
+  yearExpenses: TaxExpense[];
   expenseCount: number;
   missingReceiptsTotal: number;
+  onChangeTaxpayerMode: (mode: TaxpayerMode) => void;
   onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
+  onDropFileForScan: (file: File) => void;
+  onOpenMyInvoisQr: () => void;
   onNavigateTab: (tab: "reliefs" | "receipts" | "settings") => void;
   onOpenTool: (tool: FilingToolTab) => void;
   onOpenUpgrade: (reason?: string) => void;
@@ -38,14 +53,25 @@ interface DashboardTabProps {
 export function DashboardTab({
   summary,
   subscription,
+  taxpayerMode,
+  yearExpenses,
   expenseCount,
   missingReceiptsTotal,
+  onChangeTaxpayerMode,
   onQuickAdd,
+  onDropFileForScan,
+  onOpenMyInvoisQr,
   onNavigateTab,
   onOpenTool,
   onOpenUpgrade,
   onLoadSampleData,
 }: DashboardTabProps) {
+  const dropzoneInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [freelancerView, setFreelancerView] = useState<"personal" | "business">(
+    "personal"
+  );
+
   const activeCategories = summary.categorySummaries
     .filter((c) => c.spent > 0)
     .sort((a, b) => b.percentUsed - a.percentUsed);
@@ -55,23 +81,269 @@ export function DashboardTab({
     summary.marginalRate
   );
 
+  // Max total expense relief cap across all categories + status reliefs
+  const totalMaxExpenseCap = summary.categorySummaries.reduce(
+    (sum, c) => sum + c.category.maxLimit,
+    0
+  );
+  const heroProgressPct =
+    totalMaxExpenseCap > 0
+      ? Math.min(
+          100,
+          Math.round((summary.expenseReliefClaimable / 28000) * 100)
+        )
+      : 0;
+
+  // Business Expenses summary for Freelancer (e-B) mode
+  const businessExpenses = yearExpenses.filter(
+    (e) =>
+      e.claimType === "business_deductible" ||
+      e.categoryId === "business_expense"
+  );
+  const totalBusinessExpenses = businessExpenses.reduce(
+    (sum, e) => sum + (Number(e.amount) || 0),
+    0
+  );
+
+  // Receipts missing LHDN MyInvois QR validation
+  const missingMyInvoisQrCount = yearExpenses.filter(
+    (e) =>
+      !e.myInvoisUuid &&
+      !String(e.description || "").toLowerCase().includes("myinvois")
+  ).length;
+
+  // Key Bento Relief Categories (Lifestyle, Medical, SSPN, EV/Green Tech, EPF/Insurance)
+  const keyBentoIds = [
+    "lifestyle",
+    "medical_self",
+    "epf_life_insurance",
+    "edu_med_insurance",
+    "sspn",
+    "ev_composting",
+  ];
+  const bentoCategories = keyBentoIds
+    .map((id) =>
+      summary.categorySummaries.find((c) => c.category.id === id)
+    )
+    .filter((c): c is NonNullable<typeof c> => Boolean(c));
+
+  // LHDN e-Filing Deadline Countdown (YA N is filed in year N+1: 30 April for e-BE, 30 June for e-B)
+  const filingYear = summary.taxYear + 1;
+  const deadlineDate =
+    taxpayerMode === "e-B"
+      ? new Date(`${filingYear}-06-30T23:59:59+08:00`)
+      : new Date(`${filingYear}-04-30T23:59:59+08:00`);
+  const daysToDeadline = Math.max(
+    0,
+    Math.ceil((deadlineDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  );
+
   return (
-    <div className="space-y-4 pb-6 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0">
-      {/* Left / Primary Column */}
-      <div className="space-y-4 md:col-span-7">
-      {/* Hero Tax Savings Card */}
-      <section className="rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 p-5 text-white shadow-lg shadow-emerald-900/15">
+    <div className="space-y-4 pb-6">
+      {/* Desktop (>= 1024px) Prominent Drag & Drop PDF / e-Invoice Dropzone Card */}
+      <section
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDraggingOver(true);
+        }}
+        onDragLeave={() => setIsDraggingOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDraggingOver(false);
+          const droppedFile = e.dataTransfer.files?.[0];
+          if (droppedFile) onDropFileForScan(droppedFile);
+        }}
+        className={`hidden lg:flex items-center justify-between gap-4 rounded-2xl border-2 border-dashed p-5 transition ${
+          isDraggingOver
+            ? "border-emerald-500 bg-emerald-50/80"
+            : "border-emerald-300/90 bg-white shadow-2xs hover:border-emerald-500"
+        }`}
+      >
+        <input
+          ref={dropzoneInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) onDropFileForScan(f);
+          }}
+        />
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm">
+            <FileUp className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900">
+                Upload / Drag &amp; Drop PDF Receipt or LHDN e-Invoice
+              </h2>
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                ~300KB Auto-Archive
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Drop any clinic bill, Shopee/Lazada PDF, broadband invoice, or
+              MyInvois QR receipt for instant AI extraction.
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenMyInvoisQr}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+          >
+            <QrCode className="h-4 w-4 text-emerald-600" />
+            Scan MyInvois QR
+          </button>
+          <button
+            type="button"
+            onClick={() => dropzoneInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+          >
+            <FileUp className="h-4 w-4" />
+            Select PDF / Image
+          </button>
+        </div>
+      </section>
+
+      {/* Salaried (e-BE) vs. Freelancer / Mixed Income (e-B) Mode Bar */}
+      <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-700">
+            LHDN Filing Profile:
+          </span>
+          <div className="inline-flex rounded-xl bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                onChangeTaxpayerMode("e-BE");
+                setFreelancerView("personal");
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                taxpayerMode === "e-BE"
+                  ? "bg-brand-primary text-white shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              Salaried (e-BE)
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeTaxpayerMode("e-B")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                taxpayerMode === "e-B"
+                  ? "bg-brand-primary text-white shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Briefcase className="h-3.5 w-3.5" />
+              Freelancer / Mixed (e-B)
+            </button>
+          </div>
+        </div>
+
+        {/* Top Switcher (Freelancer e-B Mode Only): [ Personal Reliefs ] vs [ Business Expenses ] */}
+        {taxpayerMode === "e-B" && (
+          <div className="inline-flex rounded-xl border border-emerald-200 bg-emerald-50/70 p-1">
+            <button
+              type="button"
+              onClick={() => setFreelancerView("personal")}
+              className={`rounded-lg px-3 py-1 text-xs font-bold transition ${
+                freelancerView === "personal"
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "text-emerald-800 hover:text-emerald-950"
+              }`}
+            >
+              Personal Reliefs
+            </button>
+            <button
+              type="button"
+              onClick={() => setFreelancerView("business")}
+              className={`rounded-lg px-3 py-1 text-xs font-bold transition ${
+                freelancerView === "business"
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "text-emerald-800 hover:text-emerald-950"
+              }`}
+            >
+              Business Expenses ({businessExpenses.length})
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* LHDN Deadline & MyInvois / 7-Year Audit Banner */}
+      <section className="flex flex-col justify-between gap-2.5 rounded-2xl border border-amber-300/80 bg-amber-50/90 p-3.5 text-xs text-amber-950 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-2.5">
+          <div className="rounded-xl bg-amber-500/20 p-2 text-amber-800">
+            <CalendarClock className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold">
+                {taxpayerMode === "e-B"
+                  ? `Form e-B Deadline: 30 June ${filingYear}`
+                  : `Form e-BE Deadline: 30 April ${filingYear}`}
+              </span>
+              <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                {daysToDeadline} days left
+              </span>
+              {taxpayerMode === "e-B" && (
+                <span className="rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                  CP500 Bi-Monthly Instalments Active
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-[11px] text-amber-800">
+              {taxpayerMode === "e-B"
+                ? `Keep Section 33 business vouchers & personal receipts until ${summary.retentionUntilYear} (7-year LHDN audit rule).`
+                : `7-year LHDN Section 82A audit retention until ${summary.retentionUntilYear}.`}{" "}
+              {missingMyInvoisQrCount > 0 && (
+                <strong>
+                  • {missingMyInvoisQrCount} receipt(s) without MyInvois QR UUID
+                </strong>
+              )}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenMyInvoisQr}
+          className="shrink-0 inline-flex items-center justify-center gap-1 rounded-xl bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-amber-700"
+        >
+          <QrCode className="h-3.5 w-3.5" />
+          Verify MyInvois QR
+        </button>
+      </section>
+
+      <div className="space-y-4 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0">
+        {/* Left / Primary Column */}
+        <div className="space-y-4 md:col-span-7">
+      {/* Hero Tax Savings Card with Emerald Progress Bar */}
+      <section className="rounded-2xl bg-gradient-to-br from-[#0F294A] via-emerald-800 to-teal-900 p-5 text-white shadow-lg shadow-emerald-950/20">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-emerald-100/90">
-              YA {summary.taxYear} Total Claimable Reliefs
+              {taxpayerMode === "e-B" && freelancerView === "business"
+                ? `YA ${summary.taxYear} Business Deductible Expenses (Sec 33)`
+                : `YA ${summary.taxYear} Total Claimable Reliefs`}
             </p>
             <p className="privacy-sensitive mt-1 text-3xl font-bold tracking-tight">
-              {formatRM(summary.totalReliefs)}
+              {taxpayerMode === "e-B" && freelancerView === "business"
+                ? formatRM(totalBusinessExpenses)
+                : formatRM(summary.totalReliefs)}
             </p>
             <p className="privacy-sensitive mt-0.5 text-xs text-emerald-100/85">
-              {formatRM(summary.statusReliefTotal)} status +{" "}
-              {formatRM(summary.expenseReliefClaimable)} receipts
+              {taxpayerMode === "e-B" && freelancerView === "business"
+                ? `${businessExpenses.length} allowable business voucher(s) • Est. tax saved ${formatRM(
+                    Math.round(totalBusinessExpenses * summary.marginalRate)
+                  )}`
+                : `${formatRM(summary.statusReliefTotal)} status + ${formatRM(
+                    summary.expenseReliefClaimable
+                  )} / RM 28,000 expense reliefs`}
             </p>
           </div>
           <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right backdrop-blur-sm">
@@ -81,6 +353,23 @@ export function DashboardTab({
             <p className="privacy-sensitive text-lg font-bold">
               {Math.round(summary.marginalRate * 100)}%
             </p>
+          </div>
+        </div>
+
+        {/* Emerald Relief Progress Bar */}
+        <div className="mt-3.5 space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-emerald-100/90">
+            <span>Expense Relief Utilization</span>
+            <span className="privacy-sensitive font-bold text-white">
+              {formatRM(summary.expenseReliefClaimable)} / RM 28,000 target (
+              {heroProgressPct}%)
+            </span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/15">
+            <div
+              className="h-full rounded-full bg-emerald-400 transition-all duration-300"
+              style={{ width: `${heroProgressPct}%` }}
+            />
           </div>
         </div>
 
@@ -173,6 +462,123 @@ export function DashboardTab({
           <span className="text-[10px] font-bold text-slate-800">Joint/Sep</span>
         </button>
       </section>
+
+      {/* Bento-Box Category Progress Grid OR Freelancer Business Expenses View */}
+      {taxpayerMode === "e-B" && freelancerView === "business" ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Form e-B Business Deductible Vouchers (Section 33)
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                Separated from personal reliefs to prevent double-claiming
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onQuickAdd("business_expense")}
+              className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs"
+            >
+              + Log Business Expense
+            </button>
+          </div>
+          {businessExpenses.length === 0 ? (
+            <p className="py-6 text-center text-xs text-slate-500">
+              No business deductible expenses logged for YA {summary.taxYear}{" "}
+              yet. Tap &ldquo;+ Log Business Expense&rdquo; or toggle any scanned
+              receipt to Business Expense.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {businessExpenses.slice(0, 6).map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-slate-900">
+                      {b.merchant}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {b.expenseDate}
+                      {b.description ? ` • ${b.description}` : ""}
+                    </p>
+                  </div>
+                  <span className="privacy-sensitive font-bold text-emerald-700">
+                    {formatRM(b.amount, true)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Key LHDN Relief Caps (Bento Grid)
+            </h2>
+            <button
+              type="button"
+              onClick={() => onNavigateTab("reliefs")}
+              className="flex items-center gap-1 text-xs font-bold text-emerald-700"
+            >
+              View All 15 <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {bentoCategories.map((item) => {
+              const isMaxed = item.percentUsed >= 100;
+              return (
+                <div
+                  key={item.category.id}
+                  onClick={() => onQuickAdd(item.category.id)}
+                  className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-emerald-400 active:scale-[0.99]"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div
+                      className={`rounded-xl p-1.5 ${
+                        isMaxed
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      <ReliefIcon
+                        name={item.category.icon}
+                        className="h-3.5 w-3.5"
+                      />
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                      {item.percentUsed}%
+                    </span>
+                  </div>
+                  <p className="mt-2 truncate text-xs font-bold text-slate-900">
+                    {item.category.shortName}
+                  </p>
+                  <p className="privacy-sensitive mt-0.5 text-xs font-extrabold text-emerald-700">
+                    {formatRM(item.claimable)}{" "}
+                    <span className="font-normal text-slate-400">
+                      / {formatRM(item.category.maxLimit)}
+                    </span>
+                  </p>
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-600 transition-all"
+                      style={{ width: `${item.percentUsed}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-slate-500">
+                    {isMaxed
+                      ? "Max cap reached"
+                      : `${formatRM(item.remaining)} remaining`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Empty state quick-start banner */}
       {expenseCount === 0 && (
@@ -521,6 +927,7 @@ export function DashboardTab({
           </div>
         </div>
       </section>
+      </div>
       </div>
     </div>
   );

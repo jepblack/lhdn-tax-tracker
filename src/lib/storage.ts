@@ -29,6 +29,7 @@ export function getDefaultProfile(taxYear: TaxYear): TaxProfile {
     annualIncome: 96000,
     zakatPaid: 0,
     pcbPaid: 6200,
+    taxpayerMode: "e-BE",
     statusReliefs: { ...DEFAULT_STATUS_RELIEFS },
   };
 }
@@ -122,13 +123,17 @@ export async function fetchProfile(
 
     if (!error && data) {
       const rawStatus = { ...(data.status_reliefs || {}) } as Record<string, unknown>;
+      const savedMode =
+        rawStatus._taxpayerMode === "e-B" ? "e-B" : "e-BE";
       delete rawStatus._annualDocs;
       delete rawStatus._formBeBaseline;
+      delete rawStatus._taxpayerMode;
       return {
         taxYear,
         annualIncome: Number(data.annual_income),
         zakatPaid: Number(data.zakat_paid),
         pcbPaid: Number(data.pcb_paid),
+        taxpayerMode: savedMode,
         statusReliefs: {
           ...DEFAULT_STATUS_RELIEFS,
           ...rawStatus,
@@ -157,6 +162,7 @@ export async function persistProfile(
     const existingStatus = (existing?.status_reliefs || {}) as Record<string, unknown>;
     const mergedStatus: Record<string, unknown> = {
       ...profile.statusReliefs,
+      _taxpayerMode: profile.taxpayerMode || "e-BE",
     };
     if (existingStatus._annualDocs !== undefined) {
       mergedStatus._annualDocs = existingStatus._annualDocs;
@@ -323,6 +329,11 @@ export async function fetchExpenses(
             taxYear: row.tax_year as TaxYear,
             categoryId: row.category_id,
             subCategoryId: row.sub_category_id,
+            claimType:
+              row.category_id === "business_expense" ||
+              row.sub_category_id === "business_deductible"
+                ? "business_deductible"
+                : "personal_relief",
             merchant: row.merchant,
             description: row.description || "",
             amount: Number(row.amount),

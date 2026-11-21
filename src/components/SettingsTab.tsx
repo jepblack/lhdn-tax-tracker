@@ -362,6 +362,55 @@ export function SettingsTab({
         </div>
       </section>
 
+      {/* Salaried (e-BE) vs. Freelancer / Sole Prop (e-B) Filing Mode */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900">
+            LHDN e-Filing Submission Form (YA {profile.taxYear})
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Switch between Salaried (Form e-BE, due 30 April) and Freelancer /
+            Sole Proprietor / Mixed Income (Form e-B, due 30 June + CP500).
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => updateField("taxpayerMode", "e-BE")}
+            className={`rounded-xl border p-3 text-left transition ${
+              (profile.taxpayerMode || "e-BE") === "e-BE"
+                ? "border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600"
+                : "border-slate-200 bg-white hover:bg-slate-50"
+            }`}
+          >
+            <p className="text-xs font-bold text-slate-900">
+              Salaried Individual (Form e-BE)
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Employment income only • e-Filing deadline 30 April{" "}
+              {profile.taxYear + 1}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateField("taxpayerMode", "e-B")}
+            className={`rounded-xl border p-3 text-left transition ${
+              profile.taxpayerMode === "e-B"
+                ? "border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600"
+                : "border-slate-200 bg-white hover:bg-slate-50"
+            }`}
+          >
+            <p className="text-xs font-bold text-slate-900">
+              Freelancer / Sole Prop / Mixed (Form e-B)
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Business + personal reliefs • Deadline 30 June{" "}
+              {profile.taxYear + 1} • CP500 instalments
+            </p>
+          </button>
+        </div>
+      </section>
+
       {/* Income, PCB & Zakat + Payslip Extractor */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
         <div className="flex items-start justify-between gap-2">

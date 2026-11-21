@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Camera,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   CloudOff,
   Crown,
   Eye,
   EyeOff,
+  FileCheck2,
   LayoutDashboard,
   ListChecks,
   Moon,
@@ -16,6 +19,7 @@ import {
   Settings,
   Shield,
   Sun,
+  WifiOff,
 } from "lucide-react";
 import { calculateTaxSummary } from "@/lib/calculator";
 import {
@@ -33,6 +37,10 @@ import {
   incrementAiScanUsage,
   persistSubscription,
 } from "@/lib/monetization";
+import {
+  listOfflineQueuedReceipts,
+  removeOfflineQueuedReceipt,
+} from "@/lib/offline-queue";
 import {
   createExpense,
   fetchAnnualStateFromCloud,
@@ -99,11 +107,15 @@ export function TaxApp() {
   const [scannerSubCategoryId, setScannerSubCategoryId] = useState<
     string | undefined
   >(undefined);
+  const [scannerModeInit, setScannerModeInit] = useState<"ocr" | "qr">("ocr");
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const [editingExpense, setEditingExpense] = useState<TaxExpense | null>(null);
   const [prefillInvoice, setPrefillInvoice] = useState<string | undefined>(undefined);
   const [prefillDesc, setPrefillDesc] = useState<string | undefined>(undefined);
 
-  // Batch import, MyInvois QR, Annual Docs, Dark Mode & Privacy Blur
+  // Desktop Sidebar, Offline Queue, Batch import, MyInvois QR, Annual Docs, Dark Mode & Privacy Blur
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
   const [batchOpen, setBatchOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -118,20 +130,61 @@ export function TaxApp() {
   const [privacyBlur, setPrivacyBlur] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load dark mode preference, annual docs, Form BE baselines & redirect upgrades on mount
+  async function refreshOfflineQueueCount() {
+    const items = await listOfflineQueuedReceipts();
+    setOfflineQueueCount(items.length);
+  }
+
+  async function flushOfflineQueue(uid: string | null) {
+    if (typeof window !== "undefined" && !window.navigator.onLine) return;
+    const queued = await listOfflineQueuedReceipts();
+    if (queued.length === 0) return;
+    for (const item of queued) {
+      try {
+        const file =
+          item.fileBlob && item.fileName
+            ? new File([item.fileBlob], item.fileName, {
+                type: item.fileMimeType || "application/pdf",
+              })
+            : null;
+        if (uid) {
+          await createExpense({ ...item.expense, offlineQueued: false }, file, uid);
+        }
+        await removeOfflineQueuedReceipt(item.id);
+      } catch {
+        // retry on next online event
+      }
+    }
+    await refreshOfflineQueueCount();
+  }
+
+  // Load dark mode preference, annual docs, Form BE baselines, PWA shortcuts & redirect upgrades on mount
   useEffect(() => {
     try {
       const savedTheme = window.localStorage.getItem("cukaiku_theme_v1");
       if (savedTheme === "dark") {
         setDarkMode(true);
         document.documentElement.classList.add("dark");
+        updateThemeColorMeta(true);
+      } else {
+        updateThemeColorMeta(false);
       }
       const savedDocs = window.localStorage.getItem(ANNUAL_DOCS_KEY);
       if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
       const savedBaselines = window.localStorage.getItem(FORM_BE_BASELINES_KEY);
       if (savedBaselines) setFormBeBaselines(JSON.parse(savedBaselines));
 
+      refreshOfflineQueueCount();
+
       const params = new URLSearchParams(window.location.search);
+      const scanShortcut = params.get("scan") || params.get("mode");
+      if (scanShortcut === "camera" || scanShortcut === "ocr") {
+        setScannerModeInit("ocr");
+        setScannerOpen(true);
+      } else if (scanShortcut === "qr") {
+        setScannerModeInit("qr");
+        setScannerOpen(true);
+      }
       const upgraded = params.get("upgraded");
       const gatewayParam = params.get("gateway") as PaymentGatewayId | null;
       if (upgraded === "pro" || upgraded === "family") {
@@ -152,6 +205,28 @@ export function TaxApp() {
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOnline = () => {
+      flushOfflineQueue(userId);
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  function updateThemeColorMeta(isDark: boolean) {
+    if (typeof document === "undefined") return;
+    const color = isDark ? "#0B0F17" : "#F6F8FA";
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", color);
+  }
 
   function openUpgradeModal(reason?: string) {
     setPricingReason(reason || null);
@@ -187,6 +262,7 @@ export function TaxApp() {
       const next = !prev;
       document.documentElement.classList.toggle("dark", next);
       window.localStorage.setItem("cukaiku_theme_v1", next ? "dark" : "light");
+      updateThemeColorMeta(next);
       return next;
     });
   }
@@ -657,10 +733,17 @@ export function TaxApp() {
     [yearExpenses]
   );
 
-  function openScanner(categoryId?: string, subCategoryId?: string) {
+  function openScanner(
+    categoryId?: string,
+    subCategoryId?: string,
+    mode: "ocr" | "qr" = "ocr",
+    file: File | null = null
+  ) {
     setEditingExpense(null);
     setScannerCategoryId(categoryId);
     setScannerSubCategoryId(subCategoryId);
+    setScannerModeInit(mode);
+    setDroppedFile(file);
     setScannerOpen(true);
   }
 
@@ -668,6 +751,8 @@ export function TaxApp() {
     setEditingExpense(expense);
     setScannerCategoryId(expense.categoryId);
     setScannerSubCategoryId(expense.subCategoryId || undefined);
+    setScannerModeInit("ocr");
+    setDroppedFile(null);
     setScannerOpen(true);
   }
 
@@ -763,73 +848,63 @@ export function TaxApp() {
     saveLocalExpenses(remaining);
   }
 
+  const desktopNavItems = [
+    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+    {
+      id: "receipts" as const,
+      label: "Receipts",
+      icon: ReceiptText,
+      badge: missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined,
+    },
+    { id: "reliefs" as const, label: "Reliefs", icon: ListChecks },
+    { id: "settings" as const, label: "Submissions & Profile", icon: FileCheck2 },
+  ];
+
   return (
     <div
-      className={`min-h-screen overflow-x-hidden bg-slate-50 text-slate-900 ${
+      className={`min-h-screen overflow-x-hidden bg-canvas text-slate-900 ${
         privacyBlur ? "privacy-mode" : ""
       }`}
     >
       {/* Top Sticky Responsive Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto max-w-5xl px-3 py-2.5 sm:px-6 sm:py-3">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 pt-safe backdrop-blur-md">
+        <div className="mx-auto max-w-7xl px-3 py-2.5 sm:px-6 sm:py-3">
           {/* Primary Row: Brand + Quick Controls */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-white shadow-xs">
                 <Shield className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
-                  CukaiKu
-                </h1>
+                <div className="flex items-center gap-1.5">
+                  <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
+                    CukaiKu
+                  </h1>
+                  <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                    {profile.taxpayerMode || "e-BE"}
+                  </span>
+                </div>
                 <p className="truncate text-[11px] text-slate-500">
-                  LHDN Relief &amp; Vault
+                  LHDN Relief &amp; e-Invoice Vault
                 </p>
               </div>
             </div>
 
-            {/* Desktop Center Navigation (hidden on mobile, uses bottom bar on mobile) */}
-            <nav className="hidden md:flex items-center gap-1 rounded-xl bg-slate-100/90 p-1">
-              {(
-                [
-                  { id: "dashboard", label: "Overview", icon: LayoutDashboard },
-                  { id: "reliefs", label: "Reliefs", icon: ListChecks },
-                  {
-                    id: "receipts",
-                    label: "Vault",
-                    icon: ReceiptText,
-                    badge: missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined,
-                  },
-                  { id: "settings", label: "Profile", icon: Settings },
-                ] as const
-              ).map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setActiveTab(item.id)}
-                    className={`relative inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      isActive
-                        ? "bg-white text-emerald-700 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{item.label}</span>
-                    {"badge" in item && item.badge !== undefined && (
-                      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
             {/* Right Controls */}
             <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+              {offlineQueueCount > 0 && (
+                <span
+                  title="Receipts saved offline in IndexedDB — will sync automatically when online"
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-900 border border-amber-300"
+                >
+                  <WifiOff className="h-3 w-3 text-amber-700" />
+                  <span className="hidden sm:inline">
+                    Saved offline ({offlineQueueCount}) — will sync
+                  </span>
+                  <span className="sm:hidden">{offlineQueueCount} Offline</span>
+                </span>
+              )}
+
               {/* Desktop-only Status & Pro pills (shown on Row 2 on mobile so Row 1 never overflows) */}
               <div className="hidden sm:flex items-center gap-1.5">
                 {userEmail ? (
@@ -937,15 +1012,6 @@ export function TaxApp() {
                   );
                 })}
               </select>
-
-              <button
-                type="button"
-                onClick={() => openScanner()}
-                className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
-              >
-                <Camera className="h-3.5 w-3.5" />
-                <span>Scan</span>
-              </button>
             </div>
           </div>
 
@@ -1007,132 +1073,241 @@ export function TaxApp() {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="mx-auto max-w-5xl px-3 pt-4 pb-24 sm:px-6 md:pb-10">
-        {!isLoaded ? (
-          <div className="space-y-4">
-            <div className="h-44 animate-pulse rounded-2xl bg-slate-200" />
-            <div className="h-32 animate-pulse rounded-2xl bg-slate-200" />
-            <div className="h-32 animate-pulse rounded-2xl bg-slate-200" />
+      {/* Responsive Desktop Left Sidebar (>= 1024px) + Main Content Shell */}
+      <div className="mx-auto flex max-w-7xl">
+        <aside
+          className={`sticky top-16 hidden h-[calc(100dvh-4rem)] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white/90 p-3 transition-all lg:flex ${
+            sidebarCollapsed ? "w-20" : "w-60"
+          }`}
+        >
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              {!sidebarCollapsed && (
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Navigation
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((v) => !v)}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                {sidebarCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronLeft className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+
+            {desktopNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  title={item.label}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition ${
+                    isActive
+                      ? "bg-brand-primary text-white shadow-xs"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {!sidebarCollapsed && <span>{item.label}</span>}
+                  </div>
+                  {!sidebarCollapsed && item.badge !== undefined && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => {
+                setToolsTab("form-be");
+                setToolsOpen(true);
+              }}
+              title="Form BE / e-B Worksheet & Simulators"
+              className="mt-2 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+            >
+              <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              {!sidebarCollapsed && <span>e-Filing Workpapers</span>}
+            </button>
           </div>
-        ) : (
-          <>
-            {activeTab === "dashboard" && (
-              <DashboardTab
-                summary={summary}
-                subscription={subscription}
-                expenseCount={yearExpenses.length}
-                missingReceiptsTotal={missingReceiptsTotal}
-                onQuickAdd={(catId, subId) => openScanner(catId, subId)}
-                onNavigateTab={(tab) => setActiveTab(tab)}
-                onOpenTool={(tool) => {
-                  setToolsTab(tool);
-                  setToolsOpen(true);
-                }}
-                onOpenUpgrade={openUpgradeModal}
-                onLoadSampleData={handleLoadSampleData}
-              />
-            )}
 
-            {activeTab === "reliefs" && (
-              <ReliefsTab
-                summaries={summary.categorySummaries}
-                marginalRate={summary.marginalRate}
-                onAddExpenseForCategory={(catId, subId) =>
-                  openScanner(catId, subId)
-                }
-              />
-            )}
+          {!sidebarCollapsed && (
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-3 text-[11px] text-slate-600">
+              <p className="font-bold text-slate-900">
+                LHDN 7-Year Audit Vault
+              </p>
+              <p className="mt-0.5">
+                YA {taxYear} records retained until{" "}
+                <strong className="text-slate-800">{taxYear + 8}</strong> under
+                ITA Section 82A.
+              </p>
+            </div>
+          )}
+        </aside>
 
-            {activeTab === "receipts" && (
-              <ReceiptsTab
-                taxYear={taxYear}
-                profile={profile}
-                summary={summary}
-                subscription={subscription}
-                expenses={expenses}
-                annualDocs={annualDocs}
-                onUploadAnnualDoc={handleUploadAnnualDoc}
-                onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
-                onDeleteAnnualDoc={handleDeleteAnnualDoc}
-                onOpenBatchImport={() => setBatchOpen(true)}
-                onOpenMyInvoisQr={() => setQrOpen(true)}
-                onOpenUpgrade={openUpgradeModal}
-                onEdit={openEditExpense}
-                onDelete={handleDeleteExpense}
-                onAddNew={() => openScanner()}
-              />
-            )}
+        {/* Main Content Area */}
+        <main className="min-w-0 flex-1 px-3 pt-4 pb-28 sm:px-6 lg:pb-10">
+          {!isLoaded ? (
+            <div className="space-y-4">
+              <div className="h-44 animate-pulse rounded-2xl bg-slate-200" />
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="h-28 animate-pulse rounded-2xl bg-slate-200" />
+                <div className="h-28 animate-pulse rounded-2xl bg-slate-200" />
+                <div className="h-28 animate-pulse rounded-2xl bg-slate-200" />
+              </div>
+              <div className="h-32 animate-pulse rounded-2xl bg-slate-200" />
+            </div>
+          ) : (
+            <>
+              {activeTab === "dashboard" && (
+                <DashboardTab
+                  summary={summary}
+                  subscription={subscription}
+                  taxpayerMode={profile.taxpayerMode || "e-BE"}
+                  yearExpenses={yearExpenses}
+                  expenseCount={yearExpenses.length}
+                  missingReceiptsTotal={missingReceiptsTotal}
+                  onChangeTaxpayerMode={(mode) =>
+                    handleUpdateProfile({ ...profile, taxpayerMode: mode })
+                  }
+                  onQuickAdd={(catId, subId) => openScanner(catId, subId)}
+                  onDropFileForScan={(file) =>
+                    openScanner(undefined, undefined, "ocr", file)
+                  }
+                  onOpenMyInvoisQr={() =>
+                    openScanner(undefined, undefined, "qr", null)
+                  }
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                  onOpenTool={(tool) => {
+                    setToolsTab(tool);
+                    setToolsOpen(true);
+                  }}
+                  onOpenUpgrade={openUpgradeModal}
+                  onLoadSampleData={handleLoadSampleData}
+                />
+              )}
 
-            {activeTab === "settings" && (
-              <SettingsTab
-                profile={profile}
-                subscription={subscription}
-                expenses={expenses}
-                userEmail={userEmail}
-                driveConnected={driveConnected}
-                onUpdateProfile={handleUpdateProfile}
-                onOpenUpgrade={openUpgradeModal}
-                onLogPayslipReliefs={handleLogPayslipReliefs}
-                onLoadSampleData={handleLoadSampleData}
-                onClearLocalData={handleClearLocalData}
-              />
-            )}
-          </>
-        )}
-      </main>
+              {activeTab === "reliefs" && (
+                <ReliefsTab
+                  summaries={summary.categorySummaries}
+                  marginalRate={summary.marginalRate}
+                  onAddExpenseForCategory={(catId, subId) =>
+                    openScanner(catId, subId)
+                  }
+                />
+              )}
 
-      {/* Bottom Mobile Navigation Bar with Center Scan Button */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
-        <div className="mx-auto grid max-w-2xl grid-cols-5 items-center px-2 py-1.5">
+              {activeTab === "receipts" && (
+                <ReceiptsTab
+                  taxYear={taxYear}
+                  profile={profile}
+                  summary={summary}
+                  subscription={subscription}
+                  expenses={expenses}
+                  annualDocs={annualDocs}
+                  onUploadAnnualDoc={handleUploadAnnualDoc}
+                  onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
+                  onDeleteAnnualDoc={handleDeleteAnnualDoc}
+                  onOpenBatchImport={() => setBatchOpen(true)}
+                  onOpenMyInvoisQr={() =>
+                    openScanner(undefined, undefined, "qr", null)
+                  }
+                  onOpenUpgrade={openUpgradeModal}
+                  onEdit={openEditExpense}
+                  onDelete={handleDeleteExpense}
+                  onAddNew={() => openScanner()}
+                />
+              )}
+
+              {activeTab === "settings" && (
+                <SettingsTab
+                  profile={profile}
+                  subscription={subscription}
+                  expenses={expenses}
+                  userEmail={userEmail}
+                  driveConnected={driveConnected}
+                  onUpdateProfile={handleUpdateProfile}
+                  onOpenUpgrade={openUpgradeModal}
+                  onLogPayslipReliefs={handleLogPayslipReliefs}
+                  onLoadSampleData={handleLoadSampleData}
+                  onClearLocalData={handleClearLocalData}
+                />
+              )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile & Tablet (< 1024px) Fixed Bottom Navigation Bar with Elevated Circular Scan CTA */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-safe backdrop-blur-md lg:hidden">
+        <div className="mx-auto grid max-w-xl grid-cols-5 items-center px-2 py-1.5">
           <NavButton
             icon={LayoutDashboard}
-            label="Overview"
+            label="Dashboard"
             active={activeTab === "dashboard"}
             onClick={() => setActiveTab("dashboard")}
           />
+          <NavButton
+            icon={ReceiptText}
+            label="Receipts"
+            badge={missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined}
+            active={activeTab === "receipts"}
+            onClick={() => setActiveTab("receipts")}
+          />
+
+          {/* Center Elevated Circular Scan Button (--action-emerald) */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => openScanner()}
+              aria-label="Scan or log receipt"
+              style={{ backgroundColor: "var(--action-emerald)" }}
+              className="-mt-7 flex h-14 w-14 flex-col items-center justify-center rounded-full text-white shadow-lg shadow-emerald-600/35 ring-4 ring-white transition active:scale-95"
+            >
+              <Camera className="h-6 w-6" />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">
+                Scan
+              </span>
+            </button>
+          </div>
+
           <NavButton
             icon={ListChecks}
             label="Reliefs"
             active={activeTab === "reliefs"}
             onClick={() => setActiveTab("reliefs")}
           />
-
-          {/* Center Floating Scan Button */}
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => openScanner()}
-              aria-label="Scan or log receipt"
-              className="-mt-6 flex h-14 w-14 flex-col items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/35 ring-4 ring-white transition active:scale-95"
-            >
-              <Camera className="h-6 w-6" />
-            </button>
-          </div>
-
           <NavButton
-            icon={ReceiptText}
-            label="Vault"
-            badge={missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined}
-            active={activeTab === "receipts"}
-            onClick={() => setActiveTab("receipts")}
-          />
-          <NavButton
-            icon={Settings}
-            label="Profile"
+            icon={FileCheck2}
+            label="Submissions"
             active={activeTab === "settings"}
             onClick={() => setActiveTab("settings")}
           />
         </div>
       </nav>
 
-      {/* Receipt Scanner & Add/Edit Expense Modal */}
+      {/* Receipt Scanner & Draggable Post-Scan Bottom Sheet Modal */}
       <ReceiptScannerModal
         isOpen={scannerOpen}
         taxYear={taxYear}
+        taxpayerMode={profile.taxpayerMode || "e-BE"}
         subscription={subscription}
         initialCategoryId={scannerCategoryId}
         initialSubCategoryId={scannerSubCategoryId}
+        initialScannerMode={scannerModeInit}
+        initialFile={droppedFile}
         prefillInvoiceNumber={prefillInvoice}
         prefillDescription={prefillDesc}
         editingExpense={editingExpense}
@@ -1141,10 +1316,12 @@ export function TaxApp() {
         onClose={() => {
           setScannerOpen(false);
           setEditingExpense(null);
+          setDroppedFile(null);
           setPrefillInvoice(undefined);
           setPrefillDesc(undefined);
         }}
         onAiScanCompleted={handleAiScanCompleted}
+        onOfflineQueued={refreshOfflineQueueCount}
         onOpenUpgrade={(reason) => {
           setScannerOpen(false);
           openUpgradeModal(reason);
