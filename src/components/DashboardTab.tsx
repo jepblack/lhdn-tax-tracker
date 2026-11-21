@@ -31,6 +31,7 @@ import {
   UserSubscription,
 } from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
+import { QuickStartChecklist } from "./QuickStartGuide";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
@@ -40,6 +41,8 @@ interface DashboardTabProps {
   yearExpenses: TaxExpense[];
   expenseCount: number;
   missingReceiptsTotal: number;
+  profileCustomized: boolean;
+  hasCloudSync: boolean;
   onChangeTaxpayerMode: (mode: TaxpayerMode) => void;
   onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
   onDropFileForScan: (file: File) => void;
@@ -48,6 +51,7 @@ interface DashboardTabProps {
   onOpenTool: (tool: FilingToolTab) => void;
   onOpenUpgrade: (reason?: string) => void;
   onLoadSampleData: () => void;
+  onOpenGuideModal: () => void;
 }
 
 export function DashboardTab({
@@ -57,6 +61,8 @@ export function DashboardTab({
   yearExpenses,
   expenseCount,
   missingReceiptsTotal,
+  profileCustomized,
+  hasCloudSync,
   onChangeTaxpayerMode,
   onQuickAdd,
   onDropFileForScan,
@@ -65,6 +71,7 @@ export function DashboardTab({
   onOpenTool,
   onOpenUpgrade,
   onLoadSampleData,
+  onOpenGuideModal,
 }: DashboardTabProps) {
   const dropzoneInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -140,6 +147,18 @@ export function DashboardTab({
 
   return (
     <div className="space-y-4 pb-6">
+      {/* First-time User Quick-Start Checklist */}
+      <QuickStartChecklist
+        taxYear={summary.taxYear}
+        profileCustomized={profileCustomized}
+        hasExpenses={expenseCount > 0}
+        hasCloudSync={hasCloudSync}
+        onOpenScanner={() => onQuickAdd()}
+        onNavigateTab={onNavigateTab}
+        onLoadSampleData={onLoadSampleData}
+        onOpenGuideModal={onOpenGuideModal}
+      />
+
       {/* Desktop (>= 1024px) Prominent Drag & Drop PDF / e-Invoice Dropzone Card */}
       <section
         onDragOver={(e) => {

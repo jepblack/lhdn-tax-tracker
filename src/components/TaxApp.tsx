@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   FileCheck2,
+  HelpCircle,
   LayoutDashboard,
   ListChecks,
   Moon,
@@ -73,6 +74,7 @@ import { BatchImportModal } from "./BatchImportModal";
 import { DashboardTab } from "./DashboardTab";
 import { FilingToolsSheet, FilingToolTab } from "./FilingToolsSheet";
 import { MyInvoisQrModal } from "./MyInvoisQrModal";
+import { QuickGuideModal, WELCOME_SEEN_KEY } from "./QuickStartGuide";
 import { PricingModal } from "./PricingModal";
 import { ReceiptScannerModal } from "./ReceiptScannerModal";
 import { ReceiptsTab } from "./ReceiptsTab";
@@ -600,9 +602,24 @@ export function TaxApp() {
     }
   }
 
-  // Filing tools sheet state
+  // Filing tools sheet & Quick Guide modal state
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsTab, setToolsTab] = useState<FilingToolTab>("form-be");
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  // Auto-show Quick Guide once on a brand-new user's very first visit
+  useEffect(() => {
+    if (!isLoaded || typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem(WELCOME_SEEN_KEY) === "1";
+      if (!seen && expenses.length === 0) {
+        setGuideOpen(true);
+        window.localStorage.setItem(WELCOME_SEEN_KEY, "1");
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [isLoaded, expenses.length]);
 
   // Listen to Supabase auth state + capture Google Drive provider_token
   useEffect(() => {
@@ -974,6 +991,14 @@ export function TaxApp() {
 
               <button
                 type="button"
+                onClick={() => setGuideOpen(true)}
+                title="How to use CukaiKu (Quick Guide)"
+                className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => setPrivacyBlur((v) => !v)}
                 title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
                 className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
@@ -1183,6 +1208,12 @@ export function TaxApp() {
                   yearExpenses={yearExpenses}
                   expenseCount={yearExpenses.length}
                   missingReceiptsTotal={missingReceiptsTotal}
+                  profileCustomized={
+                    profile.annualIncome !== 96000 ||
+                    profile.pcbPaid !== 6200 ||
+                    profile.zakatPaid > 0
+                  }
+                  hasCloudSync={Boolean(userEmail)}
                   onChangeTaxpayerMode={(mode) =>
                     handleUpdateProfile({ ...profile, taxpayerMode: mode })
                   }
@@ -1200,6 +1231,7 @@ export function TaxApp() {
                   }}
                   onOpenUpgrade={openUpgradeModal}
                   onLoadSampleData={handleLoadSampleData}
+                  onOpenGuideModal={() => setGuideOpen(true)}
                 />
               )}
 
@@ -1411,6 +1443,16 @@ export function TaxApp() {
             null
           );
         }}
+      />
+
+      <QuickGuideModal
+        open={guideOpen}
+        taxYear={taxYear}
+        hasExpenses={yearExpenses.length > 0}
+        onClose={() => setGuideOpen(false)}
+        onStartScanning={() => openScanner()}
+        onGoToSettings={() => setActiveTab("settings")}
+        onLoadSampleData={handleLoadSampleData}
       />
     </div>
   );
