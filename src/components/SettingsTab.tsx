@@ -780,7 +780,7 @@ export function SettingsTab({
         </div>
       </section>
 
-      {/* Cloud Sync (Supabase) */}
+      {/* Cloud Sync (Supabase) & 7-Year Google Drive Archive */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -790,24 +790,22 @@ export function SettingsTab({
               <CloudOff className="h-4 w-4 text-slate-400" />
             )}
             <h2 className="text-sm font-bold text-slate-900">
-              Google Drive Sync & Receipt Backup
+              Cloud Sync &amp; 7-Year LHDN Vault
             </h2>
           </div>
           <span
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-              userEmail && driveConnected
+              userEmail
                 ? "bg-emerald-100 text-emerald-800"
-                : userEmail
-                ? "bg-amber-100 text-amber-800"
                 : isSupabaseConfigured
                 ? "bg-amber-100 text-amber-800"
                 : "bg-slate-100 text-slate-600"
             }`}
           >
-            {userEmail && driveConnected
-              ? "Google Drive Active"
-              : userEmail
-              ? "Signed In"
+            {userEmail
+              ? driveConnected
+                ? "Cloud + Drive Synced"
+                : "Cloud Synced Active"
               : isSupabaseConfigured
               ? "Sign In Needed"
               : "Local Mode"}
@@ -816,79 +814,106 @@ export function SettingsTab({
 
         {isSupabaseConfigured ? (
           userEmail ? (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3">
-                <div>
-                  <p className="text-xs font-semibold text-emerald-900">
-                    Signed in as {userEmail}
-                  </p>
-                  <p className="text-[11px] text-emerald-700">
-                    {driveConnected
-                      ? `Receipts archive directly to My Drive / CukaiKu / Receipts / ${profile.taxYear}`
-                      : "Reconnect Google Drive to archive PDF + JSON receipts directly to your Google Drive."}
-                  </p>
+            <div className="space-y-3">
+              {/* Account Status Card */}
+              <div className="flex items-center justify-between rounded-xl bg-emerald-50/90 border border-emerald-200/60 p-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-emerald-950">
+                      CukaiKu Cloud Sync: Active
+                    </p>
+                    <p className="text-[11px] text-emerald-800">
+                      Signed in as <strong>{userEmail}</strong> • All receipts &amp; reliefs sync across your devices.
+                    </p>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-95"
                 >
                   <LogOut className="h-3.5 w-3.5" /> Sign Out
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {driveConnected ? (
+              {/* Optional 7-Year Google Drive Vault Card */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Database className="h-3.5 w-3.5 text-slate-600" />
+                      7-Year LHDN Drive Archive (Optional)
+                    </h3>
+                    <p className="mt-0.5 text-[11px] text-slate-600">
+                      {driveConnected
+                        ? `Connected! Backs up raw PDFs & Form BE worksheets directly to My Drive / CukaiKu / Receipts / ${profile.taxYear}`
+                        : "Optional: Automatically deposit an independent backup of all receipts and worksheets directly into your personal Google Drive for 7-year audit peace of mind."}
+                    </p>
+                  </div>
+                  {driveConnected && (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                      Connected
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {driveConnected ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={driveSyncing}
+                        onClick={handleSyncDriveIndex}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white active:scale-[0.99] disabled:opacity-60"
+                      >
+                        {driveSyncing ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Cloud className="h-3.5 w-3.5" />
+                        )}
+                        Back Up YA {profile.taxYear} to Drive
+                      </button>
+                      {driveFolderUrl && (
+                        <a
+                          href={driveFolderUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                        >
+                          Open Drive Folder
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={authLoading}
+                      onClick={handleConnectGoogleDrive}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 active:scale-[0.99]"
+                    >
+                      <Cloud className="h-3.5 w-3.5 text-blue-600" />
+                      Enable Google Drive Archive (Optional)
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    disabled={driveSyncing}
-                    onClick={handleSyncDriveIndex}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white active:scale-[0.99] disabled:opacity-60"
+                    disabled={migratingLocal}
+                    onClick={handlePushLocalToCloud}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60"
+                    title="Upload any receipts or profile numbers entered locally on this browser into your cloud database"
                   >
-                    {driveSyncing ? (
+                    {migratingLocal ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Cloud className="h-3.5 w-3.5" />
+                      <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-600" />
                     )}
-                    Back Up YA {profile.taxYear} Index to Drive
+                    Push Local Receipts to Cloud
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={authLoading}
-                    onClick={handleConnectGoogleDrive}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white active:scale-[0.99]"
-                  >
-                    <Cloud className="h-3.5 w-3.5" />
-                    Connect Google Drive
-                  </button>
-                )}
-
-                {driveFolderUrl && (
-                  <a
-                    href={driveFolderUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"
-                  >
-                    Open Drive Folder
-                  </a>
-                )}
-
-                <button
-                  type="button"
-                  disabled={migratingLocal}
-                  onClick={handlePushLocalToCloud}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60"
-                  title="Upload any receipts or profile numbers entered locally on this browser into your cloud database"
-                >
-                  {migratingLocal ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <ArrowUpCircle className="h-3.5 w-3.5 text-blue-600" />
-                  )}
-                  Push Local Receipts to Cloud
-                </button>
+                </div>
               </div>
 
               {migrateMsg && (
