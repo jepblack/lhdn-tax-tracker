@@ -56,7 +56,9 @@ export function DashboardTab({
   );
 
   return (
-    <div className="space-y-4 pb-6">
+    <div className="space-y-4 pb-6 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0">
+      {/* Left / Primary Column */}
+      <div className="space-y-4 md:col-span-7">
       {/* Hero Tax Savings Card */}
       <section className="rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 p-5 text-white shadow-lg shadow-emerald-900/15">
         <div className="flex items-start justify-between gap-2">
@@ -206,6 +208,10 @@ export function DashboardTab({
         </section>
       )}
 
+      </div>
+
+      {/* Right / Action & Insights Column */}
+      <div className="space-y-4 md:col-span-5">
       {/* Missing Receipts Warning */}
       {missingReceiptsTotal > 0 && (
         <button
@@ -515,6 +521,7 @@ export function DashboardTab({
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 }

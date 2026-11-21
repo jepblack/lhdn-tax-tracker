@@ -765,74 +765,232 @@ export function TaxApp() {
 
   return (
     <div
-      className={`min-h-screen bg-slate-50 text-slate-900 ${
+      className={`min-h-screen overflow-x-hidden bg-slate-50 text-slate-900 ${
         privacyBlur ? "privacy-mode" : ""
       }`}
     >
-      {/* Top Sticky Mobile Header */}
+      {/* Top Sticky Responsive Header */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
-              <Shield className="h-5 w-5" />
+        <div className="mx-auto max-w-5xl px-3 py-2.5 sm:px-6 sm:py-3">
+          {/* Primary Row: Brand + Quick Controls */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
+                  CukaiKu
+                </h1>
+                <p className="truncate text-[11px] text-slate-500">
+                  LHDN Relief &amp; Vault
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-sm font-bold leading-tight text-slate-900">
-                CukaiKu
-              </h1>
-              <p className="text-[11px] text-slate-500">
-                LHDN Relief & Receipt Vault
-              </p>
+
+            {/* Desktop Center Navigation (hidden on mobile, uses bottom bar on mobile) */}
+            <nav className="hidden md:flex items-center gap-1 rounded-xl bg-slate-100/90 p-1">
+              {(
+                [
+                  { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+                  { id: "reliefs", label: "Reliefs", icon: ListChecks },
+                  {
+                    id: "receipts",
+                    label: "Vault",
+                    icon: ReceiptText,
+                    badge: missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined,
+                  },
+                  { id: "settings", label: "Profile", icon: Settings },
+                ] as const
+              ).map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveTab(item.id)}
+                    className={`relative inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      isActive
+                        ? "bg-white text-emerald-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    <span>{item.label}</span>
+                    {"badge" in item && item.badge !== undefined && (
+                      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Right Controls */}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+              {/* Desktop-only Status & Pro pills (shown on Row 2 on mobile so Row 1 never overflows) */}
+              <div className="hidden sm:flex items-center gap-1.5">
+                {userEmail ? (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("settings")}
+                      title={`Signed in as ${userEmail} — tap to view Cloud Sync settings`}
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition"
+                    >
+                      <Cloud className="h-3 w-3 text-emerald-600" />
+                      <span>{userEmail.split("@")[0]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualRefresh}
+                      disabled={refreshing}
+                      title="Sync now (pull latest from cloud)"
+                      className="rounded-xl p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                      />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("settings")}
+                    title="Currently in Local Mode on this device. Tap to sign in and sync with your phone or PC."
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-100 transition"
+                  >
+                    <CloudOff className="h-3 w-3 text-amber-600" />
+                    <span>Not Synced</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => openUpgradeModal()}
+                  title={
+                    subscription.planTier === "free"
+                      ? `Free Plan (${subscription.aiScansUsed}/${subscription.aiScansLimit} AI Scans used) — Tap to upgrade to Pro`
+                      : `CukaiKu ${subscription.planTier.toUpperCase()} Pass Active`
+                  }
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
+                    subscription.planTier === "free"
+                      ? "bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
+                      : "bg-emerald-700 text-amber-300 shadow-2xs"
+                  }`}
+                >
+                  <Crown className="h-3 w-3" />
+                  <span>
+                    {subscription.planTier === "free"
+                      ? `Pro • ${Math.max(
+                          0,
+                          subscription.aiScansLimit - subscription.aiScansUsed
+                        )} AI`
+                      : subscription.planTier}
+                  </span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPrivacyBlur((v) => !v)}
+                title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
+                className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
+              >
+                {privacyBlur ? (
+                  <EyeOff className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={toggleDarkMode}
+                title={darkMode ? "Light mode" : "Dark mode"}
+                className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
+              >
+                {darkMode ? (
+                  <Sun className="h-4 w-4 text-amber-400" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </button>
+
+              {/* Dynamic Rolling 7-Year LHDN Switcher */}
+              <select
+                aria-label="Year of Assessment"
+                value={taxYear}
+                onChange={(e) => setTaxYear(Number(e.target.value))}
+                className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-emerald-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {availableTaxYears.map((yr) => {
+                  const count = expenseCountByYear[yr] || 0;
+                  const expired = isTaxYearRetentionExpired(yr);
+                  return (
+                    <option key={yr} value={yr}>
+                      YA {yr}
+                      {count > 0 ? ` (${count})` : ""}
+                      {expired ? " • Expired" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => openScanner()}
+                className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                <span>Scan</span>
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* Mobile Sub-Row: Sync Status + Pro Quota Pill (cleanly fits 320px+ screens) */}
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2 sm:hidden">
             {userEmail ? (
-              <div className="inline-flex items-center gap-1">
+              <div className="inline-flex min-w-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setActiveTab("settings")}
-                  title={`Signed in as ${userEmail} — tap to view Cloud Sync settings`}
-                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition"
+                  className="inline-flex min-w-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200/80"
                 >
-                  <Cloud className="h-3 w-3 text-emerald-600" />
-                  <span className="hidden sm:inline">{userEmail.split("@")[0]}</span>
-                  <span className="sm:hidden">Synced</span>
+                  <Cloud className="h-3 w-3 shrink-0 text-emerald-600" />
+                  <span className="truncate">{userEmail.split("@")[0]}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleManualRefresh}
                   disabled={refreshing}
-                  title="Sync now (pull latest from cloud)"
-                  className="rounded-xl p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                  title="Sync now"
+                  className="rounded-lg p-1 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                  />
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setActiveTab("settings")}
-                title="Currently in Local Mode on this device. Tap to sign in and sync with your phone or PC."
-                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-100 transition animate-pulse"
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-300"
               >
                 <CloudOff className="h-3 w-3 text-amber-600" />
-                <span>Not Synced</span>
+                <span>Local Mode • Sign In</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={() => openUpgradeModal()}
-              title={
+              className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
                 subscription.planTier === "free"
-                  ? `Free Plan (${subscription.aiScansUsed}/${subscription.aiScansLimit} AI Scans used) — Tap to upgrade to Pro`
-                  : `CukaiKu ${subscription.planTier.toUpperCase()} Pass Active`
-              }
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
-                subscription.planTier === "free"
-                  ? "bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
-                  : "bg-emerald-700 text-amber-300 shadow-2xs"
+                  ? "bg-amber-100 text-amber-900 border border-amber-300"
+                  : "bg-emerald-700 text-amber-300"
               }`}
             >
               <Crown className="h-3 w-3" />
@@ -841,61 +999,16 @@ export function TaxApp() {
                   ? `Pro • ${Math.max(
                       0,
                       subscription.aiScansLimit - subscription.aiScansUsed
-                    )} AI`
-                  : subscription.planTier}
+                    )} AI Left`
+                  : `${subscription.planTier} Pass`}
               </span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setPrivacyBlur((v) => !v)}
-              title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
-              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
-            >
-              {privacyBlur ? (
-                <EyeOff className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={toggleDarkMode}
-              title={darkMode ? "Light mode" : "Dark mode"}
-              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
-            >
-              {darkMode ? (
-                <Sun className="h-4 w-4 text-amber-400" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </button>
-
-            {/* Dynamic Rolling 7-Year LHDN Switcher */}
-            <select
-              aria-label="Year of Assessment"
-              value={taxYear}
-              onChange={(e) => setTaxYear(Number(e.target.value))}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              {availableTaxYears.map((yr) => {
-                const count = expenseCountByYear[yr] || 0;
-                const expired = isTaxYearRetentionExpired(yr);
-                return (
-                  <option key={yr} value={yr}>
-                    YA {yr}
-                    {count > 0 ? ` (${count})` : ""}
-                    {expired ? " • Expired (>7y)" : ""}
-                  </option>
-                );
-              })}
-            </select>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="mx-auto max-w-2xl px-4 pt-4 pb-24">
+      <main className="mx-auto max-w-5xl px-3 pt-4 pb-24 sm:px-6 md:pb-10">
         {!isLoaded ? (
           <div className="space-y-4">
             <div className="h-44 animate-pulse rounded-2xl bg-slate-200" />
@@ -970,7 +1083,7 @@ export function TaxApp() {
       </main>
 
       {/* Bottom Mobile Navigation Bar with Center Scan Button */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
         <div className="mx-auto grid max-w-2xl grid-cols-5 items-center px-2 py-1.5">
           <NavButton
             icon={LayoutDashboard}
