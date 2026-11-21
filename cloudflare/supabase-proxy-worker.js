@@ -43,15 +43,9 @@ export default {
     // Clone response headers so we can rewrite Location redirects
     const responseHeaders = new Headers(response.headers);
     let location = responseHeaders.get("Location");
-    if (location && (location.includes(SUPABASE_HOST) || location.includes(encodeURIComponent(SUPABASE_HOST)))) {
-      const encodedSupabaseOrigin = encodeURIComponent(SUPABASE_ORIGIN);
-      const encodedProxyOrigin = encodeURIComponent(`https://${proxyHost}`);
-      
-      location = location
-        .replaceAll(encodedSupabaseOrigin, encodedProxyOrigin)
-        .replaceAll(SUPABASE_ORIGIN, `https://${proxyHost}`)
-        .replaceAll(SUPABASE_HOST, proxyHost);
-        
+    // Only rewrite Location if it is redirecting to Supabase origin directly (NOT Google OAuth query params)
+    if (location && location.startsWith(SUPABASE_ORIGIN)) {
+      location = location.replaceAll(SUPABASE_ORIGIN, `https://${proxyHost}`);
       responseHeaders.set("Location", location);
     }
 
