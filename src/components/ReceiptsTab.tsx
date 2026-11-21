@@ -41,6 +41,7 @@ import {
   TaxYear,
   UserSubscription,
 } from "@/lib/types";
+import { InfoHint } from "./InfoHint";
 
 const ANNUAL_DOC_SLOTS: Array<{ type: AnnualDocType; label: string; hint: string }> = [
   { type: "ea_form", label: "EA Form (C.P.8A)", hint: "Annual remuneration statement from employer" },
@@ -152,9 +153,16 @@ export function ReceiptsTab({
             <p className="text-xs font-semibold text-slate-900">
               YA {taxYear} Vault ({yearExpenses.length} records)
             </p>
-            <p className="text-[11px] text-slate-500">
-              LHDN 7-year retention until{" "}
-              <strong className="text-slate-700">{taxYear + 8}</strong>
+            <p className="flex items-center gap-1 text-[11px] text-slate-500">
+              <span>
+                LHDN 7-year retention until{" "}
+                <strong className="text-slate-700">{taxYear + 8}</strong>
+              </span>
+              <InfoHint
+                align="left"
+                title="Why 7 Years?"
+                text="Under LHDN Income Tax Act Section 82A, taxpayers must keep supporting receipts for 7 years from the end of the filing year."
+              />
             </p>
           </div>
         </div>
@@ -225,6 +233,11 @@ export function ReceiptsTab({
             Annual Docs ({annualDocs.filter((d) => d.taxYear === taxYear).length})
           </button>
         </div>
+        <InfoHint
+          align="left"
+          title="Receipts vs Annual Docs"
+          text="Receipts stores individual bills (clinic, books, sports). Annual Docs stores yearly statements: EA Form, KWSP, Insurance, SSPN & Housing Loan Interest."
+        />
 
         <div className="flex items-center gap-1.5">
           <button

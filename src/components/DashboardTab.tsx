@@ -232,8 +232,13 @@ export function DashboardTab({
       {/* Salaried (e-BE) vs. Freelancer / Mixed Income (e-B) Mode Bar */}
       <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-700">
-            LHDN Filing Profile:
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
+            <span>LHDN Filing Profile:</span>
+            <InfoHint
+              align="left"
+              title="Form e-BE vs Form e-B"
+              text="Salaried (e-BE, due 30 Apr) is for full-time employment income. Freelancer / Mixed (e-B, due 30 Jun) adds Business Expenses (Sec 33) & CP500 reminders."
+            />
           </span>
           <div className="inline-flex rounded-xl bg-slate-100 p-1">
             <button
@@ -329,14 +334,21 @@ export function DashboardTab({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenMyInvoisQr}
-          className="shrink-0 inline-flex items-center justify-center gap-1 rounded-xl bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-amber-700"
-        >
-          <QrCode className="h-3.5 w-3.5" />
-          Verify MyInvois QR
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <InfoHint
+            align="right"
+            title="What is MyInvois QR?"
+            text="LHDN's official e-Invoice QR code. Scanning it attaches the verified UUID & TIN to your receipt for faster 7-year LHDN audit checks."
+          />
+          <button
+            type="button"
+            onClick={onOpenMyInvoisQr}
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-amber-700"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            Verify MyInvois QR
+          </button>
+        </div>
       </section>
 
       <div className="space-y-4 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0">
@@ -412,6 +424,12 @@ export function DashboardTab({
             <div className="flex items-center gap-1.5 text-emerald-100">
               <TrendingDown className="h-3.5 w-3.5" />
               <span className="text-[11px] font-medium">Tax Saved (Receipts)</span>
+              <InfoHint
+                light
+                align="left"
+                title="Actual Tax Saved"
+                text="Actual Ringgit cut off your tax bill thanks to the receipts you've logged so far (Claimable Reliefs × your top tax bracket)."
+              />
             </div>
             <p className="privacy-sensitive mt-1 text-lg font-bold text-white">
               {formatRM(summary.taxSavedByExpenseReliefs)}
@@ -424,6 +442,12 @@ export function DashboardTab({
               <span className="text-[11px] font-medium">
                 {summary.estimatedRefund >= 0 ? "Est. LHDN Refund" : "Est. Balance Due"}
               </span>
+              <InfoHint
+                light
+                align="right"
+                title="Refund vs Balance Due"
+                text="Compares your final LHDN tax bill against PCB already deducted from your salary + Zakat. Positive = money LHDN owes you back!"
+              />
             </div>
             <p
               className={`privacy-sensitive mt-1 text-lg font-bold ${
@@ -681,11 +705,15 @@ export function DashboardTab({
       {summary.opportunities.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-emerald-600" />
               <h2 className="text-sm font-semibold text-slate-900">
                 Maximize Your Reliefs
               </h2>
+              <InfoHint
+                title="Unused LHDN Sub-Limits"
+                text="Categories where you haven't reached the annual LHDN cap yet. Spending here before 31 Dec directly lowers your tax bill."
+              />
             </div>
             <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
               Before 31 Dec {summary.taxYear}

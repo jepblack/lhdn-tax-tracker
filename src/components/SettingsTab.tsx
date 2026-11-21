@@ -757,8 +757,12 @@ export function SettingsTab({
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
           <h2 className="text-sm font-bold text-slate-900">
-            Status & Family Reliefs (No Receipt Needed)
+            Status &amp; Family Reliefs (No Receipt Needed)
           </h2>
+          <InfoHint
+            title="Automatic LHDN Reliefs"
+            text="Personal (RM 9,000), Spouse (RM 4,000), and Child reliefs are statutory entitlements — just toggle what applies to you, no purchase receipts required."
+          />
         </div>
 
         <div className="divide-y divide-slate-100">
