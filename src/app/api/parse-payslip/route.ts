@@ -233,27 +233,27 @@ export async function POST(request: Request) {
       }
     }
 
-    // 1. Fast Regex Parser for text PDFs
-    let fastResult: PayslipExtraction | null = null;
-    if (pdfText.length >= 25) {
-      fastResult = parseMalaysianPayslipText(pdfText);
-      const isCleanEa =
-        fastResult.sourceType === "ea-form" &&
-        fastResult.confidence === "high" &&
-        (fastResult.eaForm?.warnings.length ?? 0) === 0;
-      const isCleanPayslip =
-        fastResult.sourceType !== "ea-form" && fastResult.confidence === "high";
-
-      if (isCleanEa || isCleanPayslip) {
-        return NextResponse.json(fastResult);
-      }
-    }
-
-    // 2. AI Vision / LLM Fallback (Gemini Visual PDF/Image + Groq Vision)
+    // 1. Fast Regex Parser for text PDFs (for EA Forms, prefer Visual AI if Gemini is available)
     const groqKey = process.env.GROQ_API_KEY?.trim();
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
     const canUseGroq = Boolean(groqKey && groqKey !== "your-groq-api-key");
     const canUseGemini = Boolean(geminiKey && geminiKey !== "your-gemini-api-key");
+
+    let fastResult: PayslipExtraction | null = null;
+    if (pdfText.length >= 25) {
+      fastResult = parseMalaysianPayslipText(pdfText);
+      const isCleanPayslip =
+        fastResult.sourceType !== "ea-form" && fastResult.confidence === "high";
+      const isCleanEaWithoutAi =
+        fastResult.sourceType === "ea-form" &&
+        !canUseGemini &&
+        fastResult.confidence === "high" &&
+        (fastResult.eaForm?.warnings.length ?? 0) === 0;
+
+      if (isCleanPayslip || isCleanEaWithoutAi) {
+        return NextResponse.json(fastResult);
+      }
+    }
 
     const prompt = `Anda ialah pengekstrak data Borang EA Malaysia (C.P.8A / Penyata Saraan daripada Penggajian) dan Slip Gaji Malaysia.
 Baca dokumen (PDF, imej atau teks OCR) dengan teliti.
@@ -355,15 +355,36 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
           },
         ];
 
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents,
-          config: {
-            temperature: 0.1,
-            maxOutputTokens: 1500,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-          },
-        });
+        const callGemini = async () => {
+          try {
+            return await ai.models.generateContent({
+              model: GEMINI_MODEL,
+              contents,
+              config: {
+                temperature: 0.1,
+                maxOutputTokens: 1500,
+                thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+              },
+            });
+          } catch (cfgErr) {
+            const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+            if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
+              return await ai.models.generateContent({
+                model: GEMINI_MODEL,
+                contents,
+                config: { temperature: 0.1, maxOutputTokens: 1500 },
+              });
+            }
+            throw cfgErr;
+          }
+        };
+
+        const response = await Promise.race([
+          callGemini(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("AI_TIMEOUT")), 20000)
+          ),
+        ]);
 
         const raw = response.text || "";
         const cleanJson = raw

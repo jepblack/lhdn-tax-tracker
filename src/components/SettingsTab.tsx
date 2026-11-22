@@ -1080,13 +1080,25 @@ export function SettingsTab({
                   </p>
                 </div>
               )}
+              {(payslipData.ytdZakat > 0 ||
+                payslipData.monthlyZakat > 0 ||
+                payslipData.sourceType === "ea-form") && (
+                <div className="rounded-xl bg-white p-2.5">
+                  <p className="text-[10px] text-slate-500">
+                    {personalization.language === "bm" ? "Zakat (Potongan Gaji)" : "Zakat (Salary Deduction)"}
+                  </p>
+                  <p className="font-bold text-slate-900">
+                    {formatRM(payslipData.ytdZakat || payslipData.monthlyZakat, true)}
+                  </p>
+                </div>
+              )}
               {payslipData.eaForm?.tax_exempt_benefits !== null &&
                 payslipData.eaForm?.tax_exempt_benefits !== undefined && (
-                  <div className="col-span-2 rounded-xl bg-white p-2.5">
+                  <div className="rounded-xl bg-white p-2.5">
                     <p className="text-[10px] text-slate-500">
                       {personalization.language === "bm"
-                        ? "Elaun Dikecualikan Cukai (Bahagian F — Tidak termasuk dalam pendapatan kasar)"
-                        : "Tax-Exempt Allowances (Section F — Excluded from Gross Income)"}
+                        ? "Elaun Dikecualikan Cukai (Bhg. F)"
+                        : "Tax-Exempt Allowances (Sec. F)"}
                     </p>
                     <p className="font-bold text-slate-700">
                       {formatRM(payslipData.eaForm.tax_exempt_benefits, true)}
