@@ -217,8 +217,50 @@ export function SettingsTab({
     }
   }
 
+  function deriveChildrenFromEaForm(
+    childrenRelief: number | null | undefined,
+    eligibleCount: number | null | undefined
+  ): { childrenUnder18: number; childrenHigherEd: number } | null {
+    const hasRelief = childrenRelief !== null && childrenRelief !== undefined;
+    const hasCount = eligibleCount !== null && eligibleCount !== undefined;
+    if (!hasRelief && !hasCount) return null;
+
+    const relief = hasRelief ? Math.max(0, Number(childrenRelief) || 0) : 0;
+    const count = hasCount ? Math.max(0, Math.round(Number(eligibleCount) || 0)) : null;
+
+    if (hasRelief && count !== null) {
+      if (relief === 0 && count === 0) {
+        return { childrenUnder18: 0, childrenHigherEd: 0 };
+      }
+      if (relief >= count * 2000) {
+        const extra = relief - count * 2000;
+        const higherEd = Math.min(count, Math.round(extra / 6000));
+        return {
+          childrenUnder18: Math.max(0, count - higherEd),
+          childrenHigherEd: higherEd,
+        };
+      }
+      return { childrenUnder18: count, childrenHigherEd: 0 };
+    }
+
+    if (hasRelief) {
+      if (relief === 0) return { childrenUnder18: 0, childrenHigherEd: 0 };
+      return {
+        childrenUnder18: Math.max(0, Math.round(relief / 2000)),
+        childrenHigherEd: 0,
+      };
+    }
+
+    return { childrenUnder18: count ?? 0, childrenHigherEd: 0 };
+  }
+
   async function handleApplyPayslip(includeReliefs: boolean) {
     if (!payslipData) return;
+
+    const derivedChildren = deriveChildrenFromEaForm(
+      payslipData.eaForm?.children_relief,
+      payslipData.eaForm?.eligible_children_for_tax_relief
+    );
 
     const nextProfile: TaxProfile = {
       ...profile,
@@ -238,6 +280,13 @@ export function SettingsTab({
           : payslipData.monthlyZakat > 0
           ? payslipData.monthlyZakat
           : profile.zakatPaid,
+      statusReliefs: derivedChildren
+        ? {
+            ...profile.statusReliefs,
+            childrenUnder18: derivedChildren.childrenUnder18,
+            childrenHigherEd: derivedChildren.childrenHigherEd,
+          }
+        : profile.statusReliefs,
     };
 
     await onUpdateProfile(nextProfile);
@@ -1113,6 +1162,33 @@ export function SettingsTab({
                     </p>
                   </div>
                 )}
+              {(() => {
+                const derived = deriveChildrenFromEaForm(
+                  payslipData.eaForm?.children_relief,
+                  payslipData.eaForm?.eligible_children_for_tax_relief
+                );
+                if (!derived) return null;
+                const totalChildren = derived.childrenUnder18 + derived.childrenHigherEd;
+                return (
+                  <div className="col-span-2 rounded-xl bg-white p-2.5">
+                    <p className="text-[10px] text-slate-500">
+                      {personalization.language === "bm"
+                        ? "Bilangan Anak Layak (D5: Pelepasan Anak)"
+                        : "Eligible Children (D5: Child Relief)"}
+                    </p>
+                    <p className="font-bold text-slate-900">
+                      {totalChildren}{" "}
+                      {personalization.language === "bm" ? "orang anak" : totalChildren === 1 ? "child" : "children"}
+                      {payslipData.eaForm?.children_relief !== null &&
+                        payslipData.eaForm?.children_relief !== undefined && (
+                          <span className="ml-1.5 text-[11px] font-medium text-slate-500">
+                            ({formatRM(payslipData.eaForm.children_relief, true)})
+                          </span>
+                        )}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
 
             {payslipData.eaForm?.warnings && payslipData.eaForm.warnings.length > 0 && (
