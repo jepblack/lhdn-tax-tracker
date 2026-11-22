@@ -224,7 +224,7 @@ export function DashboardTab({
               />
             </div>
             <span className="text-[10px] font-semibold text-slate-400">
-              Change anytime in Settings
+              {copy.changeAnytimeSettings}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -473,12 +473,18 @@ export function DashboardTab({
             </p>
             <p className="privacy-sensitive mt-0.5 text-xs text-emerald-100/85">
               {taxpayerMode === "e-B" && freelancerView === "business"
-                ? `${businessExpenses.length} allowable business voucher(s) • Est. tax saved ${formatRM(
-                    Math.round(totalBusinessExpenses * summary.marginalRate)
-                  )}`
+                ? `${businessExpenses.length} ${
+                    personalization.language === "bm"
+                      ? "baucar perniagaan layak • Anggaran cukai dijimat"
+                      : "allowable business voucher(s) • Est. tax saved"
+                  } ${formatRM(Math.round(totalBusinessExpenses * summary.marginalRate))}`
                 : `${formatRM(summary.statusReliefTotal)} status + ${formatRM(
                     summary.expenseReliefClaimable
-                  )} / RM 28,000 expense reliefs`}
+                  )} / RM 28,000 ${
+                    personalization.language === "bm"
+                      ? "pelepasan resit"
+                      : "expense reliefs"
+                  }`}
             </p>
           </div>
           <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right backdrop-blur-sm">
@@ -960,45 +966,62 @@ export function DashboardTab({
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-emerald-600" />
               <h2 className="text-sm font-semibold text-slate-900">
-                Maximize Your Reliefs
+                {copy.maximizeReliefsTitle}
               </h2>
               <InfoHint
-                title="Unused LHDN Sub-Limits"
-                text="Categories where you haven't reached the annual LHDN cap yet. Spending here before 31 Dec directly lowers your tax bill."
+                title={
+                  personalization.language === "bm"
+                    ? "Baki Had LHDN Belum Guna"
+                    : "Unused LHDN Sub-Limits"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Kategori di mana had tahunan LHDN anda belum penuh. Perbelanjaan di sini sebelum 31 Dis mengurangkan cukai anda."
+                    : "Categories where you haven't reached the annual LHDN cap yet. Spending here before 31 Dec directly lowers your tax bill."
+                }
               />
             </div>
             <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
-              Before 31 Dec {summary.taxYear}
+              {copy.before31Dec} {summary.taxYear}
             </span>
           </div>
 
           <div className="mt-3 space-y-2.5">
-            {summary.opportunities.map((opp) => (
-              <div
-                key={opp.categoryId}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-xs font-semibold text-slate-900">
-                      {opp.categoryName}
-                    </p>
-                    <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
-                      Save ~{formatRM(opp.estimatedTaxSavings)}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-slate-600">
-                    {formatRM(opp.remainingCap)} unused cap remaining
-                  </p>
-                </div>
-                <button
-                  onClick={() => onQuickAdd(opp.categoryId)}
-                  className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white active:scale-95"
+            {summary.opportunities.map((opp) => {
+              const matchedCat = summary.categorySummaries.find(
+                (c) => c.category.id === opp.categoryId
+              )?.category;
+              const oppDisplayName = matchedCat
+                ? tCategory(matchedCat).shortName
+                : opp.categoryName;
+              return (
+                <div
+                  key={opp.categoryId}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3"
                 >
-                  + Add
-                </button>
-              </div>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-xs font-semibold text-slate-900">
+                        {oppDisplayName}
+                      </p>
+                      <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
+                        {personalization.language === "bm" ? "Jimat" : "Save"} ~
+                        {formatRM(opp.estimatedTaxSavings)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-600">
+                      {formatRM(opp.remainingCap)} {copy.unusedCapRemaining}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onQuickAdd(opp.categoryId)}
+                    className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white active:scale-95"
+                  >
+                    {copy.addBtn}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -1013,16 +1036,21 @@ export function DashboardTab({
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-900">
-                  Tax-Saving Partner Perks
+                  {personalization.language === "bm"
+                    ? "Tawaran Rakan Penjimatan Cukai"
+                    : "Tax-Saving Partner Perks"}
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  Matched to your {Math.round(summary.marginalRate * 100)}% tax
-                  bracket &amp; unused YA {summary.taxYear} caps
+                  {personalization.language === "bm"
+                    ? `Dipadankan dengan kadar cukai ${Math.round(summary.marginalRate * 100)}% & baki had TT ${summary.taxYear}`
+                    : `Matched to your ${Math.round(summary.marginalRate * 100)}% tax bracket & unused YA ${summary.taxYear} caps`}
                 </p>
               </div>
             </div>
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-              Verified Reliefs
+              {personalization.language === "bm"
+                ? "Pelepasan Sah"
+                : "Verified Reliefs"}
             </span>
           </div>
 
@@ -1041,18 +1069,26 @@ export function DashboardTab({
                           {offer.partnerName}
                         </span>
                         <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900">
-                          Get back ~{formatRM(estimatedTaxSaved)} tax
+                          {personalization.language === "bm"
+                            ? `Dapatkan ~${formatRM(estimatedTaxSaved)} cukai`
+                            : `Get back ~${formatRM(estimatedTaxSaved)} tax`}
                         </span>
                       </div>
                       <p className="mt-1 text-xs font-bold text-slate-900">
                         {offer.headline}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed">
-                        {offer.description} ({formatRM(remainingCap)} unused cap)
+                        {offer.description} ({formatRM(remainingCap)}{" "}
+                        {personalization.language === "bm"
+                          ? "baki had"
+                          : "unused cap"}
+                        )
                       </p>
                       {offer.promoCode && (
                         <p className="mt-1 text-[10px] font-semibold text-emerald-700">
-                          Promo code:{" "}
+                          {personalization.language === "bm"
+                            ? "Kod promo:"
+                            : "Promo code:"}{" "}
                           <code className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono font-bold">
                             {offer.promoCode}
                           </code>
@@ -1100,13 +1136,18 @@ export function DashboardTab({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-bold text-slate-900">
-                    Free Starter Plan ({subscription.aiScansUsed}/
-                    {subscription.aiScansLimit} AI Vision Scans)
+                    {copy.freeStarterLabel} ({subscription.aiScansUsed}/
+                    {subscription.aiScansLimit}{" "}
+                    {personalization.language === "bm"
+                      ? "Imbasan AI"
+                      : "AI Vision Scans"}
+                    )
                   </p>
                 </div>
                 <p className="mt-0.5 text-[11px] text-slate-600">
-                  Unlock 300 AI Vision scans, 1-click LHDN 7-Year Audit ZIP, and
-                  Batch Import for RM 29/yr.
+                  {personalization.language === "bm"
+                    ? "Buka 300 imbasan AI, ZIP Audit 7-Tahun 1-klik, dan Import Pukal hanya RM 29/tahun."
+                    : "Unlock 300 AI Vision scans, 1-click LHDN 7-Year Audit ZIP, and Batch Import for RM 29/yr."}
                 </p>
               </div>
             </div>
@@ -1119,7 +1160,7 @@ export function DashboardTab({
               }
               className="shrink-0 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 active:scale-95"
             >
-              Go Pro
+              {personalization.language === "bm" ? "Naik Taraf" : "Go Pro"}
             </button>
           </div>
         </section>
@@ -1129,20 +1170,26 @@ export function DashboardTab({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900">
-            Active Relief Progress
+            {personalization.language === "bm"
+              ? "Kemajuan Pelepasan Aktif"
+              : "Active Relief Progress"}
           </h2>
           <button
             onClick={() => onNavigateTab("reliefs")}
             className="flex items-center gap-1 text-xs font-semibold text-emerald-700"
           >
-            All 15 Reliefs
+            {personalization.language === "bm"
+              ? "Semua 15 Pelepasan"
+              : "All 15 Reliefs"}
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
 
         {activeCategories.length === 0 ? (
           <p className="mt-3 text-center text-xs text-slate-500 py-4">
-            No expenses logged for YA {summary.taxYear} yet.
+            {personalization.language === "bm"
+              ? `Tiada perbelanjaan direkodkan untuk TT ${summary.taxYear}.`
+              : `No expenses logged for YA ${summary.taxYear} yet.`}
           </p>
         ) : (
           <div className="mt-3 space-y-3">
@@ -1162,7 +1209,7 @@ export function DashboardTab({
                         <ReliefIcon name={item.category.icon} className="h-3.5 w-3.5" />
                       </div>
                       <span className="truncate text-xs font-medium text-slate-800">
-                        {item.category.shortName}
+                        {tCategory(item.category).shortName}
                       </span>
                       {isMaxed && (
                         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
@@ -1196,45 +1243,75 @@ export function DashboardTab({
       {/* Quick Tax Computation Breakdown */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
         <h2 className="text-sm font-semibold text-slate-900">
-          YA {summary.taxYear} Quick Tax Estimate
+          {personalization.language === "bm"
+            ? `Anggaran Cukai Pantas TT ${summary.taxYear}`
+            : `YA ${summary.taxYear} Quick Tax Estimate`}
         </h2>
         <div className="privacy-sensitive mt-3 space-y-2 text-xs">
           <div className="flex justify-between text-slate-600">
-            <span>Estimated Annual Income</span>
+            <span>
+              {personalization.language === "bm"
+                ? "Anggaran Pendapatan Tahunan"
+                : "Estimated Annual Income"}
+            </span>
             <span className="font-medium text-slate-900">
               {formatRM(summary.annualIncome)}
             </span>
           </div>
           <div className="flex justify-between text-slate-600">
-            <span>Less: Total Tax Reliefs</span>
+            <span>
+              {personalization.language === "bm"
+                ? "Tolak: Jumlah Pelepasan Cukai"
+                : "Less: Total Tax Reliefs"}
+            </span>
             <span className="font-medium text-emerald-700">
               - {formatRM(summary.totalReliefs)}
             </span>
           </div>
           <div className="flex justify-between border-t border-slate-100 pt-2 font-semibold text-slate-900">
-            <span>Chargeable Income</span>
+            <span>
+              {personalization.language === "bm"
+                ? "Pendapatan Bercukai"
+                : "Chargeable Income"}
+            </span>
             <span>{formatRM(summary.chargeableIncome)}</span>
           </div>
           <div className="flex justify-between text-slate-600">
-            <span>Gross Income Tax</span>
+            <span>
+              {personalization.language === "bm"
+                ? "Cukai Pendapatan Kasar"
+                : "Gross Income Tax"}
+            </span>
             <span className="font-medium text-slate-900">
               {formatRM(summary.grossTax, true)}
             </span>
           </div>
           {summary.zakatRebate > 0 && (
             <div className="flex justify-between text-slate-600">
-              <span>Less: Zakat / Fitrah Rebate</span>
+              <span>
+                {personalization.language === "bm"
+                  ? "Tolak: Rebat Zakat / Fitrah"
+                  : "Less: Zakat / Fitrah Rebate"}
+              </span>
               <span className="font-medium text-emerald-700">
                 - {formatRM(summary.zakatRebate, true)}
               </span>
             </div>
           )}
           <div className="flex justify-between border-t border-slate-100 pt-2 font-semibold text-slate-900">
-            <span>Net Tax Payable</span>
+            <span>
+              {personalization.language === "bm"
+                ? "Cukai Bersih Perlu Dibayar"
+                : "Net Tax Payable"}
+            </span>
             <span>{formatRM(summary.netTaxPayable, true)}</span>
           </div>
           <div className="flex justify-between text-slate-600">
-            <span>PCB / MTD Paid YTD</span>
+            <span>
+              {personalization.language === "bm"
+                ? "PCB / MTD Dibayar YTD"
+                : "PCB / MTD Paid YTD"}
+            </span>
             <span className="font-medium text-slate-900">
               {formatRM(summary.pcbPaid, true)}
             </span>
