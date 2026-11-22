@@ -434,7 +434,7 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
 
   const gross_salary_wages_ot = findLabeledAmount(
     bLines,
-    /(?:gaji\s*kasar,\s*upah\s*atau\s*gaji\s*cuti|gaji\s*kasar,\s*upah|\(\s*a\s*\)\s*gaji\s*kasar)/i
+    /(?:gaji\s*kasar,\s*upah\s*atau\s*gaji\s*(?:cuti|umum)|gaji\s*kasar,\s*upah|\(\s*a\s*\)\s*gaji\s*kasar)/i
   );
   const fees_commission_bonus = findLabeledAmount(
     bLines,
