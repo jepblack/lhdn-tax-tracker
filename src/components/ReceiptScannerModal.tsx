@@ -139,7 +139,7 @@ export function ReceiptScannerModal({
   const [isSaving, setIsSaving] = useState(false);
 
   // Full-Screen Viewfinder Mode Toggle (Receipt OCR vs MyInvois QR), Claim Type (e-B), and Offline Queue state
-  const { copy } = useLanguage();
+  const { lang, copy, tCategory, tSubCategory } = useLanguage();
   const [scannerMode, setScannerMode] = useState<"ocr" | "qr">(initialScannerMode);
   const [claimType, setClaimType] = useState<ExpenseClaimType>("personal_relief");
   const [myInvoisUuid, setMyInvoisUuid] = useState<string>("");
@@ -795,23 +795,35 @@ export function ReceiptScannerModal({
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-slate-900">
                 {editingExpense
-                  ? "Edit Receipt / Attach Proof"
+                  ? lang === "bm"
+                    ? "Sunting Resit / Lampirkan Bukti"
+                    : "Edit Receipt / Attach Proof"
                   : scannerMode === "qr"
-                  ? "MyInvois QR & Receipt Scanner"
+                  ? lang === "bm"
+                    ? "Pengimbas QR MyInvois & Resit"
+                    : "MyInvois QR & Receipt Scanner"
                   : isGeneralScanMode
-                  ? "Smart LHDN Receipt Scanner"
+                  ? lang === "bm"
+                    ? "Pengimbas Resit Pintar LHDN"
+                    : "Smart LHDN Receipt Scanner"
+                  : lang === "bm"
+                  ? "Imbas atau Rekod Resit"
                   : "Scan or Log Receipt"}
               </h2>
               {isOffline && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                   <WifiOff className="h-3 w-3 text-amber-700" />
-                  Offline Queue
+                  {lang === "bm" ? "Baris Luar Talian" : "Offline Queue"}
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-500">
               {isOffline
-                ? "Saved offline in IndexedDB — will sync automatically when online"
+                ? lang === "bm"
+                  ? "Disimpan luar talian dalam IndexedDB — akan disegerak automatik apabila dalam talian"
+                  : "Saved offline in IndexedDB — will sync automatically when online"
+                : lang === "bm"
+                ? "Mampatan ~300KB pada peranti + enjin peraturan AI / LHDN"
                 : "Client-side ~300KB compression + AI / LHDN rule engine"}
             </p>
           </div>
@@ -827,7 +839,7 @@ export function ReceiptScannerModal({
                     : "text-slate-600"
                 }`}
               >
-                Receipt OCR
+                {lang === "bm" ? "OCR Resit" : "Receipt OCR"}
               </button>
               <button
                 type="button"
@@ -838,7 +850,7 @@ export function ReceiptScannerModal({
                     : "text-slate-600"
                 }`}
               >
-                MyInvois QR
+                {lang === "bm" ? "QR MyInvois" : "MyInvois QR"}
               </button>
             </div>
             <button
@@ -893,7 +905,11 @@ export function ReceiptScannerModal({
               )}
               <span className="text-xs font-semibold">
                 {scannerMode === "qr"
-                  ? "Snap MyInvois QR"
+                  ? lang === "bm"
+                    ? "Ambil Gambar QR MyInvois"
+                    : "Snap MyInvois QR"
+                  : lang === "bm"
+                  ? "Ambil Gambar Resit"
                   : "Snap Any Receipt"}
               </span>
             </button>
@@ -904,7 +920,9 @@ export function ReceiptScannerModal({
               className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-slate-700 transition active:scale-[0.98]"
             >
               <Upload className="h-6 w-6 text-slate-500" />
-              <span className="text-xs font-semibold">Upload Photo / PDF</span>
+              <span className="text-xs font-semibold">
+                {lang === "bm" ? "Muat Naik Foto / PDF" : "Upload Photo / PDF"}
+              </span>
             </button>
           </div>
 
@@ -915,7 +933,11 @@ export function ReceiptScannerModal({
                 <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900">
                   <QrCode className="h-3.5 w-3.5 text-emerald-600" />
                   {qrDetectedUrl || myInvoisUuid
-                    ? "LHDN MyInvois e-Invoice Linked"
+                    ? lang === "bm"
+                      ? "e-Invois MyInvois LHDN Dipautkan"
+                      : "LHDN MyInvois e-Invoice Linked"
+                    : lang === "bm"
+                    ? "Tampal Pautan Pengesahan MyInvois"
                     : "Paste MyInvois Validation Link"}
                 </span>
                 {qrDetectedUrl && qrDetectedUrl.startsWith("http") && (
@@ -925,7 +947,8 @@ export function ReceiptScannerModal({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 underline"
                   >
-                    Verify Portal <ExternalLink className="h-3 w-3" />
+                    {lang === "bm" ? "Sahkan Portal" : "Verify Portal"}{" "}
+                    <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
@@ -961,7 +984,7 @@ export function ReceiptScannerModal({
                     }}
                     className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
                   >
-                    Link QR
+                    {lang === "bm" ? "Paut QR" : "Link QR"}
                   </button>
                 </div>
               )}
@@ -1318,7 +1341,9 @@ export function ReceiptScannerModal({
                   claimType === "business_deductible") && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
                     <p className="mb-1.5 text-[11px] font-bold text-slate-700">
-                      Form e-B Classification (Prevent Double-Claiming)
+                      {lang === "bm"
+                        ? "Pengelasan Borang e-B (Elak Tuntutan Berganda)"
+                        : "Form e-B Classification (Prevent Double-Claiming)"}
                     </p>
                     <div className="grid grid-cols-2 gap-1.5">
                       <button
@@ -1331,7 +1356,7 @@ export function ReceiptScannerModal({
                         }`}
                       >
                         <UserCheck className="h-3.5 w-3.5" />
-                        Personal Tax Relief
+                        {lang === "bm" ? "Pelepasan Cukai Peribadi" : "Personal Tax Relief"}
                       </button>
                       <button
                         type="button"
@@ -1343,7 +1368,7 @@ export function ReceiptScannerModal({
                         }`}
                       >
                         <Briefcase className="h-3.5 w-3.5" />
-                        Business Expense (Sec 33)
+                        {lang === "bm" ? "Perbelanjaan Perniagaan (Sek 33)" : "Business Expense (Sec 33)"}
                       </button>
                     </div>
                   </div>
@@ -1353,7 +1378,9 @@ export function ReceiptScannerModal({
                   <>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-700">
-                        LHDN Relief Category (YA {targetTaxYear})
+                        {lang === "bm"
+                          ? `Kategori Pelepasan LHDN (TT ${targetTaxYear})`
+                          : `LHDN Relief Category (YA ${targetTaxYear})`}
                       </label>
                       <select
                         value={categoryId}
@@ -1371,8 +1398,8 @@ export function ReceiptScannerModal({
                       >
                         {categories.map((cat) => (
                           <option key={cat.id} value={cat.id}>
-                            [{cat.formBeRef}] {cat.name} (Cap{" "}
-                            {formatRM(cat.maxLimit)})
+                            [{cat.formBeRef}] {tCategory(cat).name} (
+                            {lang === "bm" ? "Had" : "Cap"} {formatRM(cat.maxLimit)})
                           </option>
                         ))}
                       </select>
@@ -1382,7 +1409,9 @@ export function ReceiptScannerModal({
                       selectedCategory.subCategories.length > 0 && (
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-slate-700">
-                            Sub-Category (Sub-Limit)
+                            {lang === "bm"
+                              ? "Sub-Kategori (Sub-Had)"
+                              : "Sub-Category (Sub-Limit)"}
                           </label>
                           <select
                             value={subCategoryId}
@@ -1391,7 +1420,9 @@ export function ReceiptScannerModal({
                           >
                             {selectedCategory.subCategories.map((sub) => (
                               <option key={sub.id} value={sub.id}>
-                                {sub.name} (Sub-cap {formatRM(sub.maxLimit)})
+                                {tSubCategory(sub)} (
+                                {lang === "bm" ? "Sub-had" : "Sub-cap"}{" "}
+                                {formatRM(sub.maxLimit)})
                               </option>
                             ))}
                           </select>
@@ -1401,24 +1432,32 @@ export function ReceiptScannerModal({
                 ) : (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950">
                     <p className="font-bold">
-                      Allowable Business Deductible Expense (LHDN Section 33)
+                      {lang === "bm"
+                        ? "Perbelanjaan Perniagaan Dibenarkan (LHDN Seksyen 33)"
+                        : "Allowable Business Deductible Expense (LHDN Section 33)"}
                     </p>
                     <p className="mt-0.5 text-[11px] text-emerald-800">
-                      Logged under Form B Business P&amp;L deductions and
-                      excluded from personal relief caps so it is never
-                      double-claimed.
+                      {lang === "bm"
+                        ? "Direkod di bawah potongan P&L Perniagaan Borang B dan dikecualikan daripada had pelepasan peribadi supaya tidak dituntut dua kali."
+                        : "Logged under Form B Business P&L deductions and excluded from personal relief caps so it is never double-claimed."}
                     </p>
                   </div>
                 )}
 
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Merchant / Clinic / Provider *
+                    {lang === "bm"
+                      ? "Peniaga / Klinik / Pembekal *"
+                      : "Merchant / Clinic / Provider *"}
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g., TM Unifi, Klinik Pergigian, Decathlon"
+                    placeholder={
+                      lang === "bm"
+                        ? "cth., TM Unifi, Klinik Pergigian, Decathlon"
+                        : "e.g., TM Unifi, Klinik Pergigian, Decathlon"
+                    }
                     value={merchant}
                     onChange={(e) => setMerchant(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
@@ -1428,7 +1467,9 @@ export function ReceiptScannerModal({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Claimable Amount (RM) *
+                      {lang === "bm"
+                        ? "Jumlah Boleh Dituntut (RM) *"
+                        : "Claimable Amount (RM) *"}
                     </label>
                     <input
                       type="number"
@@ -1443,7 +1484,7 @@ export function ReceiptScannerModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Receipt Date *
+                      {lang === "bm" ? "Tarikh Resit *" : "Receipt Date *"}
                     </label>
                     <input
                       type="date"
@@ -1467,17 +1508,18 @@ export function ReceiptScannerModal({
                       <>
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                         <span>
-                          Fully claimable! {formatRM(remainingAfter)} cap left in{" "}
-                          {selectedCatSummary.category.shortName}.
+                          {lang === "bm"
+                            ? `Layak dituntut sepenuhnya! Baki had ${formatRM(remainingAfter)} dalam ${tCategory(selectedCatSummary.category).shortName}.`
+                            : `Fully claimable! ${formatRM(remainingAfter)} cap left in ${selectedCatSummary.category.shortName}.`}
                         </span>
                       </>
                     ) : (
                       <>
                         <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
                         <span>
-                          Exceeds {selectedCatSummary.category.shortName} cap by{" "}
-                          {formatRM(Math.abs(remainingAfter))}. Still saved for
-                          your records.
+                          {lang === "bm"
+                            ? `Melebihi had ${tCategory(selectedCatSummary.category).shortName} sebanyak ${formatRM(Math.abs(remainingAfter))}. Masih disimpan untuk rekod anda.`
+                            : `Exceeds ${selectedCatSummary.category.shortName} cap by ${formatRM(Math.abs(remainingAfter))}. Still saved for your records.`}
                         </span>
                       </>
                     )}
@@ -1487,11 +1529,13 @@ export function ReceiptScannerModal({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Invoice / e-Invoice No.
+                      {lang === "bm"
+                        ? "No. Invois / e-Invois"
+                        : "Invoice / e-Invoice No."}
                     </label>
                     <input
                       type="text"
-                      placeholder="Optional"
+                      placeholder={lang === "bm" ? "Pilihan" : "Optional"}
                       value={invoiceNumber}
                       onChange={(e) => setInvoiceNumber(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
@@ -1499,11 +1543,15 @@ export function ReceiptScannerModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Notes
+                      {lang === "bm" ? "Catatan" : "Notes"}
                     </label>
                     <input
                       type="text"
-                      placeholder="Item or patient details"
+                      placeholder={
+                        lang === "bm"
+                          ? "Butiran item atau pesakit"
+                          : "Item or patient details"
+                      }
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
@@ -1520,7 +1568,11 @@ export function ReceiptScannerModal({
                       className="text-xs font-semibold text-slate-700 underline underline-offset-2"
                     >
                       {showArchiveDetails
-                        ? "Hide LHDN Archive Details"
+                        ? lang === "bm"
+                          ? "Sembunyikan Butiran Arkib LHDN"
+                          : "Hide LHDN Archive Details"
+                        : lang === "bm"
+                        ? "Butiran Arkib LHDN (SST, Bayaran, PDF)"
                         : "LHDN Archive Details (SST, Payment, PDF)"}
                     </button>
                     {receiptFile && receiptFile.type.startsWith("image/") && (
@@ -1531,14 +1583,14 @@ export function ReceiptScannerModal({
                           onChange={(e) => setKeepColorPdf(e.target.checked)}
                           className="h-3.5 w-3.5 accent-emerald-600"
                         />
-                        Keep color PDF
+                        {lang === "bm" ? "Kekalkan PDF berwarna" : "Keep color PDF"}
                       </label>
                     )}
                   </div>
 
                   {merchant.trim() && numericAmount > 0 && (
                     <p className="truncate font-mono text-[10px] text-slate-500">
-                      Archive:{" "}
+                      {lang === "bm" ? "Arkib:" : "Archive:"}{" "}
                       {buildArchiveBaseFilename({
                         transactionDate: expenseDate,
                         merchantName: merchant.trim(),
@@ -1556,30 +1608,38 @@ export function ReceiptScannerModal({
                     <div className="grid grid-cols-2 gap-2.5 pt-1">
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">
-                          Payment Method
+                          {lang === "bm" ? "Kaedah Bayaran" : "Payment Method"}
                         </label>
                         <select
                           value={paymentMethod}
                           onChange={(e) => setPaymentMethod(e.target.value)}
                           className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900"
                         >
-                          <option value="">Not specified</option>
-                          <option value="card">Card</option>
-                          <option value="ewallet">e-Wallet</option>
+                          <option value="">
+                            {lang === "bm" ? "Tidak dinyatakan" : "Not specified"}
+                          </option>
+                          <option value="card">{lang === "bm" ? "Kad" : "Card"}</option>
+                          <option value="ewallet">{lang === "bm" ? "e-Dompet" : "e-Wallet"}</option>
                           <option value="duitnow">DuitNow QR</option>
-                          <option value="fpx">FPX / Online Banking</option>
-                          <option value="bank_transfer">Bank Transfer</option>
-                          <option value="cash">Cash</option>
+                          <option value="fpx">
+                            {lang === "bm"
+                              ? "FPX / Perbankan Dalam Talian"
+                              : "FPX / Online Banking"}
+                          </option>
+                          <option value="bank_transfer">
+                            {lang === "bm" ? "Pindahan Bank" : "Bank Transfer"}
+                          </option>
+                          <option value="cash">{lang === "bm" ? "Tunai" : "Cash"}</option>
                         </select>
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">
-                          Card Last 4 Digits
+                          {lang === "bm" ? "4 Digit Akhir Kad" : "Card Last 4 Digits"}
                         </label>
                         <input
                           type="text"
                           maxLength={4}
-                          placeholder="e.g. 4242"
+                          placeholder={lang === "bm" ? "cth. 4242" : "e.g. 4242"}
                           value={cardLast4}
                           onChange={(e) =>
                             setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))
@@ -1589,7 +1649,9 @@ export function ReceiptScannerModal({
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">
-                          SST / Tax Amount ({currency})
+                          {lang === "bm"
+                            ? `Jumlah SST / Cukai (${currency})`
+                            : `SST / Tax Amount (${currency})`}
                         </label>
                         <input
                           type="number"
@@ -1602,7 +1664,9 @@ export function ReceiptScannerModal({
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-600">
-                          Merchant Reg / Tax ID
+                          {lang === "bm"
+                            ? "No. Pendaftaran / Cukai Peniaga"
+                            : "Merchant Reg / Tax ID"}
                         </label>
                         <input
                           type="text"
@@ -1625,7 +1689,7 @@ export function ReceiptScannerModal({
                 {isSaving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving...
+                    {lang === "bm" ? "Menyimpan..." : "Saving..."}
                   </>
                 ) : editingExpense ? (
                   copy.scannerUpdateBtn

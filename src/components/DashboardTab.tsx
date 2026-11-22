@@ -25,7 +25,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
-import { useLanguage } from "@/lib/language-context";
+import {
+  PARTNER_OFFER_BM,
+  RECURRING_BILL_BM,
+  useLanguage,
+} from "@/lib/language-context";
 import { matchPartnerOffersToOpportunities } from "@/lib/monetization";
 import {
   getCurrentYearMonth,
@@ -219,8 +223,16 @@ export function DashboardTab({
               </h2>
               <InfoHint
                 align="left"
-                title="Personalize in 1 Tap"
-                text="Pick the life stage that matches you. CukaiKu automatically sets Form e-BE/e-B, status reliefs, and pins the most relevant LHDN categories to your Dashboard."
+                title={
+                  personalization.language === "bm"
+                    ? "Peribadikan dalam 1 Ketik"
+                    : "Personalize in 1 Tap"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Pilih peringkat kehidupan yang sepadan dengan anda. CukaiKu menetapkan Borang e-BE/e-B, pelepasan status, dan menyematkan kategori LHDN paling relevan ke Utama secara automatik."
+                    : "Pick the life stage that matches you. CukaiKu automatically sets Form e-BE/e-B, status reliefs, and pins the most relevant LHDN categories to your Dashboard."
+                }
               />
             </div>
             <span className="text-[10px] font-semibold text-slate-400">
@@ -242,7 +254,9 @@ export function DashboardTab({
                       : preset.titleEn}
                   </span>
                   <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                    {preset.badge}
+                    {personalization.language === "bm" && preset.badge === "Family"
+                      ? "Keluarga"
+                      : preset.badge}
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] leading-snug text-slate-600">
@@ -331,8 +345,16 @@ export function DashboardTab({
             <span>{copy.filingProfile}</span>
             <InfoHint
               align="left"
-              title="Form e-BE vs Form e-B"
-              text="Salaried (e-BE, due 30 Apr) is for full-time employment income. Freelancer / Mixed (e-B, due 30 Jun) adds Business Expenses (Sec 33) & CP500 reminders."
+              title={
+                personalization.language === "bm"
+                  ? "Borang e-BE lwn. Borang e-B"
+                  : "Form e-BE vs Form e-B"
+              }
+              text={
+                personalization.language === "bm"
+                  ? "Makan Gaji (e-BE, akhir 30 Apr) adalah untuk pendapatan penggajian sepenuh masa. Pekerja Bebas / Campuran (e-B, akhir 30 Jun) menambah Perbelanjaan Perniagaan (Sek 33) & peringatan CP500."
+                  : "Salaried (e-BE, due 30 Apr) is for full-time employment income. Freelancer / Mixed (e-B, due 30 Jun) adds Business Expenses (Sec 33) & CP500 reminders."
+              }
             />
           </span>
           <div className="inline-flex rounded-xl bg-slate-100 p-1">
@@ -432,8 +454,16 @@ export function DashboardTab({
         <div className="flex shrink-0 items-center gap-1.5">
           <InfoHint
             align="right"
-            title="What is MyInvois QR?"
-            text="LHDN's official e-Invoice QR code. Scanning it attaches the verified UUID & TIN to your receipt for faster 7-year LHDN audit checks."
+            title={
+              personalization.language === "bm"
+                ? "Apakah QR MyInvois?"
+                : "What is MyInvois QR?"
+            }
+            text={
+              personalization.language === "bm"
+                ? "Kod QR e-Invois rasmi LHDN. Mengimbasnya melampirkan UUID & TIN yang disahkan pada resit anda untuk semakan audit 7-tahun LHDN yang lebih pantas."
+                : "LHDN's official e-Invoice QR code. Scanning it attaches the verified UUID & TIN to your receipt for faster 7-year LHDN audit checks."
+            }
           />
           <button
             type="button"
@@ -462,8 +492,16 @@ export function DashboardTab({
               <InfoHint
                 light
                 align="left"
-                title="How Tax Reliefs Work"
-                text="Approved LHDN deductions (Lifestyle, Medical, EPF, SSPN, etc.) subtract from your taxable income before calculating your tax bracket."
+                title={
+                  personalization.language === "bm"
+                    ? "Bagaimana Pelepasan Cukai Berfungsi"
+                    : "How Tax Reliefs Work"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Potongan LHDN yang diluluskan (Gaya Hidup, Perubatan, KWSP, SSPN, dll.) ditolak daripada pendapatan bercukai anda sebelum mengira kadar cukai."
+                    : "Approved LHDN deductions (Lifestyle, Medical, EPF, SSPN, etc.) subtract from your taxable income before calculating your tax bracket."
+                }
               />
             </p>
             <p className="privacy-sensitive mt-1 text-3xl font-bold tracking-tight">
@@ -493,8 +531,16 @@ export function DashboardTab({
               <InfoHint
                 light
                 align="right"
-                title="Marginal Tax Rate"
-                text="Your top LHDN tax bracket (%). Every RM 100 of new relief saves you this percentage directly in tax!"
+                title={
+                  personalization.language === "bm"
+                    ? "Kadar Cukai Marginal"
+                    : "Marginal Tax Rate"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Kadar cukai tertinggi LHDN anda (%). Setiap RM 100 pelepasan baharu menjimatkan peratusan ini secara langsung daripada cukai anda!"
+                    : "Your top LHDN tax bracket (%). Every RM 100 of new relief saves you this percentage directly in tax!"
+                }
               />
             </p>
             <p className="privacy-sensitive text-lg font-bold">
@@ -528,8 +574,16 @@ export function DashboardTab({
               <InfoHint
                 light
                 align="left"
-                title="Actual Tax Saved"
-                text="Actual Ringgit cut off your tax bill thanks to the receipts you've logged so far (Claimable Reliefs × your top tax bracket)."
+                title={
+                  personalization.language === "bm"
+                    ? "Cukai Sebenar Dijimat"
+                    : "Actual Tax Saved"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Ringgit sebenar yang dikurangkan daripada bil cukai anda hasil resit yang direkod setakat ini (Pelepasan Layak × kadar cukai tertinggi anda)."
+                    : "Actual Ringgit cut off your tax bill thanks to the receipts you've logged so far (Claimable Reliefs × your top tax bracket)."
+                }
               />
             </div>
             <p className="privacy-sensitive mt-1 text-lg font-bold text-white">
@@ -546,8 +600,16 @@ export function DashboardTab({
               <InfoHint
                 light
                 align="right"
-                title="Refund vs Balance Due"
-                text="Compares your final LHDN tax bill against PCB already deducted from your salary + Zakat. Positive = money LHDN owes you back!"
+                title={
+                  personalization.language === "bm"
+                    ? "Lebihan lwn. Baki Perlu Dibayar"
+                    : "Refund vs Balance Due"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Membandingkan bil cukai akhir LHDN anda dengan PCB yang telah dipotong daripada gaji + Zakat. Positif = wang yang LHDN perlu pulangkan!"
+                    : "Compares your final LHDN tax bill against PCB already deducted from your salary + Zakat. Positive = money LHDN owes you back!"
+                }
               />
             </div>
             <p
@@ -681,8 +743,16 @@ export function DashboardTab({
               <span>{copy.pinnedCapsTitle}</span>
               <InfoHint
                 align="left"
-                title="Your Pinned Relief Caps"
-                text="Tap any card to quickly scan a receipt for it, or tap 'Customize Pins' to star/unstar categories in the Reliefs tab."
+                title={
+                  personalization.language === "bm"
+                    ? "Had Pelepasan Disemat Anda"
+                    : "Your Pinned Relief Caps"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Ketik mana-mana kad untuk mengimbas resit dengan pantas, atau ketik 'Ubah Pin' untuk membintangkan kategori dalam tab Pelepasan."
+                    : "Tap any card to quickly scan a receipt for it, or tap 'Customize Pins' to star/unstar categories in the Reliefs tab."
+                }
               />
             </h2>
             <button
@@ -794,8 +864,16 @@ export function DashboardTab({
                 {copy.goalTitle}
               </h2>
               <InfoHint
-                title="Custom Tax-Saving Target"
-                text="Set a personal goal for how much tax you want to save this Year of Assessment by claiming LHDN reliefs."
+                title={
+                  personalization.language === "bm"
+                    ? "Sasaran Penjimatan Cukai Peribadi"
+                    : "Custom Tax-Saving Target"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Tetapkan sasaran peribadi jumlah cukai yang ingin anda jimatkan pada Tahun Taksiran ini melalui tuntutan pelepasan LHDN."
+                    : "Set a personal goal for how much tax you want to save this Year of Assessment by claiming LHDN reliefs."
+                }
               />
             </div>
             <button
@@ -879,8 +957,16 @@ export function DashboardTab({
                 {copy.recurringTitle}
               </h2>
               <InfoHint
-                title="1-Tap Monthly Bills"
-                text="Log repeating tax-deductible bills (internet, gym, medical insurance) in 1 tap. Each bill locks for the month once logged so it never double-counts."
+                title={
+                  personalization.language === "bm"
+                    ? "Bil Bulanan 1-Ketik"
+                    : "1-Tap Monthly Bills"
+                }
+                text={
+                  personalization.language === "bm"
+                    ? "Rekod bil boleh ditolak cukai yang berulang (internet, gim, insurans perubatan) dalam 1 ketik. Setiap bil dikunci untuk bulan tersebut supaya tidak dikira dua kali."
+                    : "Log repeating tax-deductible bills (internet, gym, medical insurance) in 1 tap. Each bill locks for the month once logged so it never double-counts."
+                }
               />
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
@@ -892,6 +978,7 @@ export function DashboardTab({
             {recurringBills.map((bill) => {
               const isLoggedThisMonth = bill.lastLoggedMonth === currentMonth;
               const isBusy = loggingBillId === bill.id;
+              const billBm = RECURRING_BILL_BM[bill.id];
               return (
                 <div
                   key={bill.id}
@@ -899,10 +986,15 @@ export function DashboardTab({
                 >
                   <div className="min-w-0">
                     <p className="truncate font-bold text-slate-900">
-                      {bill.merchant}
+                      {personalization.language === "bm" && billBm
+                        ? billBm.merchant
+                        : bill.merchant}
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      {formatRM(bill.amount)} • {bill.description}
+                      {formatRM(bill.amount)} •{" "}
+                      {personalization.language === "bm" && billBm
+                        ? billBm.description
+                        : bill.description}
                     </p>
                   </div>
                   {isLoggedThisMonth ? (
@@ -924,7 +1016,11 @@ export function DashboardTab({
                       }}
                       className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-slate-800 active:scale-95 disabled:opacity-50"
                     >
-                      {isBusy ? "Logging..." : `+ ${copy.logBillNow}`}
+                      {isBusy
+                        ? personalization.language === "bm"
+                          ? "Merekod..."
+                          : "Logging..."
+                        : `+ ${copy.logBillNow}`}
                     </button>
                   )}
                 </div>
@@ -946,12 +1042,14 @@ export function DashboardTab({
             </div>
             <div>
               <p className="text-xs font-semibold text-amber-900">
-                {missingReceiptsTotal}{" "}
-                {missingReceiptsTotal === 1 ? "claim is" : "claims are"} missing
-                receipt proof
+                {personalization.language === "bm"
+                  ? `${missingReceiptsTotal} tuntutan tiada bukti resit`
+                  : `${missingReceiptsTotal} ${missingReceiptsTotal === 1 ? "claim is" : "claims are"} missing receipt proof`}
               </p>
               <p className="text-[11px] text-amber-700">
-                Attach receipts to stay LHDN audit-ready for 7 years
+                {personalization.language === "bm"
+                  ? "Lampirkan resit untuk kekal sedia audit LHDN selama 7 tahun"
+                  : "Attach receipts to stay LHDN audit-ready for 7 years"}
               </p>
             </div>
           </div>
@@ -1057,6 +1155,8 @@ export function DashboardTab({
           <div className="mt-3 space-y-2.5">
             {partnerMatches.slice(0, 3).map(({ offer, remainingCap, estimatedTaxSaved }) => {
               const isInternalQuickAction = offer.affiliateUrl.startsWith("#");
+              const offerBm = PARTNER_OFFER_BM[offer.id];
+              const isBm = personalization.language === "bm";
               return (
                 <div
                   key={offer.id}
@@ -1066,29 +1166,25 @@ export function DashboardTab({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200/60">
-                          {offer.partnerName}
+                          {isBm && offerBm?.partnerName ? offerBm.partnerName : offer.partnerName}
                         </span>
                         <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900">
-                          {personalization.language === "bm"
+                          {isBm
                             ? `Dapatkan ~${formatRM(estimatedTaxSaved)} cukai`
                             : `Get back ~${formatRM(estimatedTaxSaved)} tax`}
                         </span>
                       </div>
                       <p className="mt-1 text-xs font-bold text-slate-900">
-                        {offer.headline}
+                        {isBm && offerBm ? offerBm.headline : offer.headline}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed">
-                        {offer.description} ({formatRM(remainingCap)}{" "}
-                        {personalization.language === "bm"
-                          ? "baki had"
-                          : "unused cap"}
+                        {isBm && offerBm ? offerBm.description : offer.description} ({formatRM(remainingCap)}{" "}
+                        {isBm ? "baki had" : "unused cap"}
                         )
                       </p>
                       {offer.promoCode && (
                         <p className="mt-1 text-[10px] font-semibold text-emerald-700">
-                          {personalization.language === "bm"
-                            ? "Kod promo:"
-                            : "Promo code:"}{" "}
+                          {isBm ? "Kod promo:" : "Promo code:"}{" "}
                           <code className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono font-bold">
                             {offer.promoCode}
                           </code>
@@ -1104,7 +1200,7 @@ export function DashboardTab({
                         }
                         className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs active:scale-95"
                       >
-                        {offer.ctaLabel}
+                        {isBm && offerBm ? offerBm.ctaLabel : offer.ctaLabel}
                       </button>
                     ) : (
                       <a
@@ -1113,7 +1209,7 @@ export function DashboardTab({
                         rel="noreferrer"
                         className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95"
                       >
-                        <span>{offer.ctaLabel}</span>
+                        <span>{isBm && offerBm ? offerBm.ctaLabel : offer.ctaLabel}</span>
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     )}

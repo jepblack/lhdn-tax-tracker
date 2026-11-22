@@ -358,20 +358,43 @@ export function QuickGuideModal({
           })}
 
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-900 space-y-1.5">
-            <p className="font-bold">✨ Personalize CukaiKu in Seconds:</p>
+            <p className="font-bold">
+              {language === "bm"
+                ? "✨ Peribadikan CukaiKu dalam Beberapa Saat:"
+                : "✨ Personalize CukaiKu in Seconds:"}
+            </p>
             <ul className="list-disc pl-4 text-[11px] leading-relaxed text-emerald-800 space-y-0.5">
-              <li>
-                <strong>1-Tap Life-Stage Preset:</strong> Auto-configures Single, Family, Freelancer (e-B), or First-Home reliefs.
-              </li>
-              <li>
-                <strong>Pin Favorite Caps (★):</strong> Star only the LHDN categories you claim in the Reliefs tab.
-              </li>
-              <li>
-                <strong>1-Tap Monthly Bills &amp; Payday Nudge:</strong> Log Unifi/Gym/Insurance once a month without double-counting.
-              </li>
-              <li>
-                <strong>EN / BM Switcher:</strong> Tap <strong>EN / BM</strong> in the top bar anytime.
-              </li>
+              {language === "bm" ? (
+                <>
+                  <li>
+                    <strong>Praset Profil Kehidupan (1-Ketik):</strong> Tetapkan pelepasan Bujang, Keluarga, Pekerja Bebas (e-B), atau Rumah Pertama secara automatik.
+                  </li>
+                  <li>
+                    <strong>Semat Had Kegemaran (★):</strong> Tandakan bintang hanya pada kategori LHDN yang anda tuntut dalam tab Pelepasan.
+                  </li>
+                  <li>
+                    <strong>Bil Bulanan 1-Ketik &amp; Peringatan Hari Gaji:</strong> Rekod Unifi/Gim/Insurans sebulan sekali tanpa kiraan berganda.
+                  </li>
+                  <li>
+                    <strong>Penukar EN / BM:</strong> Ketik <strong>EN / BM</strong> di bar atas pada bila-bila masa.
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <strong>1-Tap Life-Stage Preset:</strong> Auto-configures Single, Family, Freelancer (e-B), or First-Home reliefs.
+                  </li>
+                  <li>
+                    <strong>Pin Favorite Caps (★):</strong> Star only the LHDN categories you claim in the Reliefs tab.
+                  </li>
+                  <li>
+                    <strong>1-Tap Monthly Bills &amp; Payday Nudge:</strong> Log Unifi/Gym/Insurance once a month without double-counting.
+                  </li>
+                  <li>
+                    <strong>EN / BM Switcher:</strong> Tap <strong>EN / BM</strong> in the top bar anytime.
+                  </li>
+                </>
+              )}
             </ul>
           </div>
         </div>

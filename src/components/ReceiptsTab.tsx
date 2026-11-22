@@ -44,13 +44,55 @@ import {
 } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 
-const ANNUAL_DOC_SLOTS: Array<{ type: AnnualDocType; label: string; hint: string }> = [
-  { type: "ea_form", label: "EA Form (C.P.8A)", hint: "Annual remuneration statement from employer" },
-  { type: "kwsp_statement", label: "KWSP / EPF Annual Statement", hint: "Yearly employee EPF contribution statement" },
-  { type: "insurance_statement", label: "Insurance / Takaful Tax Statement", hint: "Annual life & medical card tax relief certificate" },
-  { type: "loan_interest_statement", label: "Housing Loan Interest Statement", hint: "Bank annual interest letter (First-Home 2025–2027)" },
-  { type: "form_be_proof", label: "LHDN Form BE Filing Proof", hint: "MyTax e-BE submission acknowledgement PDF" },
-  { type: "other_doc", label: "Other Annual Tax Document", hint: "CP58, stamped SPA, OKU card, or JKM letter" },
+const ANNUAL_DOC_SLOTS: Array<{
+  type: AnnualDocType;
+  label: string;
+  labelBm: string;
+  hint: string;
+  hintBm: string;
+}> = [
+  {
+    type: "ea_form",
+    label: "EA Form (C.P.8A)",
+    labelBm: "Borang EA (C.P.8A)",
+    hint: "Annual remuneration statement from employer",
+    hintBm: "Penyata saraan tahunan daripada majikan",
+  },
+  {
+    type: "kwsp_statement",
+    label: "KWSP / EPF Annual Statement",
+    labelBm: "Penyata Tahunan KWSP",
+    hint: "Yearly employee EPF contribution statement",
+    hintBm: "Penyata caruman tahunan pekerja KWSP",
+  },
+  {
+    type: "insurance_statement",
+    label: "Insurance / Takaful Tax Statement",
+    labelBm: "Penyata Cukai Insurans / Takaful",
+    hint: "Annual life & medical card tax relief certificate",
+    hintBm: "Sijil pelepasan cukai nyawa & kad perubatan tahunan",
+  },
+  {
+    type: "loan_interest_statement",
+    label: "Housing Loan Interest Statement",
+    labelBm: "Penyata Faedah Pinjaman Perumahan",
+    hint: "Bank annual interest letter (First-Home 2025–2027)",
+    hintBm: "Surat faedah tahunan bank (Rumah Pertama 2025–2027)",
+  },
+  {
+    type: "form_be_proof",
+    label: "LHDN Form BE Filing Proof",
+    labelBm: "Bukti Penghantaran Borang BE LHDN",
+    hint: "MyTax e-BE submission acknowledgement PDF",
+    hintBm: "PDF pengesahan penghantaran e-BE MyTax",
+  },
+  {
+    type: "other_doc",
+    label: "Other Annual Tax Document",
+    labelBm: "Dokumen Cukai Tahunan Lain",
+    hint: "CP58, stamped SPA, OKU card, or JKM letter",
+    hintBm: "CP58, SPA bercop hasil, kad OKU, atau surat JKM",
+  },
 ];
 
 interface ReceiptsTabProps {
@@ -164,8 +206,12 @@ export function ReceiptsTab({
               </span>
               <InfoHint
                 align="left"
-                title="Why 7 Years?"
-                text="Under LHDN Income Tax Act Section 82A, taxpayers must keep supporting receipts for 7 years from the end of the filing year."
+                title={lang === "bm" ? "Mengapa 7 Tahun?" : "Why 7 Years?"}
+                text={
+                  lang === "bm"
+                    ? "Di bawah Seksyen 82A Akta Cukai Pendapatan LHDN, pembayar cukai wajib menyimpan resit sokongan selama 7 tahun dari akhir tahun taksiran."
+                    : "Under LHDN Income Tax Act Section 82A, taxpayers must keep supporting receipts for 7 years from the end of the filing year."
+                }
               />
             </p>
           </div>
@@ -239,8 +285,12 @@ export function ReceiptsTab({
         </div>
         <InfoHint
           align="left"
-          title="Receipts vs Annual Docs"
-          text="Receipts stores individual bills (clinic, books, sports). Annual Docs stores yearly statements: EA Form, KWSP, Insurance, SSPN & Housing Loan Interest."
+          title={lang === "bm" ? "Resit lwn. Dokumen Tahunan" : "Receipts vs Annual Docs"}
+          text={
+            lang === "bm"
+              ? "Resit menyimpan bil individu (klinik, buku, sukan). Dokumen Tahunan menyimpan penyata tahunan: Borang EA, KWSP, Insurans, SSPN & Faedah Pinjaman Rumah."
+              : "Receipts stores individual bills (clinic, books, sports). Annual Docs stores yearly statements: EA Form, KWSP, Insurance, SSPN & Housing Loan Interest."
+          }
         />
 
         <div className="flex items-center gap-1.5">
@@ -270,7 +320,7 @@ export function ReceiptsTab({
             ) : (
               <Files className="h-3.5 w-3.5 text-emerald-600" />
             )}
-            Batch
+            {lang === "bm" ? "Pukal" : "Batch"}
           </button>
         </div>
       </div>
@@ -629,9 +679,11 @@ export function ReceiptsTab({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-900">
-                        {slot.label}
+                        {lang === "bm" ? slot.labelBm : slot.label}
                       </p>
-                      <p className="text-[11px] text-slate-500">{slot.hint}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {lang === "bm" ? slot.hintBm : slot.hint}
+                      </p>
                     </div>
                   </div>
                   <button
@@ -640,7 +692,7 @@ export function ReceiptsTab({
                     onClick={() => {
                       activeDocSlotRef.current = {
                         type: slot.type,
-                        label: slot.label,
+                        label: lang === "bm" ? slot.labelBm : slot.label,
                       };
                       docInputRef.current?.click();
                     }}
@@ -651,7 +703,7 @@ export function ReceiptsTab({
                     ) : (
                       <Upload className="h-3 w-3" />
                     )}
-                    Upload
+                    {lang === "bm" ? "Muat Naik" : "Upload"}
                   </button>
                 </div>
 

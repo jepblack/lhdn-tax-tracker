@@ -45,7 +45,8 @@ export function ReliefsTab({
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
-  const { lang, copy, tCategory, tSubCategory } = useLanguage();
+  const { lang, copy, tCategory, tCategoryTips, tSubCategory, tSubCategoryDesc } =
+    useLanguage();
 
   const groupLabels: Record<string, string> = {
     all: copy.filterAll,
@@ -74,8 +75,12 @@ export function ReliefsTab({
         </span>
         <InfoHint
           align="right"
-          title="Pin Your Favorite Reliefs"
-          text="Hide caps you don't use and pin the ones that matter to your life stage (e.g. Lifestyle, Medical, SSPN, Childcare, or First-Home Interest)."
+          title={lang === "bm" ? "Semat Pelepasan Kegemaran" : "Pin Your Favorite Reliefs"}
+          text={
+            lang === "bm"
+              ? "Sembunyikan had yang anda tidak guna dan semat had yang penting untuk profil anda (cth: Gaya Hidup, Perubatan, SSPN, Taska, atau Faedah Rumah Pertama)."
+              : "Hide caps you don't use and pin the ones that matter to your life stage (e.g. Lifestyle, Medical, SSPN, Childcare, or First-Home Interest)."
+          }
         />
       </div>
 
@@ -152,8 +157,12 @@ export function ReliefsTab({
                       tabIndex={0}
                       title={
                         pinnedCategoryIds.includes(item.category.id)
-                          ? "Pinned to Dashboard (tap to unpin)"
-                          : "Pin to Dashboard"
+                          ? lang === "bm"
+                            ? "Disemat di Utama (ketik untuk buang)"
+                            : "Pinned to Dashboard (tap to unpin)"
+                          : lang === "bm"
+                            ? "Semat ke Utama"
+                            : "Pin to Dashboard"
                       }
                       onClick={(e) => {
                         e.stopPropagation();
@@ -257,7 +266,7 @@ export function ReliefsTab({
                                 {tSubCategory(sub.subCategory)}
                               </p>
                               <p className="mt-0.5 text-[11px] text-slate-500">
-                                {sub.subCategory.description}
+                                {tSubCategoryDesc(sub.subCategory)}
                               </p>
                             </div>
                             <button
@@ -319,7 +328,7 @@ export function ReliefsTab({
                   <div className="flex items-start gap-2 rounded-xl bg-emerald-50/80 p-3 text-xs text-emerald-900">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                     <div>
-                      <p className="font-medium">{item.category.tips}</p>
+                      <p className="font-medium">{tCategoryTips(item.category)}</p>
                       {item.remaining > 0 && marginalRate > 0 && (
                         <p className="mt-1 text-[11px] text-emerald-700">
                           {lang === "bm" ? (

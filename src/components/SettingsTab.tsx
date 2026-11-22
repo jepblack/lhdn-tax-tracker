@@ -19,6 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import { RECURRING_BILL_BM } from "@/lib/language-context";
 import {
   getGoogleDriveToken,
   saveGoogleDriveToken,
@@ -467,12 +468,20 @@ export function SettingsTab({
                     : copy.freeStarterLabel}
                 </h2>
                 <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-100">
-                  {subscription.planTier}
+                  {lang === "bm"
+                    ? subscription.planTier === "free"
+                      ? "PERCUMA"
+                      : subscription.planTier === "family"
+                      ? "KELUARGA"
+                      : "PRO"
+                    : subscription.planTier}
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-emerald-100/85">
-                {subscription.aiScansUsed} / {subscription.aiScansLimit} AI
-                Vision Scans used • Unlimited Free On-Device OCR
+                {subscription.aiScansUsed} / {subscription.aiScansLimit}{" "}
+                {lang === "bm"
+                  ? "Imbasan AI digunakan • OCR Tempatan Percuma Tanpa Had"
+                  : "AI Vision Scans used • Unlimited Free On-Device OCR"}
               </p>
             </div>
           </div>
@@ -549,8 +558,12 @@ export function SettingsTab({
               {copy.personalizationTitle}
             </h2>
             <InfoHint
-              title="Tailor CukaiKu to You"
-              text="Choose a life-stage preset, switch EN/BM language, set a tax-saving goal, and add payday or monthly recurring bill shortcuts."
+              title={lang === "bm" ? "Sesuaikan CukaiKu untuk Anda" : "Tailor CukaiKu to You"}
+              text={
+                lang === "bm"
+                  ? "Pilih praset peringkat kehidupan, tukar bahasa EN/BM, tetapkan sasaran penjimatan cukai, dan tambah pintasan hari gaji atau bil bulanan berulang."
+                  : "Choose a life-stage preset, switch EN/BM language, set a tax-saving goal, and add payday or monthly recurring bill shortcuts."
+              }
             />
           </div>
           <div className="inline-flex rounded-xl bg-slate-100 p-0.5">
@@ -589,8 +602,12 @@ export function SettingsTab({
             <span>{copy.lifeStagePresetLabel}</span>
             <InfoHint
               align="left"
-              title="Auto-Configures Your App"
-              text="Selecting a preset updates your e-BE/e-B mode, status reliefs, and pins the best LHDN categories to your Dashboard."
+              title={lang === "bm" ? "Konfigurasi Automatik Aplikasi" : "Auto-Configures Your App"}
+              text={
+                lang === "bm"
+                  ? "Memilih praset mengemas kini mod e-BE/e-B, pelepasan status, dan menyematkan kategori LHDN terbaik ke Utama."
+                  : "Selecting a preset updates your e-BE/e-B mode, status reliefs, and pins the best LHDN categories to your Dashboard."
+              }
             />
           </p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -614,7 +631,9 @@ export function SettingsTab({
                         : preset.titleEn}
                     </span>
                     <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                      {preset.badge}
+                      {lang === "bm" && preset.badge === "Family"
+                        ? "Keluarga"
+                        : preset.badge}
                     </span>
                   </div>
                   <p className="mt-0.5 text-[11px] text-slate-500">
@@ -635,8 +654,12 @@ export function SettingsTab({
               <span>{copy.taxSavingGoalLabel}</span>
               <InfoHint
                 align="left"
-                title="Personal Target"
-                text="Shows a progress bar on your Dashboard tracking how close you are to your yearly tax-saving target."
+                title={lang === "bm" ? "Sasaran Peribadi" : "Personal Target"}
+                text={
+                  lang === "bm"
+                    ? "Memaparkan bar kemajuan di Utama untuk menjejak sejauh mana anda menghampiri sasaran penjimatan cukai tahunan anda."
+                    : "Shows a progress bar on your Dashboard tracking how close you are to your yearly tax-saving target."
+                }
               />
             </label>
             <input
@@ -658,8 +681,12 @@ export function SettingsTab({
               <span>{copy.paydayReminderLabel}</span>
               <InfoHint
                 align="right"
-                title="Payday Nudge"
-                text="Displays a gentle banner on your Dashboard around your payday reminding you to log your latest payslip & monthly bills."
+                title={lang === "bm" ? "Peringatan Hari Gaji" : "Payday Nudge"}
+                text={
+                  lang === "bm"
+                    ? "Memaparkan sepanduk lembut di Utama sekitar hari gaji anda untuk mengingatkan anda merekod slip gaji terkini & bil bulanan."
+                    : "Displays a gentle banner on your Dashboard around your payday reminding you to log your latest payslip & monthly bills."
+                }
               />
             </label>
             <input
@@ -692,8 +719,12 @@ export function SettingsTab({
               <span>{copy.recurringBillsMgrTitle}</span>
               <InfoHint
                 align="left"
-                title="Quick Monthly Logging"
-                text="Bills saved here appear on your Dashboard so you can log them in 1 tap once a month without re-typing."
+                title={lang === "bm" ? "Rekod Bulanan Pantas" : "Quick Monthly Logging"}
+                text={
+                  lang === "bm"
+                    ? "Bil yang disimpan di sini dipaparkan di Utama supaya anda boleh merekodnya dalam 1 ketik sebulan sekali tanpa menaip semula."
+                    : "Bills saved here appear on your Dashboard so you can log them in 1 tap once a month without re-typing."
+                }
               />
             </span>
             <span className="text-[10px] font-semibold text-slate-500">
@@ -708,7 +739,10 @@ export function SettingsTab({
                 className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-xs border border-slate-200/70"
               >
                 <span className="truncate font-medium text-slate-800">
-                  {bill.merchant} — <strong>{formatRM(bill.amount)}</strong>
+                  {lang === "bm" && RECURRING_BILL_BM[bill.id]
+                    ? RECURRING_BILL_BM[bill.id].merchant
+                    : bill.merchant}{" "}
+                  — <strong>{formatRM(bill.amount)}</strong>
                 </span>
                 <button
                   type="button"
@@ -979,9 +1013,13 @@ export function SettingsTab({
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
               <span>{copy.annualIncomeLabel}</span>
               <InfoHint
-                title="Annual Gross Income"
+                title={lang === "bm" ? "Pendapatan Kasar Tahunan" : "Annual Gross Income"}
                 align="left"
-                text="Total yearly salary, bonus, or freelance revenue before EPF & tax deductions (from your EA Form or payslip)."
+                text={
+                  lang === "bm"
+                    ? "Jumlah gaji tahunan, bonus atau hasil kerja bebas sebelum potongan KWSP & cukai (daripada Borang EA atau slip gaji anda)."
+                    : "Total yearly salary, bonus, or freelance revenue before EPF & tax deductions (from your EA Form or payslip)."
+                }
               />
             </label>
             <input
@@ -999,8 +1037,12 @@ export function SettingsTab({
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
               <span>{copy.pcbPaidLabel}</span>
               <InfoHint
-                title="Monthly Tax Deduction (PCB)"
-                text="Potongan Cukai Berjadual — income tax already deducted from your monthly salary. Increases your LHDN refund or lowers balance due."
+                title={lang === "bm" ? "Potongan Cukai Berjadual (PCB)" : "Monthly Tax Deduction (PCB)"}
+                text={
+                  lang === "bm"
+                    ? "Potongan Cukai Berjadual — cukai pendapatan yang telah dipotong daripada gaji bulanan anda. Meningkatkan lebihan LHDN atau mengurangkan baki perlu dibayar."
+                    : "Potongan Cukai Berjadual — income tax already deducted from your monthly salary. Increases your LHDN refund or lowers balance due."
+                }
               />
             </label>
             <input
@@ -1018,9 +1060,13 @@ export function SettingsTab({
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
               <span>{copy.zakatPaidLabel}</span>
               <InfoHint
-                title="100% Tax Rebate"
+                title={lang === "bm" ? "Rebat Cukai 100%" : "100% Tax Rebate"}
                 align="right"
-                text="Official Zakat / Fitrah receipts give a direct RM-for-RM rebate off your final LHDN tax payable (not just a relief deduction)."
+                text={
+                  lang === "bm"
+                    ? "Resit rasmi Zakat / Fitrah memberi rebat RM-untuk-RM secara langsung daripada cukai LHDN akhir anda (bukan sekadar potongan pelepasan)."
+                    : "Official Zakat / Fitrah receipts give a direct RM-for-RM rebate off your final LHDN tax payable (not just a relief deduction)."
+                }
               />
             </label>
             <input
@@ -1045,8 +1091,12 @@ export function SettingsTab({
             {copy.statusReliefsTitle}
           </h2>
           <InfoHint
-            title="Automatic LHDN Reliefs"
-            text="Personal (RM 9,000), Spouse (RM 4,000), and Child reliefs are statutory entitlements — just toggle what applies to you, no purchase receipts required."
+            title={lang === "bm" ? "Pelepasan LHDN Automatik" : "Automatic LHDN Reliefs"}
+            text={
+              lang === "bm"
+                ? "Pelepasan Individu (RM 9,000), Pasangan (RM 4,000), dan Anak ialah kelayakan berkanun — cuma tandakan yang berkenaan, tiada resit pembelian diperlukan."
+                : "Personal (RM 9,000), Spouse (RM 4,000), and Child reliefs are statutory entitlements — just toggle what applies to you, no purchase receipts required."
+            }
           />
         </div>
 
@@ -1078,18 +1128,21 @@ export function SettingsTab({
           <CounterRow
             label={copy.statusChildUnder18}
             unitAmount={amounts.childUnder18}
+            eachLabel={lang === "bm" ? "seorang" : "each"}
             value={profile.statusReliefs.childrenUnder18}
             onChange={(v) => updateStatus("childrenUnder18", v)}
           />
           <CounterRow
             label={copy.statusChildHigherEd}
             unitAmount={amounts.childHigherEd}
+            eachLabel={lang === "bm" ? "seorang" : "each"}
             value={profile.statusReliefs.childrenHigherEd}
             onChange={(v) => updateStatus("childrenHigherEd", v)}
           />
           <CounterRow
             label={copy.statusDisabledChild}
             unitAmount={amounts.disabledChild}
+            eachLabel={lang === "bm" ? "seorang" : "each"}
             value={profile.statusReliefs.disabledChildren}
             onChange={(v) => updateStatus("disabledChildren", v)}
           />
@@ -1120,11 +1173,19 @@ export function SettingsTab({
           >
             {userEmail
               ? driveConnected
-                ? "Cloud + Drive Synced"
-                : "Cloud Synced Active"
+                ? lang === "bm"
+                  ? "Awan + Drive Disegerak"
+                  : "Cloud + Drive Synced"
+                : lang === "bm"
+                  ? "Segerak Awan Aktif"
+                  : "Cloud Synced Active"
               : isSupabaseConfigured
-              ? "Sign In Needed"
-              : "Local Mode"}
+              ? lang === "bm"
+                ? "Perlu Log Masuk"
+                : "Sign In Needed"
+              : lang === "bm"
+                ? "Mod Tempatan"
+                : "Local Mode"}
           </span>
         </div>
 
@@ -1262,10 +1323,12 @@ export function SettingsTab({
                 />
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    CukaiKu Cloud Vault
+                    {lang === "bm" ? "Arkib Awan CukaiKu" : "CukaiKu Cloud Vault"}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Sync receipts securely across your phone and PC
+                    {lang === "bm"
+                      ? "Segerakkan resit dengan selamat antara telefon dan PC anda"
+                      : "Sync receipts securely across your phone and PC"}
                   </p>
                 </div>
               </div>
@@ -1279,9 +1342,9 @@ export function SettingsTab({
                 </p>
               </div>
               <p className="text-xs text-slate-500">
-                Sign in to your personal CukaiKu account (or create one below)
-                to privately back up and sync receipts between your phone and
-                computer.
+                {lang === "bm"
+                  ? "Log masuk ke akaun CukaiKu peribadi anda (atau daftar di bawah) untuk menyandar dan menyegerakkan resit secara peribadi antara telefon dan komputer."
+                  : "Sign in to your personal CukaiKu account (or create one below) to privately back up and sync receipts between your phone and computer."}
               </p>
               {/* Google Identity Services 1-Click Container */}
               <div className="flex w-full justify-center">
@@ -1328,7 +1391,11 @@ export function SettingsTab({
                   onClick={() => setShowEmailAuth((prev) => !prev)}
                   className="flex w-full items-center justify-center gap-1.5 py-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition"
                 >
-                  <span>Use email &amp; password instead</span>
+                  <span>
+                    {lang === "bm"
+                      ? "Guna emel & kata laluan"
+                      : "Use email & password instead"}
+                  </span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 transition-transform duration-200 ${
                       showEmailAuth ? "rotate-180" : ""
@@ -1340,14 +1407,14 @@ export function SettingsTab({
                   <div className="mt-2.5 space-y-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
                     <input
                       type="email"
-                      placeholder="Email address"
+                      placeholder={lang === "bm" ? "Alamat emel" : "Email address"}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
                     />
                     <input
                       type="password"
-                      placeholder="Password"
+                      placeholder={lang === "bm" ? "Kata laluan" : "Password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
@@ -1359,7 +1426,7 @@ export function SettingsTab({
                         onClick={() => handleAuth("signin")}
                         className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
                       >
-                        Sign In
+                        {lang === "bm" ? "Log Masuk" : "Sign In"}
                       </button>
                       <button
                         type="button"
@@ -1367,7 +1434,7 @@ export function SettingsTab({
                         onClick={() => handleAuth("signup")}
                         className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95"
                       >
-                        Create Account
+                        {lang === "bm" ? "Daftar Akaun" : "Create Account"}
                       </button>
                     </div>
                   </div>
@@ -1470,11 +1537,13 @@ function ToggleRow({
 function CounterRow({
   label,
   unitAmount,
+  eachLabel = "each",
   value,
   onChange,
 }: {
   label: string;
   unitAmount: number;
+  eachLabel?: string;
   value: number;
   onChange: (val: number) => void;
 }) {
@@ -1483,7 +1552,7 @@ function CounterRow({
       <div>
         <p className="text-xs font-medium text-slate-800">{label}</p>
         <p className="text-[11px] text-emerald-700 font-semibold">
-          {formatRM(unitAmount)} each
+          {formatRM(unitAmount)} {eachLabel}
         </p>
       </div>
       <div className="flex items-center gap-2">

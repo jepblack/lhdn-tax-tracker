@@ -1095,7 +1095,11 @@ export function TaxApp() {
                   <button
                     type="button"
                     onClick={() => setActiveTab("settings")}
-                    title="Currently in Local Mode on this device. Tap to sign in and sync with your phone or PC."
+                    title={
+                      personalization.language === "bm"
+                        ? "Sedang dalam Mod Tempatan pada peranti ini. Ketik untuk log masuk dan segerak dengan telefon atau PC anda."
+                        : "Currently in Local Mode on this device. Tap to sign in and sync with your phone or PC."
+                    }
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-100 transition"
                   >
                     <CloudOff className="h-3 w-3 text-amber-600" />
@@ -1108,8 +1112,12 @@ export function TaxApp() {
                   onClick={() => openUpgradeModal()}
                   title={
                     subscription.planTier === "free"
-                      ? `Free Plan (${subscription.aiScansUsed}/${subscription.aiScansLimit} AI Scans used) — Tap to upgrade to Pro`
-                      : `CukaiKu ${subscription.planTier.toUpperCase()} Pass Active`
+                      ? personalization.language === "bm"
+                        ? `Pelan Percuma (${subscription.aiScansUsed}/${subscription.aiScansLimit} Imbasan AI digunakan) — Ketik untuk naik taraf ke Pro`
+                        : `Free Plan (${subscription.aiScansUsed}/${subscription.aiScansLimit} AI Scans used) — Tap to upgrade to Pro`
+                      : personalization.language === "bm"
+                        ? `Pas ${subscription.planTier.toUpperCase()} CukaiKu Aktif`
+                        : `CukaiKu ${subscription.planTier.toUpperCase()} Pass Active`
                   }
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
                     subscription.planTier === "free"
@@ -1137,7 +1145,11 @@ export function TaxApp() {
                     language: personalization.language === "en" ? "bm" : "en",
                   })
                 }
-                title="Switch language (English / Bahasa Melayu)"
+                title={
+                  personalization.language === "bm"
+                    ? "Tukar bahasa (Bahasa Melayu / Inggeris)"
+                    : "Switch language (English / Bahasa Melayu)"
+                }
                 className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-700 hover:bg-slate-100"
               >
                 {personalization.language === "en" ? "EN" : "BM"}
@@ -1145,7 +1157,11 @@ export function TaxApp() {
               <button
                 type="button"
                 onClick={() => setGuideOpen(true)}
-                title="How to use CukaiKu (Quick Guide)"
+                title={
+                  personalization.language === "bm"
+                    ? "Cara menggunakan CukaiKu (Panduan Ringkas)"
+                    : "How to use CukaiKu (Quick Guide)"
+                }
                 className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
               >
                 <HelpCircle className="h-4 w-4" />
@@ -1153,7 +1169,15 @@ export function TaxApp() {
               <button
                 type="button"
                 onClick={() => setPrivacyBlur((v) => !v)}
-                title={privacyBlur ? "Show amounts" : "Blur salary & amounts"}
+                title={
+                  privacyBlur
+                    ? personalization.language === "bm"
+                      ? "Papar jumlah"
+                      : "Show amounts"
+                    : personalization.language === "bm"
+                      ? "Kaburkan gaji & jumlah"
+                      : "Blur salary & amounts"
+                }
                 className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
               >
                 {privacyBlur ? (
@@ -1165,7 +1189,15 @@ export function TaxApp() {
               <button
                 type="button"
                 onClick={toggleDarkMode}
-                title={darkMode ? "Light mode" : "Dark mode"}
+                title={
+                  darkMode
+                    ? personalization.language === "bm"
+                      ? "Mod cerah"
+                      : "Light mode"
+                    : personalization.language === "bm"
+                      ? "Mod gelap"
+                      : "Dark mode"
+                }
                 className="rounded-xl p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100"
               >
                 {darkMode ? (
@@ -1177,7 +1209,11 @@ export function TaxApp() {
 
               {/* Dynamic Rolling 7-Year LHDN Switcher */}
               <select
-                aria-label="Year of Assessment"
+                aria-label={
+                  personalization.language === "bm"
+                    ? "Tahun Taksiran"
+                    : "Year of Assessment"
+                }
                 value={taxYear}
                 onChange={(e) => setTaxYear(Number(e.target.value))}
                 className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-emerald-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1187,9 +1223,13 @@ export function TaxApp() {
                   const expired = isTaxYearRetentionExpired(yr);
                   return (
                     <option key={yr} value={yr}>
-                      YA {yr}
+                      {personalization.language === "bm" ? "TT" : "YA"} {yr}
                       {count > 0 ? ` (${count})` : ""}
-                      {expired ? " • Expired" : ""}
+                      {expired
+                        ? personalization.language === "bm"
+                          ? " • Tamat"
+                          : " • Expired"
+                        : ""}
                     </option>
                   );
                 })}
@@ -1272,7 +1312,15 @@ export function TaxApp() {
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed((v) => !v)}
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={
+                  sidebarCollapsed
+                    ? personalization.language === "bm"
+                      ? "Kembangkan bar sisi"
+                      : "Expand sidebar"
+                    : personalization.language === "bm"
+                      ? "Kuncupkan bar sisi"
+                      : "Collapse sidebar"
+                }
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 {sidebarCollapsed ? (
@@ -1474,7 +1522,11 @@ export function TaxApp() {
             <button
               type="button"
               onClick={() => openScanner()}
-              aria-label="Scan or log receipt"
+              aria-label={
+                personalization.language === "bm"
+                  ? "Imbas atau rekod resit"
+                  : "Scan or log receipt"
+              }
               style={{ backgroundColor: "var(--action-emerald)" }}
               className="-mt-7 flex h-14 w-14 flex-col items-center justify-center rounded-full text-white shadow-lg shadow-emerald-600/35 ring-4 ring-white transition active:scale-95"
             >

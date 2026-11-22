@@ -44,34 +44,81 @@ interface PricingModalProps {
 const GATEWAY_OPTIONS: Array<{
   id: PaymentGatewayId;
   name: string;
+  nameBm: string;
   subtitle: string;
+  subtitleBm: string;
   icon: typeof CreditCard;
 }> = [
   {
     id: "stripe",
     name: "Stripe (FPX / Card / GrabPay)",
+    nameBm: "Stripe (FPX / Kad / GrabPay)",
     subtitle: "Malaysian Online Banking, Visa, Mastercard",
+    subtitleBm: "Perbankan Dalam Talian Malaysia, Visa, Mastercard",
     icon: CreditCard,
   },
   {
     id: "chip",
     name: "CHIP Malaysia (DuitNow QR & FPX)",
+    nameBm: "CHIP Malaysia (DuitNow QR & FPX)",
     subtitle: "Instant DuitNow QR, MAE, Touch 'n Go eWallet",
+    subtitleBm: "DuitNow QR Segera, MAE, Touch 'n Go eWallet",
     icon: QrCode,
   },
   {
     id: "billplz",
     name: "Billplz FPX",
+    nameBm: "Billplz FPX",
     subtitle: "Maybank2u, CIMB Clicks, Public Bank, RHB, Bank Islam",
+    subtitleBm: "Maybank2u, CIMB Clicks, Public Bank, RHB, Bank Islam",
     icon: Building2,
   },
   {
     id: "demo",
     name: "Instant Sandbox Activation",
+    nameBm: "Pengaktifan Sandbox Segera",
     subtitle: "Test Pro / Family features immediately without payment keys",
+    subtitleBm: "Uji ciri Pro / Keluarga serta-merta tanpa kunci bayaran",
     icon: Zap,
   },
 ];
+
+const PRICING_PLAN_BM: Record<
+  string,
+  {
+    name: string;
+    badge?: string;
+    periodLabel: string;
+    tagline: string;
+    features: string[];
+  }
+> = {
+  pro: {
+    name: "Pas Pro CukaiKu",
+    badge: "Paling Popular",
+    periodLabel: "setiap Tahun Taksiran",
+    tagline: "Imbasan AI Vision Penuh & Arkib Audit LHDN 7-Tahun",
+    features: [
+      "300 imbasan resit AI Gemini / Llama Vision",
+      "Pek Audit 7-Tahun LHDN 1-Klik ZIP (PDF + JSON + Borang BE)",
+      "Import Pelbagai Resit Pukal & Pengekstrak Auto Borang EA / Slip Gaji",
+      "Segerak Awan antara Telefon & PC (Supabase + Google Drive)",
+      "Semakan kelayakan LHDN keutamaan & pengasingan item resit bercampur",
+    ],
+  },
+  family: {
+    name: "Pas Keluarga & Bersama",
+    badge: "Terbaik untuk Pasangan",
+    periodLabel: "setiap Tahun Taksiran",
+    tagline: "Maksimumkan lebihan cukai gabungan isi rumah",
+    features: [
+      "600 imbasan resit AI Vision untuk isi rumah",
+      "Semua ciri dalam Pas Pro CukaiKu",
+      "Pengoptimum Taksiran Bersama lwn. Berasingan & Pecahan Pelepasan Anak",
+      "Penandaan perbelanjaan perniagaan Pekerja Bebas / Pendapatan Sampingan (Borang B)",
+    ],
+  },
+};
 
 export function PricingModal({
   isOpen,
@@ -90,7 +137,7 @@ export function PricingModal({
     useState<PaymentGatewayId>("stripe");
   const [processing, setProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const { copy } = useLanguage();
+  const { lang, copy } = useLanguage();
 
   if (!isOpen) return null;
 
@@ -171,7 +218,7 @@ export function PricingModal({
                   {copy.pricingTitle}
                 </h2>
                 <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold uppercase text-slate-950">
-                  YA {taxYear} Pass
+                  {lang === "bm" ? `PAS TT ${taxYear}` : `YA ${taxYear} Pass`}
                 </span>
               </div>
               <p className="text-xs text-emerald-100/85">
@@ -194,7 +241,11 @@ export function PricingModal({
             <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-950">
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <div>
-                <p className="font-bold">Unlock Pro Tax & Audit Features</p>
+                <p className="font-bold">
+                  {lang === "bm"
+                    ? "Buka Ciri Cukai & Audit Pro"
+                    : "Unlock Pro Tax & Audit Features"}
+                </p>
                 <p className="mt-0.5 text-[11px] text-amber-800">
                   {triggerReason}
                 </p>
@@ -206,14 +257,22 @@ export function PricingModal({
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-slate-700">
-                Current Plan:{" "}
+                {lang === "bm" ? "Pelan Semasa: " : "Current Plan: "}
                 <strong className="uppercase text-emerald-700">
-                  {subscription.planTier}
+                  {lang === "bm"
+                    ? subscription.planTier === "free"
+                      ? "PERCUMA"
+                      : subscription.planTier === "family"
+                      ? "KELUARGA"
+                      : "PRO"
+                    : subscription.planTier}
                 </strong>
               </span>
               <span className="font-bold text-slate-900">
-                {subscription.aiScansUsed} / {subscription.aiScansLimit} AI
-                Vision Scans Used
+                {subscription.aiScansUsed} / {subscription.aiScansLimit}{" "}
+                {lang === "bm"
+                  ? "Imbasan AI Vision Digunakan"
+                  : "AI Vision Scans Used"}
               </span>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
@@ -226,8 +285,12 @@ export function PricingModal({
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500">
               {subscription.planTier === "free"
-                ? `Free plan includes ${FREE_AI_SCAN_LIMIT} cloud AI Vision scans + unlimited on-device Free OCR.`
-                : `Your ${subscription.planTier.toUpperCase()} pass is active with full 7-year LHDN Audit ZIP export.`}
+                ? lang === "bm"
+                  ? `Pelan percuma merangkumi ${FREE_AI_SCAN_LIMIT} imbasan AI Vision awan + OCR Percuma pada peranti tanpa had.`
+                  : `Free plan includes ${FREE_AI_SCAN_LIMIT} cloud AI Vision scans + unlimited on-device Free OCR.`
+                : lang === "bm"
+                  ? `Pas ${subscription.planTier.toUpperCase()} anda aktif dengan eksport ZIP Audit LHDN 7-tahun penuh.`
+                  : `Your ${subscription.planTier.toUpperCase()} pass is active with full 7-year LHDN Audit ZIP export.`}
             </p>
           </div>
 
@@ -236,6 +299,12 @@ export function PricingModal({
             {PRICING_PLANS.filter((p) => p.id !== "free").map((plan) => {
               const isSelected = selectedPlan === plan.id;
               const isCurrent = subscription.planTier === plan.id;
+              const planBm = PRICING_PLAN_BM[plan.id];
+              const displayName = lang === "bm" && planBm ? planBm.name : plan.name;
+              const displayBadge = lang === "bm" && planBm?.badge ? planBm.badge : plan.badge;
+              const displayPeriod = lang === "bm" && planBm ? planBm.periodLabel : plan.periodLabel;
+              const displayTagline = lang === "bm" && planBm ? planBm.tagline : plan.tagline;
+              const displayFeatures = lang === "bm" && planBm ? planBm.features : plan.features;
               return (
                 <div
                   key={plan.id}
@@ -248,11 +317,11 @@ export function PricingModal({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                      {plan.name}
+                      {displayName}
                     </span>
-                    {plan.badge && (
+                    {displayBadge && (
                       <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                        {plan.badge}
+                        {displayBadge}
                       </span>
                     )}
                   </div>
@@ -262,15 +331,15 @@ export function PricingModal({
                       {formatRM(plan.priceRm)}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      {plan.periodLabel}
+                      {displayPeriod}
                     </span>
                   </div>
                   <p className="mt-0.5 text-[11px] text-slate-600">
-                    {plan.tagline}
+                    {displayTagline}
                   </p>
 
                   <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                    {plan.features.map((feat, idx) => (
+                    {displayFeatures.map((feat, idx) => (
                       <li
                         key={idx}
                         className="flex items-start gap-1.5 text-[11px] text-slate-700"
@@ -283,7 +352,7 @@ export function PricingModal({
 
                   {isCurrent && (
                     <div className="mt-3 rounded-xl bg-emerald-100 py-1.5 text-center text-[11px] font-bold text-emerald-800">
-                      Current Active Plan
+                      {lang === "bm" ? "Pelan Aktif Semasa" : "Current Active Plan"}
                     </div>
                   )}
                 </div>
@@ -294,7 +363,9 @@ export function PricingModal({
           {/* Payment Method / Gateway Selector */}
           <div className="space-y-2">
             <label className="block text-xs font-bold text-slate-800">
-              Select Payment Method (Malaysia FPX / DuitNow / Card)
+              {lang === "bm"
+                ? "Pilih Kaedah Pembayaran (FPX Malaysia / DuitNow / Kad)"
+                : "Select Payment Method (Malaysia FPX / DuitNow / Card)"}
             </label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {GATEWAY_OPTIONS.map((gw) => {
@@ -322,10 +393,10 @@ export function PricingModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-900">
-                        {gw.name}
+                        {lang === "bm" ? gw.nameBm : gw.name}
                       </p>
                       <p className="text-[10px] text-slate-500">
-                        {gw.subtitle}
+                        {lang === "bm" ? gw.subtitleBm : gw.subtitle}
                       </p>
                     </div>
                   </button>
@@ -356,19 +427,29 @@ export function PricingModal({
               )}
               <span>
                 {processing
-                  ? "Initializing Checkout..."
-                  : `Unlock ${
-                      selectedPlan === "family"
-                        ? "Family & Joint Pass (RM 59)"
-                        : "CukaiKu Pro Pass (RM 29)"
-                    }`}
+                  ? lang === "bm"
+                    ? "Memulakan Pembayaran..."
+                    : "Initializing Checkout..."
+                  : lang === "bm"
+                    ? `Buka ${
+                        selectedPlan === "family"
+                          ? "Pas Keluarga & Bersama (RM 59)"
+                          : "Pas Pro CukaiKu (RM 29)"
+                      }`
+                    : `Unlock ${
+                        selectedPlan === "family"
+                          ? "Family & Joint Pass (RM 59)"
+                          : "CukaiKu Pro Pass (RM 29)"
+                      }`}
               </span>
             </button>
 
             <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                One-time YA pass • No auto-renewal lock-in
+                {lang === "bm"
+                  ? "Pas TT sekali bayar • Tiada pembaharuan automatik"
+                  : "One-time YA pass • No auto-renewal lock-in"}
               </span>
               {subscription.planTier !== "free" && (
                 <button
@@ -376,7 +457,9 @@ export function PricingModal({
                   onClick={() => handleCheckout("free")}
                   className="font-semibold text-slate-500 underline hover:text-slate-800"
                 >
-                  Reset to Free Tier (Test Paywall)
+                  {lang === "bm"
+                    ? "Set Semula ke Pelan Percuma (Uji)"
+                    : "Reset to Free Tier (Test Paywall)"}
                 </button>
               )}
             </div>
