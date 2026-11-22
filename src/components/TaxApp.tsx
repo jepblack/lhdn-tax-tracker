@@ -889,13 +889,24 @@ export function TaxApp() {
 
   function findExistingStatutoryRelief(
     targetYear: number,
-    kind: "epf" | "socso"
+    kind: "epf" | "socso",
+    employerKey?: string
   ): TaxExpense | undefined {
+    const epfInv = employerKey
+      ? `PAYSLIP-EPF-${targetYear}-${employerKey}`
+      : `PAYSLIP-EPF-${targetYear}`;
+    const socsoInv = employerKey
+      ? `PAYSLIP-SOCSO-${targetYear}-${employerKey}`
+      : `PAYSLIP-SOCSO-${targetYear}`;
+
     return expenses.find((e) => {
       if (e.taxYear !== targetYear) return false;
+      if (employerKey) {
+        return e.invoiceNumber === (kind === "epf" ? epfInv : socsoInv);
+      }
       if (kind === "epf") {
         return (
-          e.invoiceNumber === `PAYSLIP-EPF-${targetYear}` ||
+          e.invoiceNumber === epfInv ||
           (e.categoryId === "epf_life_insurance" &&
             e.subCategoryId === "epf_mandatory" &&
             (e.merchant.toLowerCase().includes("epf") ||
@@ -903,7 +914,7 @@ export function TaxApp() {
         );
       }
       return (
-        e.invoiceNumber === `PAYSLIP-SOCSO-${targetYear}` ||
+        e.invoiceNumber === socsoInv ||
         (e.categoryId === "socso" &&
           (e.merchant.toLowerCase().includes("socso") ||
             e.merchant.toLowerCase().includes("perkeso")))
@@ -914,9 +925,10 @@ export function TaxApp() {
   async function upsertStatutoryRelief(
     kind: "epf" | "socso",
     payload: Omit<TaxExpense, "id" | "createdAt">,
-    file: File | null
+    file: File | null,
+    employerKey?: string
   ): Promise<TaxExpense> {
-    const existing = findExistingStatutoryRelief(payload.taxYear, kind);
+    const existing = findExistingStatutoryRelief(payload.taxYear, kind, employerKey);
     if (existing) {
       return await handleSaveExpense(
         {
@@ -945,9 +957,12 @@ export function TaxApp() {
   async function handleLogPayslipReliefs(
     epfAmount: number,
     socsoAmount: number,
-    payslipFile: File | null
+    payslipFile: File | null,
+    employerMeta?: { key: string; name: string }
   ) {
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    const empKey = employerMeta?.key;
+    const empLabel = employerMeta?.name ? ` — ${employerMeta.name}` : " (Payslip YTD)";
     let savedEpf: TaxExpense | null = null;
     if (epfAmount > 0) {
       savedEpf = await upsertStatutoryRelief(
@@ -956,15 +971,16 @@ export function TaxApp() {
           taxYear,
           categoryId: "epf_life_insurance",
           subCategoryId: "epf_mandatory",
-          merchant: "KWSP / EPF (Payslip YTD)",
+          merchant: `KWSP / EPF${empLabel}`,
           description:
-            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD, never double-counted)",
+            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD per employer)",
           amount: epfAmount,
           expenseDate: today,
-          invoiceNumber: `PAYSLIP-EPF-${taxYear}`,
+          invoiceNumber: empKey ? `PAYSLIP-EPF-${taxYear}-${empKey}` : `PAYSLIP-EPF-${taxYear}`,
           aiExtracted: true,
         },
-        payslipFile
+        payslipFile,
+        empKey
       );
     }
     if (socsoAmount > 0) {
@@ -975,12 +991,12 @@ export function TaxApp() {
           taxYear,
           categoryId: "socso",
           subCategoryId: null,
-          merchant: "PERKESO / SOCSO & EIS (Payslip YTD)",
+          merchant: `PERKESO / SOCSO & EIS${empLabel}`,
           description:
-            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD, never double-counted)",
+            "Auto-extracted from uploaded payslip / EA Form (auto-updates latest YTD per employer)",
           amount: socsoAmount,
           expenseDate: today,
-          invoiceNumber: `PAYSLIP-SOCSO-${taxYear}`,
+          invoiceNumber: empKey ? `PAYSLIP-SOCSO-${taxYear}-${empKey}` : `PAYSLIP-SOCSO-${taxYear}`,
           aiExtracted: true,
           ...(reuseEpfReceipt && savedEpf
             ? {
@@ -991,7 +1007,8 @@ export function TaxApp() {
               }
             : {}),
         },
-        reuseEpfReceipt ? null : payslipFile
+        reuseEpfReceipt ? null : payslipFile,
+        empKey
       );
     }
   }

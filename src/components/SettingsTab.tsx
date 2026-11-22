@@ -60,7 +60,8 @@ interface SettingsTabProps {
   onLogPayslipReliefs: (
     epfAmount: number,
     socsoAmount: number,
-    payslipFile: File | null
+    payslipFile: File | null,
+    employerMeta?: { key: string; name: string }
   ) => Promise<void>;
   onLoadSampleData: () => void;
   onClearLocalData: () => void;
@@ -109,6 +110,46 @@ export function SettingsTab({
   );
   const [showPayslipText, setShowPayslipText] = useState(false);
   const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
+  const [eaEmployers, setEaEmployers] = useState<
+    Array<{
+      key: string;
+      name: string;
+      employerNo: string | null;
+      annualIncome: number;
+      pcbPaid: number;
+      zakatPaid: number;
+      epfEmployee: number;
+      socsoTotal: number;
+      childrenUnder18: number;
+      childrenHigherEd: number;
+      fileName: string;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(
+        `cukaiku_ea_employers_${profile.taxYear}`
+      );
+      setEaEmployers(raw ? JSON.parse(raw) : []);
+    } catch {
+      setEaEmployers([]);
+    }
+  }, [profile.taxYear]);
+
+  function getEmployerMeta(data: PayslipExtraction): { key: string; name: string } {
+    const rawName = data.employerName?.trim() || "Employer";
+    const rawNo = data.employerNo?.trim();
+    const keySource = rawNo || rawName;
+    const key =
+      keySource
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 32) || "default";
+    return { key, name: rawName };
+  }
   const [driveSyncing, setDriveSyncing] = useState(false);
   const [driveSyncMsg, setDriveSyncMsg] = useState<string | null>(null);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
@@ -254,7 +295,50 @@ export function SettingsTab({
     return { childrenUnder18: count ?? 0, childrenHigherEd: 0 };
   }
 
-  async function handleApplyPayslip(includeReliefs: boolean) {
+  function saveEaEmployersForYear(
+    nextList: typeof eaEmployers,
+    yr: number
+  ) {
+    setEaEmployers(nextList);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(
+          `cukaiku_ea_employers_${yr}`,
+          JSON.stringify(nextList)
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  async function handleRemoveEaEmployer(keyToRemove: string) {
+    const nextList = eaEmployers.filter((e) => e.key !== keyToRemove);
+    saveEaEmployersForYear(nextList, profile.taxYear);
+    if (nextList.length > 0) {
+      const totalIncome = nextList.reduce((s, e) => s + e.annualIncome, 0);
+      const totalPcb = nextList.reduce((s, e) => s + e.pcbPaid, 0);
+      const totalZakat = nextList.reduce((s, e) => s + e.zakatPaid, 0);
+      await onUpdateProfile({
+        ...profile,
+        annualIncome: Math.round(totalIncome * 100) / 100,
+        pcbPaid: Math.round(totalPcb * 100) / 100,
+        zakatPaid: Math.round(totalZakat * 100) / 100,
+      });
+    } else {
+      await onUpdateProfile({
+        ...profile,
+        annualIncome: 0,
+        pcbPaid: 0,
+        zakatPaid: 0,
+      });
+    }
+  }
+
+  async function handleApplyPayslip(
+    includeReliefs: boolean,
+    mode: "combine" | "replace" = "combine"
+  ) {
     if (!payslipData) return;
 
     if (payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear) {
@@ -271,43 +355,81 @@ export function SettingsTab({
       payslipData.eaForm?.eligible_children_for_tax_relief
     );
 
+    const epf = payslipData.ytdEpf || payslipData.employeeEpf;
+    const socsoTotal =
+      (payslipData.ytdSocso || payslipData.employeeSocso) +
+      (payslipData.ytdEis || payslipData.employeeEis);
+    const pcbVal =
+      payslipData.ytdPcb > 0
+        ? payslipData.ytdPcb
+        : payslipData.monthlyPcb > 0
+        ? payslipData.monthlyPcb
+        : 0;
+    const zakatVal =
+      payslipData.ytdZakat > 0
+        ? payslipData.ytdZakat
+        : payslipData.monthlyZakat > 0
+        ? payslipData.monthlyZakat
+        : 0;
+
+    let finalIncome =
+      payslipData.estimatedAnnualIncome > 0
+        ? payslipData.estimatedAnnualIncome
+        : profile.annualIncome;
+    let finalPcb = pcbVal > 0 ? pcbVal : profile.pcbPaid;
+    let finalZakat = zakatVal > 0 ? zakatVal : profile.zakatPaid;
+    let finalChildren = derivedChildren;
+    let employerMeta: { key: string; name: string } | undefined = undefined;
+
+    if (payslipData.sourceType === "ea-form") {
+      employerMeta = getEmployerMeta(payslipData);
+      const record = {
+        key: employerMeta.key,
+        name: employerMeta.name,
+        employerNo: payslipData.employerNo || null,
+        annualIncome: payslipData.estimatedAnnualIncome || 0,
+        pcbPaid: pcbVal,
+        zakatPaid: zakatVal,
+        epfEmployee: epf,
+        socsoTotal,
+        childrenUnder18: derivedChildren?.childrenUnder18 ?? profile.statusReliefs.childrenUnder18,
+        childrenHigherEd: derivedChildren?.childrenHigherEd ?? profile.statusReliefs.childrenHigherEd,
+        fileName: payslipFile?.name || "EA Form",
+      };
+
+      const baseList =
+        mode === "replace"
+          ? []
+          : eaEmployers.filter((e) => e.key !== record.key);
+      const nextList = [...baseList, record];
+      saveEaEmployersForYear(nextList, profile.taxYear);
+
+      finalIncome = Math.round(nextList.reduce((s, e) => s + e.annualIncome, 0) * 100) / 100;
+      finalPcb = Math.round(nextList.reduce((s, e) => s + e.pcbPaid, 0) * 100) / 100;
+      finalZakat = Math.round(nextList.reduce((s, e) => s + e.zakatPaid, 0) * 100) / 100;
+      const maxU18 = Math.max(...nextList.map((e) => e.childrenUnder18));
+      const maxHigher = Math.max(...nextList.map((e) => e.childrenHigherEd));
+      finalChildren = { childrenUnder18: maxU18, childrenHigherEd: maxHigher };
+    }
+
     const nextProfile: TaxProfile = {
       ...profile,
-      annualIncome:
-        payslipData.estimatedAnnualIncome > 0
-          ? payslipData.estimatedAnnualIncome
-          : profile.annualIncome,
-      pcbPaid:
-        payslipData.ytdPcb > 0
-          ? payslipData.ytdPcb
-          : payslipData.monthlyPcb > 0
-          ? payslipData.monthlyPcb
-          : profile.pcbPaid,
-      zakatPaid:
-        payslipData.ytdZakat > 0
-          ? payslipData.ytdZakat
-          : payslipData.monthlyZakat > 0
-          ? payslipData.monthlyZakat
-          : profile.zakatPaid,
-      statusReliefs: derivedChildren
+      annualIncome: finalIncome,
+      pcbPaid: finalPcb,
+      zakatPaid: finalZakat,
+      statusReliefs: finalChildren
         ? {
             ...profile.statusReliefs,
-            childrenUnder18: derivedChildren.childrenUnder18,
-            childrenHigherEd: derivedChildren.childrenHigherEd,
+            childrenUnder18: finalChildren.childrenUnder18,
+            childrenHigherEd: finalChildren.childrenHigherEd,
           }
         : profile.statusReliefs,
     };
 
     await onUpdateProfile(nextProfile);
 
-    if (includeReliefs) {
-      const epf = payslipData.ytdEpf || payslipData.employeeEpf;
-      const socsoTotal =
-        (payslipData.ytdSocso || payslipData.employeeSocso) +
-        (payslipData.ytdEis || payslipData.employeeEis);
-      if (epf > 0 || socsoTotal > 0) {
-        await onLogPayslipReliefs(epf, socsoTotal, payslipFile);
-      }
+    if (includeReliefs && (epf > 0 || socsoTotal > 0)) {
+      await onLogPayslipReliefs(epf, socsoTotal, payslipFile, employerMeta);
     }
 
     setAppliedBanner(
@@ -1075,6 +1197,30 @@ export function SettingsTab({
               </div>
             )}
 
+            {payslipData.sourceType === "ea-form" &&
+              eaEmployers.length > 0 &&
+              (!payslipData.yearDetected || payslipData.yearDetected === profile.taxYear) && (() => {
+                const meta = getEmployerMeta(payslipData);
+                const exists = eaEmployers.some((e) => e.key === meta.key);
+                return (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-2.5 text-[11px] text-sky-900">
+                    {exists ? (
+                      <span>
+                        {personalization.language === "bm"
+                          ? `Sepadan dengan majikan tersimpan (${meta.name}) — akan mengemaskini rekod majikan ini tanpa pengiraan berganda.`
+                          : `Matches saved employer (${meta.name}) — will update this employer in-place without double-counting.`}
+                      </span>
+                    ) : (
+                      <span>
+                        {personalization.language === "bm"
+                          ? `Majikan baharu dikesan (${meta.name})! Mengklik Guna akan menggabungkan Pendapatan, PCB & Zakat dengan ${eaEmployers.length} Borang EA sedia ada dan merekod KWSP/PERKESO secara berasingan.`
+                          : `Additional employer detected (${meta.name})! Applying will combine Income, PCB & Zakat with your ${eaEmployers.length} saved EA Form(s) and log separate EPF/SOCSO entries.`}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+
             {(payslipData.employeeName || payslipData.employerName) && (
               <div className="grid grid-cols-1 gap-2 rounded-xl bg-white/80 p-2.5 text-[11px] sm:grid-cols-2">
                 {payslipData.employeeName && (
@@ -1302,6 +1448,49 @@ export function SettingsTab({
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {eaEmployers.length > 0 && (
+          <div className="space-y-1.5 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800">
+                {personalization.language === "bm"
+                  ? `Borang EA Tersimpan (TT ${profile.taxYear}) · ${eaEmployers.length} Majikan`
+                  : `Saved EA Forms (YA ${profile.taxYear}) · ${eaEmployers.length} Employer${eaEmployers.length > 1 ? "s" : ""}`}
+              </span>
+              <span className="text-[11px] font-semibold text-emerald-700">
+                {personalization.language === "bm" ? "Jumlah: " : "Combined: "}
+                {formatRM(
+                  eaEmployers.reduce((s, e) => s + e.annualIncome, 0),
+                  true
+                )}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {eaEmployers.map((emp) => (
+                <div
+                  key={emp.key}
+                  className="flex items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-1.5 text-[11px]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-900">{emp.name}</p>
+                    <p className="text-slate-500">
+                      {personalization.language === "bm" ? "Pendapatan: " : "Income: "}
+                      {formatRM(emp.annualIncome, true)} · PCB:{" "}
+                      {formatRM(emp.pcbPaid, true)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveEaEmployer(emp.key)}
+                    className="shrink-0 text-[11px] font-semibold text-rose-600 hover:underline"
+                  >
+                    {personalization.language === "bm" ? "Buang" : "Remove"}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
