@@ -356,6 +356,7 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
       }
     }
 
+    let aiDebugReason = "";
     // For PDFs, Gemini can read the visual PDF layout directly via inlineData (avoids scrambled OCR text order!)
     if (canUseGemini) {
       try {
@@ -420,6 +421,8 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
         const aiExtraction = normalizeAiPayslip(parsed, "Gemini Vision", pdfText || undefined);
         return NextResponse.json(aiExtraction);
       } catch (geminiErr) {
+        const msg = geminiErr instanceof Error ? geminiErr.message.slice(0, 100) : "Gemini error";
+        aiDebugReason += `Gemini: ${msg}. `;
         console.warn("Gemini payslip/EA parse failed, falling back to Groq:", geminiErr);
       }
     }
@@ -428,12 +431,12 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
     // CRITICAL: When visualImageBase64 is available (including rendered PDF page 1),
     // pass textContent=null so Groq uses its Vision model on the real layout
     // rather than scrambled unpdf text!
-    if (canUseGroq && (visualImageBase64 || pdfText.length >= 20)) {
+    if (canUseGroq && visualImageBase64) {
       try {
         const parsed = await callGroqJson({
           apiKey: groqKey!,
           prompt,
-          textContent: visualImageBase64 ? null : pdfText,
+          textContent: null,
           imageBase64: visualImageBase64,
           imageMimeType: visualImageMimeType,
           maxTokens: 1500,
@@ -441,12 +444,36 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
         const aiExtraction = normalizeAiPayslip(parsed, "Groq Vision", pdfText || undefined);
         return NextResponse.json(aiExtraction);
       } catch (groqErr) {
-        console.warn("Groq payslip/EA parse failed:", groqErr);
+        const msg = groqErr instanceof Error ? groqErr.message.slice(0, 120) : "Groq Vision error";
+        aiDebugReason += `GroqVision: ${msg}. `;
+        console.warn("Groq Vision payslip/EA parse failed:", groqErr);
+      }
+    }
+
+    // Secondary Groq Text fallback if image vision failed or PDF image wasn't rendered
+    if (canUseGroq && pdfText.length >= 20) {
+      try {
+        const parsed = await callGroqJson({
+          apiKey: groqKey!,
+          prompt,
+          textContent: pdfText,
+          imageBase64: null,
+          maxTokens: 1500,
+        });
+        const aiExtraction = normalizeAiPayslip(parsed, "Groq Text", pdfText);
+        return NextResponse.json(aiExtraction);
+      } catch (groqTextErr) {
+        const msg = groqTextErr instanceof Error ? groqTextErr.message.slice(0, 120) : "Groq Text error";
+        aiDebugReason += `GroqText: ${msg}. `;
+        console.warn("Groq Text payslip/EA parse failed:", groqTextErr);
       }
     }
 
     // Fall back to regex result if available
     if (fastResult) {
+      if (aiDebugReason) {
+        fastResult.notes.push(`(AI fallback note: ${aiDebugReason.trim()})`);
+      }
       return NextResponse.json(fastResult);
     }
 

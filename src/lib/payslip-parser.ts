@@ -355,27 +355,33 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
     /(?:butiran\s*pekerja|bahagian\s*a\b)/i,
     /bahagian\s*b\b/i
   );
+  const isTemplateLabel = (s: string) =>
+    /^(?:\d+\.|[a-f]\)|bahagian\s+[a-f])/i.test(s) ||
+    /(?:no\.?\s*pasport|no\.?\s*k\.?p|no\.?\s*kwsp|no\.?\s*perkeso|jawatan|tarikh\s*mula)/i.test(s);
+
   for (let i = 0; i < employeeSection.length; i++) {
     const l = employeeSection[i];
     if (!employee_name && /(?:^|\d+\.?\s*)nama\b(?!\s*majikan)/i.test(l)) {
-      const val = l.replace(/.*?nama\s*(?:pekerja)?\s*[:\-]?\s*/i, "").trim();
-      if (val.length > 2 && !/no\.?\s*k\.?p/i.test(val)) {
+      const val = l
+        .replace(/.*?nama\s*(?:penuh\s*)?(?:pekerja(?:\s*\/\s*pesara)?)?(?:\s*\([^)]*\))?\s*[:\-]?\s*/i, "")
+        .trim();
+      if (val.length > 2 && !isTemplateLabel(val)) {
         employee_name = val;
-      } else if (i + 1 < employeeSection.length && !/no\.?\s*k\.?p/i.test(employeeSection[i + 1])) {
+      } else if (i + 1 < employeeSection.length && !isTemplateLabel(employeeSection[i + 1])) {
         employee_name = employeeSection[i + 1];
       }
     }
     if (!employee_designation && /jawatan\b/i.test(l)) {
       const val = l.replace(/.*?jawatan\s*[:\-]?\s*/i, "").trim();
-      if (val.length > 1 && !/no\.?\s*k/i.test(val)) {
+      if (val.length > 1 && !isTemplateLabel(val)) {
         employee_designation = val;
-      } else if (i + 1 < employeeSection.length && !/no\.?\s*k/i.test(employeeSection[i + 1])) {
+      } else if (i + 1 < employeeSection.length && !isTemplateLabel(employeeSection[i + 1])) {
         employee_designation = employeeSection[i + 1];
       }
     }
     if (!employee_staff_or_payroll_number && /(?:no\.?\s*kakitangan|no\.?\s*pekerja|no\.?\s*gaji|staff\s*no)/i.test(l)) {
       const val = l.replace(/.*?(?:no\.?\s*kakitangan|no\.?\s*pekerja|no\.?\s*gaji|staff\s*no\.?)\s*[:\-]?\s*/i, "").trim();
-      if (val.length >= 2) employee_staff_or_payroll_number = val;
+      if (val.length >= 2 && !isTemplateLabel(val)) employee_staff_or_payroll_number = val;
     }
     if (!employee_nric_or_passport && /(?:no\.?\s*k\.?\s*p\.?|no\.?\s*kad\s*pengenalan|new\s*i\.?c)/i.test(l)) {
       const icMatch =
@@ -386,13 +392,13 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
       if (icMatch) {
         employee_nric_or_passport = icMatch[1].trim();
       } else {
-        const val = l.replace(/.*?(?:no\.?\s*k\.?\s*p\.?|no\.?\s*kad\s*pengenalan)\s*(?:\/\s*pasport)?\s*[:\-]?\s*/i, "").trim();
-        if (val.length >= 5) employee_nric_or_passport = val;
+        const val = l.replace(/.*?(?:no\.?\s*k\.?\s*p\.?\s*(?:baru)?|no\.?\s*kad\s*pengenalan)\s*(?:\/\s*pasport)?\s*[:\-]?\s*/i, "").trim();
+        if (val.length >= 5 && !isTemplateLabel(val)) employee_nric_or_passport = val;
       }
     }
     if (!employee_tin && /(?:no\.?\s*pengenalan\s*cukai|no\.?\s*cukai\s*pendapatan|\btin\b)/i.test(l)) {
       const val = l.replace(/.*?(?:no\.?\s*pengenalan\s*cukai|no\.?\s*cukai\s*pendapatan|\btin\b)\s*[:\-]?\s*/i, "").trim();
-      if (val.length >= 5) employee_tin = val;
+      if (val.length >= 5 && !isTemplateLabel(val)) employee_tin = val;
     }
     if (!employee_epf_number && /(?:no\.?\s*k\.?w\.?s\.?p\.?|no\.?\s*akaun\s*kwsp)/i.test(l)) {
       const epfMatch =
@@ -404,11 +410,17 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
     }
     if (!employee_socso_number && /(?:no\.?\s*perkeso|no\.?\s*socso)/i.test(l)) {
       const val = l.replace(/.*?(?:no\.?\s*perkeso|no\.?\s*socso)\s*[:\-]?\s*/i, "").trim();
-      if (val.length >= 5) employee_socso_number = val;
+      if (val.length >= 5 && !isTemplateLabel(val)) employee_socso_number = val;
     }
     if (eligible_children_for_tax_relief === null && /(?:bilangan\s*anak|anak\s*yang\s*layak)/i.test(l)) {
-      const numM = l.match(/(\d+)/);
-      if (numM) eligible_children_for_tax_relief = parseInt(numM[1], 10);
+      const afterLabel = l
+        .replace(/^\s*\d+\.\s*/, "")
+        .replace(/.*?(?:bilangan\s*anak(?:\s*yang\s*layak)?(?:\s*untuk\s*pelepasan\s*cukai)?)\s*[:\-]?\s*/i, "")
+        .trim();
+      const numM = afterLabel.match(/^(\d{1,2})\b/);
+      if (numM) {
+        eligible_children_for_tax_relief = parseInt(numM[1], 10);
+      }
     }
   }
 

@@ -50,7 +50,7 @@ export async function renderPdfFirstPageToJpeg(
   })();
 
   const timeoutPromise = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), 5000)
+    setTimeout(() => resolve(null), 8000)
   );
 
   return Promise.race([renderPromise, timeoutPromise]);

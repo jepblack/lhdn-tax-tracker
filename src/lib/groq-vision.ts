@@ -32,12 +32,12 @@ function pickCandidateModels(allIds: string[], needsVision: boolean): string[] {
 
   if (needsVision) {
     const visionMatchers = [
-      /qwen.*3\.8/i,
-      /qwen.*3\.6/i,
-      /qwen.*vl/i,
+      /llama-4-maverick/i,
+      /llama-4-scout/i,
       /llama-4/i,
       /vision/i,
-      /qwen/i,
+      /-vl/i,
+      /vl-/i,
     ];
     const picked: string[] = [];
     for (const rx of visionMatchers) {
@@ -45,8 +45,11 @@ function pickCandidateModels(allIds: string[], needsVision: boolean): string[] {
         if (rx.test(id) && !picked.includes(id)) picked.push(id);
       }
     }
-    if (picked.length > 0) return picked.slice(0, 3);
-    return ["qwen/qwen3.8-27b", "meta-llama/llama-4-maverick-17b-128e-instruct"];
+    if (picked.length > 0) return picked.slice(0, 4);
+    return [
+      "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+    ];
   }
 
   // Text-only extraction (fast & ultra-reliable for text PDFs)
@@ -110,7 +113,7 @@ export async function callGroqJson(params: {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 14000);
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      let res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -125,6 +128,29 @@ export async function callGroqJson(params: {
         }),
         signal: controller.signal,
       });
+
+      if (!res.ok && res.status === 400) {
+        const errBody = await res.text();
+        if (errBody.toLowerCase().includes("response_format") || errBody.toLowerCase().includes("json")) {
+          res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.1,
+              max_tokens: maxTokens,
+              messages: [{ role: "user", content: userContent }],
+            }),
+            signal: controller.signal,
+          });
+        } else {
+          lastError = `${model} HTTP ${res.status}: ${errBody.slice(0, 140)}`;
+          continue;
+        }
+      }
 
       if (!res.ok) {
         const errText = await res.text();

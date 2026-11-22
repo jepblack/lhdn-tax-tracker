@@ -1234,8 +1234,11 @@ export function SettingsTab({
               <button
                 type="button"
                 disabled={Boolean(
-                  payslipData.yearDetected &&
-                    payslipData.yearDetected !== profile.taxYear
+                  (payslipData.yearDetected &&
+                    payslipData.yearDetected !== profile.taxYear) ||
+                    (payslipData.estimatedAnnualIncome <= 0 &&
+                      payslipData.ytdPcb <= 0 &&
+                      payslipData.monthlyPcb <= 0)
                 )}
                 onClick={() => handleApplyPayslip(false)}
                 className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
