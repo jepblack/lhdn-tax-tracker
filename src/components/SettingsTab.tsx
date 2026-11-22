@@ -257,6 +257,15 @@ export function SettingsTab({
   async function handleApplyPayslip(includeReliefs: boolean) {
     if (!payslipData) return;
 
+    if (payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear) {
+      setPayslipError(
+        personalization.language === "bm"
+          ? `Tidak boleh diguna: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, bukan TT ${profile.taxYear}. Sila tukar tahun di bahagian atas kepada TT ${payslipData.yearDetected} dahulu.`
+          : `Cannot apply: This document is for YA ${payslipData.yearDetected}, not YA ${profile.taxYear}. Please switch the top year selector to YA ${payslipData.yearDetected} first.`
+      );
+      return;
+    }
+
     const derivedChildren = deriveChildrenFromEaForm(
       payslipData.eaForm?.children_relief,
       payslipData.eaForm?.eligible_children_for_tax_relief
@@ -1045,12 +1054,12 @@ export function SettingsTab({
             </div>
 
             {payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-2.5 text-[11px] font-medium text-rose-900">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />
                 <span>
                   {personalization.language === "bm"
-                    ? `Nota: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, tetapi anda sedang melihat profil TT ${profile.taxYear}. Tukar tahun di bahagian atas kepada TT ${payslipData.yearDetected} jika anda mahu menyimpan rekod ke tahun tersebut.`
-                    : `Note: This document is for YA ${payslipData.yearDetected}, while you are currently viewing YA ${profile.taxYear}. Switch the top year selector to YA ${payslipData.yearDetected} if you want to save it to that year.`}
+                    ? `Tahun Tidak Sepadan: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, tetapi anda sedang melihat TT ${profile.taxYear}. Kemas kini disekat — sila tukar pemilih tahun di bahagian atas kepada TT ${payslipData.yearDetected} dahulu.`
+                    : `Year Mismatch: This document is for YA ${payslipData.yearDetected}, while you are currently viewing YA ${profile.taxYear}. Applying is blocked — please switch the top year selector to YA ${payslipData.yearDetected} first.`}
                 </span>
               </div>
             )}
@@ -1224,8 +1233,12 @@ export function SettingsTab({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                disabled={Boolean(
+                  payslipData.yearDetected &&
+                    payslipData.yearDetected !== profile.taxYear
+                )}
                 onClick={() => handleApplyPayslip(false)}
-                className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99]"
+                className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <span className="text-xs font-bold">
                   {personalization.language === "bm" ? "Guna Pendapatan & PCB" : "Apply Income & PCB"}
@@ -1240,8 +1253,12 @@ export function SettingsTab({
                 payslipData.employeeSocso > 0) && (
                 <button
                   type="button"
+                  disabled={Boolean(
+                    payslipData.yearDetected &&
+                      payslipData.yearDetected !== profile.taxYear
+                  )}
                   onClick={() => handleApplyPayslip(true)}
-                  className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99]"
+                  className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <span className="text-xs font-bold">
                     {personalization.language === "bm" ? "Guna + Rekod KWSP & PERKESO" : "Apply + Log EPF & SOCSO"}
