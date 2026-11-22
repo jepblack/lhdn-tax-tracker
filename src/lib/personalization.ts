@@ -177,7 +177,7 @@ export function loadPersonalization(): UserPersonalization {
       lifeStage: parsed.lifeStage,
       pinnedCategoryIds:
         Array.isArray(parsed.pinnedCategoryIds) &&
-        parsed.pinnedCategoryIds.length > 0
+          parsed.pinnedCategoryIds.length > 0
           ? parsed.pinnedCategoryIds
           : DEFAULT_PINNED_CATEGORIES,
       taxSavingGoal:
@@ -186,8 +186,8 @@ export function loadPersonalization(): UserPersonalization {
           : 1500,
       paydayDay:
         typeof parsed.paydayDay === "number" &&
-        parsed.paydayDay >= 1 &&
-        parsed.paydayDay <= 31
+          parsed.paydayDay >= 1 &&
+          parsed.paydayDay <= 31
           ? parsed.paydayDay
           : null,
     };
@@ -506,7 +506,7 @@ export function getUiCopy(lang: AppLanguage) {
     saveBtn: "Save",
     paydayBanner: "Payday Reminder! Log your latest payslip & monthly bills now.",
     paydaySub: "Payday set to day {day} each month in Settings.",
-    uploadPayslipBtn: "Upload Payslip",
+    uploadPayslipBtn: "Upload Payslip/EA Form",
     lifeStageTitle: "1-Tap Life-Stage Setup",
     changeAnytimeSettings: "Change anytime in Settings",
     maximizeReliefsTitle: "Maximize Your Reliefs",
