@@ -168,7 +168,7 @@ export function SettingsTab({
         return;
       }
 
-      if (!isPdf && (!res.ok || data.useClientOcr)) {
+      if (!isPdf && !data?.retryable && (!res.ok || data.useClientOcr)) {
         // Fallback to local on-device OCR for images if offline or API unavailable
         setPayslipProgress(
           personalization.language === "bm"
@@ -1017,9 +1017,20 @@ export function SettingsTab({
 
         {/* Payslip Error */}
         {payslipError && (
-          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>{payslipError}</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <span>{payslipError}</span>
+            </div>
+            {payslipFile && !payslipScanning && (
+              <button
+                type="button"
+                onClick={() => handlePayslipUpload(payslipFile)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-[0.98]"
+              >
+                {personalization.language === "bm" ? "Cuba Lagi" : "Retry"}
+              </button>
+            )}
           </div>
         )}
 

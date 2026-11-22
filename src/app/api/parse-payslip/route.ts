@@ -514,35 +514,22 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
       }
     }
 
-    // Secondary Groq Text fallback if image vision failed or PDF image wasn't rendered
-    if (canUseGroq && pdfText.length >= 20) {
-      try {
-        const parsed = await callGroqJson({
-          apiKey: groqKey!,
-          prompt,
-          textContent: pdfText,
-          imageBase64: null,
-          maxTokens: 1500,
-        });
-        const aiExtraction = normalizeAiPayslip(parsed, "Groq Text", pdfText);
-        if (!visualImageBase64) {
-          aiExtraction.notes.push("(Note: Client PDF-to-image render unavailable; used text fallback.)");
-        } else if (aiDebugReason) {
-          aiExtraction.notes.push(`(Vision fallback note: ${aiDebugReason.trim()})`);
-        }
-        return NextResponse.json(aiExtraction);
-      } catch (groqTextErr) {
-        const msg = groqTextErr instanceof Error ? groqTextErr.message.slice(0, 120) : "Groq Text error";
-        aiDebugReason += `GroqText: ${msg}. `;
-        console.warn("Groq Text payslip/EA parse failed:", groqTextErr);
-      }
+    // Do NOT use Groq Text fallback on scrambled unpdf text — if Vision AI failed for an EA Form,
+    // ask the user to retry after a moment or enter values manually.
+    if (fastResult?.sourceType === "ea-form") {
+      return NextResponse.json(
+        {
+          error: "AI_VISION_UNAVAILABLE",
+          retryable: true,
+          message:
+            "AI Vision could not read this EA Form right now (temporary busy/rate limit). Please click Retry in a few seconds, or enter the figures manually below.",
+        },
+        { status: 503 }
+      );
     }
 
-    // Fall back to regex result if available
+    // Fall back to regex result for standard text-ordered monthly payslips
     if (fastResult) {
-      if (aiDebugReason) {
-        fastResult.notes.push(`(AI fallback note: ${aiDebugReason.trim()})`);
-      }
       return NextResponse.json(fastResult);
     }
 
