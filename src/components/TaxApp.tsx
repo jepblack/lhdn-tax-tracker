@@ -49,6 +49,7 @@ import {
   fetchProfile,
   getDefaultProfile,
   getSampleExpenses,
+  loadLocalProfile,
   persistAnnualStateToCloud,
   persistProfile,
   removeExpense,
@@ -102,16 +103,25 @@ const FORM_BE_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
 type ActiveTab = "dashboard" | "reliefs" | "receipts" | "settings";
 
 export function TaxApp() {
-  const [taxYear, setTaxYear] = useState<TaxYear>(
-    () => SUPPORTED_TAX_YEARS[0] || 2026
-  );
+  const [taxYear, setTaxYear] = useState<TaxYear>(() => {
+    const currentCalendarYear = Math.max(2026, new Date().getFullYear());
+    if (typeof window !== "undefined") {
+      const saved = Number(window.localStorage.getItem("cukaiku_selected_tax_year"));
+      if (saved && SUPPORTED_TAX_YEARS.includes(saved)) {
+        return saved;
+      }
+    }
+    return SUPPORTED_TAX_YEARS.includes(currentCalendarYear)
+      ? currentCalendarYear
+      : SUPPORTED_TAX_YEARS[0] || 2026;
+  });
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [driveConnected, setDriveConnected] = useState(false);
 
   const [profile, setProfile] = useState<TaxProfile>(() =>
-    getDefaultProfile(2026)
+    getDefaultProfile(taxYear)
   );
   const [expenses, setExpenses] = useState<TaxExpense[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -702,6 +712,14 @@ export function TaxApp() {
   // Load profile, expenses & annual docs whenever taxYear or userId changes
   useEffect(() => {
     let cancelled = false;
+    try {
+      window.localStorage.setItem("cukaiku_selected_tax_year", String(taxYear));
+    } catch {
+      // ignore
+    }
+    setProfile((prev) =>
+      prev.taxYear === taxYear ? prev : loadLocalProfile(taxYear)
+    );
     async function load() {
       const [loadedProfile, loadedExpenses, annualState, loadedSub] =
         await Promise.all([
