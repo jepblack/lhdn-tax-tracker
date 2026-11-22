@@ -48,6 +48,7 @@ interface SettingsTabProps {
   expenses: TaxExpense[];
   userEmail: string | null;
   driveConnected: boolean;
+  onDriveConnected?: () => void;
   personalization: UserPersonalization;
   recurringBills: RecurringBillTemplate[];
   onUpdatePersonalization: (next: UserPersonalization) => void;
@@ -70,6 +71,7 @@ export function SettingsTab({
   expenses,
   userEmail,
   driveConnected,
+  onDriveConnected,
   personalization,
   recurringBills,
   onUpdatePersonalization,
@@ -357,7 +359,12 @@ export function SettingsTab({
         callback: (resp: any) => {
           if (resp?.access_token) {
             saveGoogleDriveToken(resp.access_token);
-            setDriveSyncMsg("Google Drive connected successfully! Tap 'Back Up YA " + profile.taxYear + " Index to Drive'.");
+            onDriveConnected?.();
+            setDriveSyncMsg(
+              lang === "bm"
+                ? `Google Drive berjaya disambungkan! Ketik 'Sandar TT ${profile.taxYear} ke Drive'.`
+                : `Google Drive connected successfully! Tap 'Back Up YA ${profile.taxYear} to Drive'.`
+            );
           }
         },
       });
@@ -1297,7 +1304,7 @@ export function SettingsTab({
                           rel="noreferrer"
                           className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
                         >
-                          Open Drive Folder
+                          {lang === "bm" ? "Buka Folder Drive" : "Open Drive Folder"}
                         </a>
                       )}
                     </>

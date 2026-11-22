@@ -1484,6 +1484,7 @@ export function TaxApp() {
                   expenses={expenses}
                   userEmail={userEmail}
                   driveConnected={driveConnected}
+                  onDriveConnected={() => setDriveConnected(true)}
                   personalization={personalization}
                   recurringBills={recurringBills}
                   onUpdatePersonalization={handleUpdatePersonalization}
