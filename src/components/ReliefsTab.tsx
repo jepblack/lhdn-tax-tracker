@@ -45,7 +45,7 @@ export function ReliefsTab({
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
-  const { copy, tCategory } = useLanguage();
+  const { lang, copy, tCategory, tSubCategory } = useLanguage();
 
   const groupLabels: Record<string, string> = {
     all: copy.filterAll,
@@ -196,17 +196,22 @@ export function ReliefsTab({
                         {formatRM(item.claimable)}
                       </span>
                       <span className="text-slate-400">
-                        of {formatRM(item.category.maxLimit)}
+                        {lang === "bm" ? "drp" : "of"}{" "}
+                        {formatRM(item.category.maxLimit)}
                       </span>
                       {isMaxed && (
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
-                          <CheckCircle2 className="h-3 w-3" /> Maxed
+                          <CheckCircle2 className="h-3 w-3" /> {copy.maxedBadge}
                         </span>
                       )}
                     </div>
                     <span className="text-[11px] font-medium text-slate-500">
                       {item.remaining > 0
-                        ? `${formatRM(item.remaining)} left`
+                        ? lang === "bm"
+                          ? `Baki ${formatRM(item.remaining)}`
+                          : `${formatRM(item.remaining)} left`
+                        : lang === "bm"
+                        ? "Had penuh"
                         : "Cap reached"}
                     </span>
                   </div>
@@ -223,8 +228,9 @@ export function ReliefsTab({
                   {item.overflow > 0 && (
                     <p className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      Spent {formatRM(item.spent)} — {formatRM(item.overflow)}{" "}
-                      exceeds LHDN cap / sub-limit
+                      {lang === "bm"
+                        ? `Dibelanjakan ${formatRM(item.spent)} — ${formatRM(item.overflow)} melebihi had LHDN`
+                        : `Spent ${formatRM(item.spent)} — ${formatRM(item.overflow)} exceeds LHDN cap / sub-limit`}
                     </p>
                   )}
                 </div>
@@ -236,7 +242,9 @@ export function ReliefsTab({
                   {hasSubLimits && (
                     <div className="space-y-2.5">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                        Sub-Categories & Sub-Limits
+                        {lang === "bm"
+                          ? "Sub-Kategori & Had Khusus"
+                          : "Sub-Categories & Sub-Limits"}
                       </p>
                       {item.subSummaries.map((sub) => (
                         <div
@@ -246,7 +254,7 @@ export function ReliefsTab({
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-slate-900">
-                                {sub.subCategory.name}
+                                {tSubCategory(sub.subCategory)}
                               </p>
                               <p className="mt-0.5 text-[11px] text-slate-500">
                                 {sub.subCategory.description}
@@ -262,7 +270,7 @@ export function ReliefsTab({
                               }
                               className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 active:scale-95"
                             >
-                              + Log
+                              {lang === "bm" ? "+ Rekod" : "+ Log"}
                             </button>
                           </div>
 
@@ -271,12 +279,17 @@ export function ReliefsTab({
                               <span className="font-semibold text-slate-800">
                                 {formatRM(sub.claimable)}{" "}
                                 <span className="font-normal text-slate-400">
-                                  / {formatRM(sub.subCategory.maxLimit)} sub-cap
+                                  / {formatRM(sub.subCategory.maxLimit)}{" "}
+                                  {lang === "bm" ? "sub-had" : "sub-cap"}
                                 </span>
                               </span>
                               <span className="text-slate-500">
                                 {sub.expenseCount}{" "}
-                                {sub.expenseCount === 1 ? "receipt" : "receipts"}
+                                {lang === "bm"
+                                  ? "resit"
+                                  : sub.expenseCount === 1
+                                  ? "receipt"
+                                  : "receipts"}
                               </span>
                             </div>
                             <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -291,7 +304,9 @@ export function ReliefsTab({
                             </div>
                             {sub.overflow > 0 && (
                               <p className="text-[10px] font-medium text-amber-700">
-                                Over sub-limit by {formatRM(sub.overflow)}
+                                {lang === "bm"
+                                  ? `Melebihi sub-had sebanyak ${formatRM(sub.overflow)}`
+                                  : `Over sub-limit by ${formatRM(sub.overflow)}`}
                               </p>
                             )}
                           </div>
@@ -307,10 +322,24 @@ export function ReliefsTab({
                       <p className="font-medium">{item.category.tips}</p>
                       {item.remaining > 0 && marginalRate > 0 && (
                         <p className="mt-1 text-[11px] text-emerald-700">
-                          Maximizing the remaining {formatRM(item.remaining)} could
-                          save up to{" "}
-                          <strong>{formatRM(potentialTaxSavings)}</strong> in tax at
-                          your {Math.round(marginalRate * 100)}% bracket.
+                          {lang === "bm" ? (
+                            <>
+                              Memaksimumkan baki{" "}
+                              {formatRM(item.remaining)} boleh menjimatkan
+                              sehingga{" "}
+                              <strong>{formatRM(potentialTaxSavings)}</strong>{" "}
+                              cukai pada kadar{" "}
+                              {Math.round(marginalRate * 100)}% anda.
+                            </>
+                          ) : (
+                            <>
+                              Maximizing the remaining{" "}
+                              {formatRM(item.remaining)} could save up to{" "}
+                              <strong>{formatRM(potentialTaxSavings)}</strong>{" "}
+                              in tax at your {Math.round(marginalRate * 100)}%
+                              bracket.
+                            </>
+                          )}
                         </p>
                       )}
                     </div>
@@ -323,7 +352,9 @@ export function ReliefsTab({
                     className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white active:scale-[0.99]"
                   >
                     <Plus className="h-4 w-4" />
-                    Add Receipt to {item.category.shortName}
+                    {lang === "bm"
+                      ? `Tambah Resit ke ${tCategory(item.category).shortName}`
+                      : `Add Receipt to ${tCategory(item.category).shortName}`}
                   </button>
                 </div>
               )}
