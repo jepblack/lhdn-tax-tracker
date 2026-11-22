@@ -170,6 +170,7 @@ export function DashboardTab({
       {/* First-time User Quick-Start Checklist */}
       <QuickStartChecklist
         taxYear={summary.taxYear}
+        language={personalization.language}
         profileCustomized={profileCustomized}
         hasExpenses={expenseCount > 0}
         hasCloudSync={hasCloudSync}
@@ -189,7 +190,10 @@ export function DashboardTab({
             <div>
               <p className="font-bold">{copy.paydayBanner}</p>
               <p className="text-[11px] text-emerald-800">
-                Payday set to day {personalization.paydayDay} each month in Settings.
+                {copy.paydaySub.replace(
+                  "{day}",
+                  String(personalization.paydayDay)
+                )}
               </p>
             </div>
           </div>
@@ -198,7 +202,7 @@ export function DashboardTab({
             onClick={() => onNavigateTab("settings")}
             className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
           >
-            Upload Payslip
+            {copy.uploadPayslipBtn}
           </button>
         </section>
       )}
@@ -288,15 +292,14 @@ export function DashboardTab({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">
-                Upload / Drag &amp; Drop PDF Receipt or LHDN e-Invoice
+                {copy.dropzoneTitle}
               </h2>
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                ~300KB Auto-Archive
+                {copy.dropzoneBadge}
               </span>
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
-              Drop any clinic bill, Shopee/Lazada PDF, broadband invoice, or
-              MyInvois QR receipt for instant AI extraction.
+              {copy.dropzoneSub}
             </p>
           </div>
         </div>
@@ -307,7 +310,7 @@ export function DashboardTab({
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
           >
             <QrCode className="h-4 w-4 text-emerald-600" />
-            Scan MyInvois QR
+            {copy.scanMyInvoisQr}
           </button>
           <button
             type="button"
@@ -315,7 +318,7 @@ export function DashboardTab({
             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
           >
             <FileUp className="h-4 w-4" />
-            Select PDF / Image
+            {copy.selectPdfImage}
           </button>
         </div>
       </section>
@@ -324,7 +327,7 @@ export function DashboardTab({
       <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700">
-            <span>LHDN Filing Profile:</span>
+            <span>{copy.filingProfile}</span>
             <InfoHint
               align="left"
               title="Form e-BE vs Form e-B"
@@ -345,7 +348,7 @@ export function DashboardTab({
               }`}
             >
               <UserCheck className="h-3.5 w-3.5" />
-              Salaried (e-BE)
+              {copy.salariedMode}
             </button>
             <button
               type="button"
@@ -357,7 +360,7 @@ export function DashboardTab({
               }`}
             >
               <Briefcase className="h-3.5 w-3.5" />
-              Freelancer / Mixed (e-B)
+              {copy.freelancerMode}
             </button>
           </div>
         </div>
@@ -374,7 +377,7 @@ export function DashboardTab({
                   : "text-emerald-800 hover:text-emerald-950"
               }`}
             >
-              Personal Reliefs
+              {copy.personalReliefsTab}
             </button>
             <button
               type="button"
@@ -385,7 +388,7 @@ export function DashboardTab({
                   : "text-emerald-800 hover:text-emerald-950"
               }`}
             >
-              Business Expenses ({businessExpenses.length})
+              {copy.businessExpensesTab} ({businessExpenses.length})
             </button>
           </div>
         )}
@@ -401,25 +404,25 @@ export function DashboardTab({
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="font-bold">
                 {taxpayerMode === "e-B"
-                  ? `Form e-B Deadline: 30 June ${filingYear}`
-                  : `Form e-BE Deadline: 30 April ${filingYear}`}
+                  ? `${copy.deadlineB} ${filingYear}`
+                  : `${copy.deadlineBe} ${filingYear}`}
               </span>
               <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
-                {daysToDeadline} days left
+                {daysToDeadline} {copy.daysLeft}
               </span>
               {taxpayerMode === "e-B" && (
                 <span className="rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                  CP500 Bi-Monthly Instalments Active
+                  {copy.cp500Active}
                 </span>
               )}
             </div>
             <p className="mt-0.5 text-[11px] text-amber-800">
               {taxpayerMode === "e-B"
-                ? `Keep Section 33 business vouchers & personal receipts until ${summary.retentionUntilYear} (7-year LHDN audit rule).`
-                : `7-year LHDN Section 82A audit retention until ${summary.retentionUntilYear}.`}{" "}
+                ? `${copy.keepUntilLabel} ${summary.retentionUntilYear}`
+                : `${copy.retentionUntil} ${summary.retentionUntilYear}.`}{" "}
               {missingMyInvoisQrCount > 0 && (
                 <strong>
-                  • {missingMyInvoisQrCount} receipt(s) without MyInvois QR UUID
+                  • {missingMyInvoisQrCount} {copy.missingQrSuffix}
                 </strong>
               )}
             </p>
@@ -437,7 +440,7 @@ export function DashboardTab({
             className="inline-flex items-center justify-center gap-1 rounded-xl bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-amber-700"
           >
             <QrCode className="h-3.5 w-3.5" />
-            Verify MyInvois QR
+            {copy.verifyMyInvois}
           </button>
         </div>
       </section>
@@ -452,8 +455,8 @@ export function DashboardTab({
             <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-emerald-100/90">
               <span>
                 {taxpayerMode === "e-B" && freelancerView === "business"
-                  ? `YA ${summary.taxYear} Business Deductible Expenses (Sec 33)`
-                  : `YA ${summary.taxYear} Total Claimable Reliefs`}
+                  ? `${personalization.language === "bm" ? "TT" : "YA"} ${summary.taxYear} ${copy.businessExpensesTitle}`
+                  : `${personalization.language === "bm" ? "TT" : "YA"} ${summary.taxYear} ${copy.totalReliefsTitle}`}
               </span>
               <InfoHint
                 light
@@ -479,7 +482,7 @@ export function DashboardTab({
           </div>
           <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right backdrop-blur-sm">
             <p className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-wider text-emerald-100">
-              <span>Tax Bracket</span>
+              <span>{copy.taxBracket}</span>
               <InfoHint
                 light
                 align="right"
@@ -496,9 +499,9 @@ export function DashboardTab({
         {/* Emerald Relief Progress Bar */}
         <div className="mt-3.5 space-y-1">
           <div className="flex items-center justify-between text-[11px] text-emerald-100/90">
-            <span>Expense Relief Utilization</span>
+            <span>{copy.reliefUtilization}</span>
             <span className="privacy-sensitive font-bold text-white">
-              {formatRM(summary.expenseReliefClaimable)} / RM 28,000 target (
+              {formatRM(summary.expenseReliefClaimable)} / RM 28,000 {copy.targetLabel} (
               {heroProgressPct}%)
             </span>
           </div>
@@ -514,7 +517,7 @@ export function DashboardTab({
           <div className="rounded-xl bg-white/12 p-3 backdrop-blur-sm">
             <div className="flex items-center gap-1.5 text-emerald-100">
               <TrendingDown className="h-3.5 w-3.5" />
-              <span className="text-[11px] font-medium">Tax Saved (Receipts)</span>
+              <span className="text-[11px] font-medium">{copy.taxSavedReceipts}</span>
               <InfoHint
                 light
                 align="left"
@@ -531,7 +534,7 @@ export function DashboardTab({
             <div className="flex items-center gap-1.5 text-emerald-100">
               <Wallet className="h-3.5 w-3.5" />
               <span className="text-[11px] font-medium">
-                {summary.estimatedRefund >= 0 ? "Est. LHDN Refund" : "Est. Balance Due"}
+                {summary.estimatedRefund >= 0 ? copy.estRefund : copy.estBalanceDue}
               </span>
               <InfoHint
                 light
@@ -553,14 +556,14 @@ export function DashboardTab({
         <div className="mt-3 flex items-center justify-between border-t border-white/15 pt-3 text-xs text-emerald-100/90">
           <span className="flex items-center gap-1.5">
             <CalendarClock className="h-3.5 w-3.5" />
-            LHDN 7-year audit retention: Keep until{" "}
+            {copy.keepUntilLabel}{" "}
             <strong className="text-white">{summary.retentionUntilYear}</strong>
           </span>
           <button
             onClick={() => onNavigateTab("settings")}
             className="font-medium text-white underline underline-offset-2"
           >
-            Edit Income
+            {copy.editIncomeBtn}
           </button>
         </div>
       </section>
@@ -725,8 +728,8 @@ export function DashboardTab({
                   </div>
                   <p className="mt-1.5 text-[10px] text-slate-500">
                     {isMaxed
-                      ? "Max cap reached"
-                      : `${formatRM(item.remaining)} remaining`}
+                      ? copy.maxCapReached
+                      : `${formatRM(item.remaining)} ${copy.remainingLabel}`}
                   </p>
                 </div>
               );
@@ -744,24 +747,23 @@ export function DashboardTab({
             </div>
             <div className="flex-1">
               <h2 className="text-sm font-semibold text-slate-900">
-                Start tracking YA {summary.taxYear} receipts
+                {copy.emptyStartTitle.replace("{year}", String(summary.taxYear))}
               </h2>
               <p className="mt-0.5 text-xs text-slate-600">
-                Snap your first receipt with AI auto-categorization, or load sample
-                Malaysian reliefs to explore how sub-limits work.
+                {copy.emptyStartDesc}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => onQuickAdd()}
                   className="rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm active:scale-[0.98]"
                 >
-                  + Scan First Receipt
+                  {copy.scanFirstReceipt}
                 </button>
                 <button
                   onClick={onLoadSampleData}
                   className="rounded-lg border border-emerald-300 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-700 active:scale-[0.98]"
                 >
-                  Load Sample YA {summary.taxYear} Data
+                  {copy.loadSampleData.replace("{year}", String(summary.taxYear))}
                 </button>
               </div>
             </div>

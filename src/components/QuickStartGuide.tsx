@@ -14,6 +14,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { AppLanguage, getUiCopy } from "@/lib/personalization";
 
 const CHECKLIST_DISMISSED_KEY = "cukaiku_checklist_dismissed_v1";
 const RELIEFS_VISITED_KEY = "cukaiku_reliefs_visited_v1";
@@ -21,6 +22,7 @@ export const WELCOME_SEEN_KEY = "cukaiku_welcome_seen_v1";
 
 interface QuickStartChecklistProps {
   taxYear: number;
+  language?: AppLanguage;
   profileCustomized: boolean;
   hasExpenses: boolean;
   hasCloudSync: boolean;
@@ -32,6 +34,7 @@ interface QuickStartChecklistProps {
 
 export function QuickStartChecklist({
   taxYear,
+  language = "en",
   profileCustomized,
   hasExpenses,
   hasCloudSync,
@@ -40,6 +43,7 @@ export function QuickStartChecklist({
   onLoadSampleData,
   onOpenGuideModal,
 }: QuickStartChecklistProps) {
+  const copy = getUiCopy(language);
   const [dismissed, setDismissed] = useState(true);
   const [visitedReliefs, setVisitedReliefs] = useState(false);
 
@@ -79,40 +83,36 @@ export function QuickStartChecklist({
     {
       id: "profile",
       done: profileCustomized,
-      title: "1. Set Income & Form (e-BE / e-B)",
-      description:
-        "Enter your annual salary or upload your Payslip / EA Form for accurate tax bracket calculation.",
-      cta: profileCustomized ? "Edit Profile" : "Set Income",
+      title: copy.step1Title,
+      description: copy.step1Desc,
+      cta: profileCustomized ? copy.step1CtaEdit : copy.step1CtaSet,
       icon: SlidersHorizontal,
       onClick: () => onNavigateTab("settings"),
     },
     {
       id: "scan",
       done: hasExpenses,
-      title: "2. Snap First Receipt or MyInvois QR",
-      description:
-        "Take a photo of a clinic, bookshop, or sports receipt — AI auto-tags the LHDN category.",
-      cta: hasExpenses ? "Scan Another" : "Scan Receipt",
+      title: copy.step2Title,
+      description: copy.step2Desc,
+      cta: hasExpenses ? copy.step2CtaAnother : copy.step2CtaScan,
       icon: Camera,
       onClick: onOpenScanner,
     },
     {
       id: "reliefs",
       done: visitedReliefs || hasExpenses,
-      title: "3. Check Remaining Relief Caps",
-      description:
-        "See unused tax savings in Lifestyle (RM 2,500), Medical (RM 10,000), & SSPN.",
-      cta: "View Caps",
+      title: copy.step3Title,
+      description: copy.step3Desc,
+      cta: copy.step3Cta,
       icon: ListChecks,
       onClick: handleVisitReliefs,
     },
     {
       id: "cloud",
       done: hasCloudSync,
-      title: "4. Back Up 7-Year Audit Trail",
-      description:
-        "1-click Google Sign-In keeps your receipts synced across phone and PC.",
-      cta: hasCloudSync ? "Synced" : "Sign In",
+      title: copy.step4Title,
+      description: copy.step4Desc,
+      cta: hasCloudSync ? copy.step4CtaSynced : copy.step4CtaSignIn,
       icon: Cloud,
       onClick: () => onNavigateTab("settings"),
     },
@@ -137,14 +137,14 @@ export function QuickStartChecklist({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">
-                Where to Start — YA {taxYear} Quick Setup
+                {copy.quickStartTitle.replace("{year}", String(taxYear))}
               </h2>
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                {completedCount}/{steps.length} done
+                {completedCount}/{steps.length} {copy.doneLabel}
               </span>
             </div>
             <p className="text-[11px] text-slate-600">
-              Follow these 4 quick steps to maximize your LHDN tax refund.
+              {copy.quickStartSub}
             </p>
           </div>
         </div>
@@ -226,7 +226,7 @@ export function QuickStartChecklist({
               className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50"
             >
               <Sparkles className="h-3 w-3" />
-              Try Sample YA {taxYear} Data
+              {copy.trySampleBtn.replace("{year}", String(taxYear))}
             </button>
           )}
           <button
@@ -235,7 +235,7 @@ export function QuickStartChecklist({
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
           >
             <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
-            How CukaiKu Works
+            {copy.howItWorksBtn}
           </button>
         </div>
 
@@ -244,7 +244,7 @@ export function QuickStartChecklist({
           onClick={handleDismiss}
           className="text-[11px] font-medium text-slate-400 hover:text-slate-600"
         >
-          Dismiss guide
+          {copy.dismissGuide}
         </button>
       </div>
     </section>
@@ -254,6 +254,7 @@ export function QuickStartChecklist({
 interface QuickGuideModalProps {
   open: boolean;
   taxYear: number;
+  language?: AppLanguage;
   hasExpenses: boolean;
   onClose: () => void;
   onStartScanning: () => void;
@@ -264,6 +265,7 @@ interface QuickGuideModalProps {
 export function QuickGuideModal({
   open,
   taxYear,
+  language = "en",
   hasExpenses,
   onClose,
   onStartScanning,
@@ -271,29 +273,27 @@ export function QuickGuideModal({
   onLoadSampleData,
 }: QuickGuideModalProps) {
   if (!open) return null;
+  const copy = getUiCopy(language);
 
   const pillars = [
     {
-      step: "Step 1",
-      title: "Set Your Income & Form Mode",
-      detail:
-        "Choose Salaried (Form e-BE, due 30 April) or Freelancer / Mixed Income (Form e-B, due 30 June). Upload your Payslip or EA Form to auto-fill PCB & EPF.",
+      step: language === "bm" ? "Langkah 1" : "Step 1",
+      title: copy.pillar1Title,
+      detail: copy.pillar1Desc,
       icon: SlidersHorizontal,
       accent: "bg-blue-50 text-blue-700 border-blue-200",
     },
     {
-      step: "Step 2",
-      title: "Snap Receipts or Scan MyInvois QR",
-      detail:
-        "Tap the green Scan button anytime (even offline in clinics or basements). AI extracts the merchant, date, and RM amount and matches the right LHDN relief cap.",
+      step: language === "bm" ? "Langkah 2" : "Step 2",
+      title: copy.pillar2Title,
+      detail: copy.pillar2Desc,
       icon: Camera,
       accent: "bg-emerald-50 text-emerald-700 border-emerald-200",
     },
     {
-      step: "Step 3",
-      title: "File MyTax & Keep 7-Year Audit Pack",
-      detail:
-        "Track remaining Lifestyle, Sports, Medical & SSPN caps all year. At tax time, open e-Filing Workpapers for a Form BE/B cheat sheet & 1-click ZIP archive.",
+      step: language === "bm" ? "Langkah 3" : "Step 3",
+      title: copy.pillar3Title,
+      detail: copy.pillar3Desc,
       icon: FileText,
       accent: "bg-amber-50 text-amber-800 border-amber-200",
     },
@@ -312,10 +312,10 @@ export function QuickGuideModal({
             />
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                How to Use CukaiKu
+                {copy.guideModalTitle}
               </h2>
               <p className="text-xs text-slate-500">
-                Malaysia LHDN Tax Relief &amp; 7-Year Receipt Vault
+                {copy.guideModalSub}
               </p>
             </div>
           </div>
@@ -386,7 +386,7 @@ export function QuickGuideModal({
             }}
             className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 shadow-xs hover:bg-slate-50"
           >
-            1. Set Income First
+            {copy.guideSetIncomeFirst}
           </button>
 
           {!hasExpenses && (
@@ -399,7 +399,7 @@ export function QuickGuideModal({
               className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Try Sample YA {taxYear}
+              {language === "bm" ? `Cuba Contoh TT ${taxYear}` : `Try Sample YA ${taxYear}`}
             </button>
           )}
 
@@ -411,7 +411,7 @@ export function QuickGuideModal({
             }}
             className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
           >
-            Scan First Receipt
+            {copy.guideStartScanning}
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

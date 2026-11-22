@@ -31,6 +31,7 @@ import {
 } from "@/lib/payslip-parser";
 import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
 import {
+  getUiCopy,
   LIFE_STAGE_PRESETS,
   LifeStagePresetId,
   RecurringBillTemplate,
@@ -80,6 +81,7 @@ export function SettingsTab({
   onClearLocalData,
 }: SettingsTabProps) {
   const amounts = getStatusReliefAmounts(profile.taxYear);
+  const copy = getUiCopy(personalization.language);
   const payslipInputRef = useRef<HTMLInputElement>(null);
 
   const [email, setEmail] = useState("");
@@ -487,11 +489,10 @@ export function SettingsTab({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
         <div>
           <h2 className="text-sm font-bold text-slate-900">
-            LHDN e-Filing Submission Form (YA {profile.taxYear})
+            {copy.filingModeTitle.replace("{year}", String(profile.taxYear))}
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Switch between Salaried (Form e-BE, due 30 April) and Freelancer /
-            Sole Proprietor / Mixed Income (Form e-B, due 30 June + CP500).
+            {copy.filingModeSub}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -538,7 +539,7 @@ export function SettingsTab({
           <div className="flex items-center gap-1.5">
             <Sparkles className="h-4 w-4 text-emerald-600" />
             <h2 className="text-sm font-bold text-slate-900">
-              Personalization &amp; Smart Reminders
+              {copy.personalizationTitle}
             </h2>
             <InfoHint
               title="Tailor CukaiKu to You"
@@ -772,10 +773,10 @@ export function SettingsTab({
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
-              YA {profile.taxYear} Income & Tax Estimate
+              {copy.incomeEstimateTitle.replace("{year}", String(profile.taxYear))}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Upload a payslip / EA Form to auto-fill, or edit figures directly.
+              {copy.incomeEstimateSub}
             </p>
           </div>
           <input
@@ -946,7 +947,7 @@ export function SettingsTab({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-              <span>Annual Income (RM)</span>
+              <span>{copy.annualIncomeLabel}</span>
               <InfoHint
                 title="Annual Gross Income"
                 align="left"
@@ -966,7 +967,7 @@ export function SettingsTab({
           </div>
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-              <span>PCB / MTD Paid YTD (RM)</span>
+              <span>{copy.pcbPaidLabel}</span>
               <InfoHint
                 title="Monthly Tax Deduction (PCB)"
                 text="Potongan Cukai Berjadual — income tax already deducted from your monthly salary. Increases your LHDN refund or lowers balance due."
@@ -985,7 +986,7 @@ export function SettingsTab({
           </div>
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-              <span>Zakat / Fitrah Rebate (RM)</span>
+              <span>{copy.zakatPaidLabel}</span>
               <InfoHint
                 title="100% Tax Rebate"
                 align="right"

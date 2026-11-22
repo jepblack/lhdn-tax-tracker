@@ -1097,7 +1097,7 @@ export function TaxApp() {
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-100 transition"
                   >
                     <CloudOff className="h-3 w-3 text-amber-600" />
-                    <span>Not Synced</span>
+                    <span>{copy.notSynced}</span>
                   </button>
                 )}
 
@@ -1264,7 +1264,7 @@ export function TaxApp() {
             <div className="flex items-center justify-between px-2 py-1.5">
               {!sidebarCollapsed && (
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Navigation
+                  {copy.sidebarNav}
                 </span>
               )}
               <button
@@ -1319,19 +1319,19 @@ export function TaxApp() {
               className="mt-2 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
             >
               <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-600" />
-              {!sidebarCollapsed && <span>e-Filing Workpapers</span>}
+              {!sidebarCollapsed && <span>{copy.workpapersBtn}</span>}
             </button>
           </div>
 
           {!sidebarCollapsed && (
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-3 text-[11px] text-slate-600">
               <p className="font-bold text-slate-900">
-                LHDN 7-Year Audit Vault
+                {copy.vaultSidebarTitle}
               </p>
               <p className="mt-0.5">
-                YA {taxYear} records retained until{" "}
-                <strong className="text-slate-800">{taxYear + 8}</strong> under
-                ITA Section 82A.
+                {copy.vaultSidebarDesc
+                  .replace("{year}", String(taxYear))
+                  .replace("{until}", String(taxYear + 8))}
               </p>
             </div>
           )}
@@ -1395,6 +1395,7 @@ export function TaxApp() {
                 <ReliefsTab
                   summaries={summary.categorySummaries}
                   marginalRate={summary.marginalRate}
+                  language={personalization.language}
                   pinnedCategoryIds={personalization.pinnedCategoryIds}
                   onTogglePinCategory={handleTogglePinCategory}
                   onAddExpenseForCategory={(catId, subId) =>
@@ -1454,13 +1455,13 @@ export function TaxApp() {
         <div className="mx-auto grid max-w-xl grid-cols-5 items-center px-2 py-1.5">
           <NavButton
             icon={LayoutDashboard}
-            label="Dashboard"
+            label={copy.navDashboard}
             active={activeTab === "dashboard"}
             onClick={() => setActiveTab("dashboard")}
           />
           <NavButton
             icon={ReceiptText}
-            label="Receipts"
+            label={copy.navReceipts}
             badge={missingReceiptsTotal > 0 ? missingReceiptsTotal : undefined}
             active={activeTab === "receipts"}
             onClick={() => setActiveTab("receipts")}
@@ -1477,20 +1478,20 @@ export function TaxApp() {
             >
               <Camera className="h-6 w-6" />
               <span className="text-[8px] font-extrabold uppercase tracking-wider">
-                Scan
+                {copy.navScan}
               </span>
             </button>
           </div>
 
           <NavButton
             icon={ListChecks}
-            label="Reliefs"
+            label={copy.navReliefs}
             active={activeTab === "reliefs"}
             onClick={() => setActiveTab("reliefs")}
           />
           <NavButton
             icon={FileCheck2}
-            label="Submissions"
+            label={copy.navSubmissions}
             active={activeTab === "settings"}
             onClick={() => setActiveTab("settings")}
           />
@@ -1611,6 +1612,7 @@ export function TaxApp() {
       <QuickGuideModal
         open={guideOpen}
         taxYear={taxYear}
+        language={personalization.language}
         hasExpenses={yearExpenses.length > 0}
         onClose={() => setGuideOpen(false)}
         onStartScanning={() => openScanner()}

@@ -11,6 +11,7 @@ import {
   Star,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import { AppLanguage, getUiCopy } from "@/lib/personalization";
 import { CategorySummary } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 import { ReliefIcon } from "./ReliefIcon";
@@ -18,6 +19,7 @@ import { ReliefIcon } from "./ReliefIcon";
 interface ReliefsTabProps {
   summaries: CategorySummary[];
   marginalRate: number;
+  language?: AppLanguage;
   pinnedCategoryIds: string[];
   onTogglePinCategory: (categoryId: string) => void;
   onAddExpenseForCategory: (categoryId: string, subCategoryId?: string) => void;
@@ -35,12 +37,23 @@ const GROUP_FILTERS = [
 export function ReliefsTab({
   summaries,
   marginalRate,
+  language = "en",
   pinnedCategoryIds,
   onTogglePinCategory,
   onAddExpenseForCategory,
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
+  const copy = getUiCopy(language);
+
+  const groupLabels: Record<string, string> = {
+    all: copy.filterAll,
+    lifestyle: copy.filterLifestyle,
+    medical: copy.filterMedical,
+    savings: copy.filterSavings,
+    family: copy.filterFamily,
+    housing: copy.filterHousing,
+  };
 
   const filtered =
     groupFilter === "all"
@@ -54,8 +67,8 @@ export function ReliefsTab({
         <span className="flex items-center gap-1.5">
           <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
           <span>
-            Tap <strong>★</strong> on any relief to pin it onto your Dashboard (
-            <strong>{pinnedCategoryIds.length}</strong> pinned)
+            {copy.pinGuideText} (
+            <strong>{pinnedCategoryIds.length}</strong> {copy.pinnedCountLabel})
           </span>
         </span>
         <InfoHint
@@ -79,7 +92,7 @@ export function ReliefsTab({
                   : "border border-slate-200 bg-white text-slate-600"
               }`}
             >
-              {f.label}
+              {groupLabels[f.id] || f.label}
             </button>
           );
         })}
