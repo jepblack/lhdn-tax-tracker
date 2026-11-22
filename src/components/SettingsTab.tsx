@@ -1080,7 +1080,33 @@ export function SettingsTab({
                   </p>
                 </div>
               )}
+              {payslipData.eaForm?.tax_exempt_benefits !== null &&
+                payslipData.eaForm?.tax_exempt_benefits !== undefined && (
+                  <div className="col-span-2 rounded-xl bg-white p-2.5">
+                    <p className="text-[10px] text-slate-500">
+                      {personalization.language === "bm"
+                        ? "Elaun Dikecualikan Cukai (Bahagian F — Tidak termasuk dalam pendapatan kasar)"
+                        : "Tax-Exempt Allowances (Section F — Excluded from Gross Income)"}
+                    </p>
+                    <p className="font-bold text-slate-700">
+                      {formatRM(payslipData.eaForm.tax_exempt_benefits, true)}
+                    </p>
+                  </div>
+                )}
             </div>
+
+            {payslipData.eaForm?.warnings && payslipData.eaForm.warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+                <p className="font-bold">
+                  {personalization.language === "bm" ? "Amaran Semakan:" : "Extraction Warnings:"}
+                </p>
+                <ul className="mt-1 list-disc pl-4">
+                  {payslipData.eaForm.warnings.map((w, idx) => (
+                    <li key={idx}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {payslipData.notes.length > 0 && (
               <p className="text-[11px] text-emerald-900">

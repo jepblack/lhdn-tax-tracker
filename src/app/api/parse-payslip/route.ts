@@ -2,7 +2,11 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
 import { callGroqJson } from "@/lib/groq-vision";
-import { parseMalaysianPayslipText, PayslipExtraction } from "@/lib/payslip-parser";
+import {
+  EaFormExtraction,
+  parseMalaysianPayslipText,
+  PayslipExtraction,
+} from "@/lib/payslip-parser";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -12,19 +16,141 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+function toOptNum(val: unknown): number | null {
+  if (val === null || val === undefined || val === "") return null;
+  const n = Number(val);
+  return Number.isNaN(n) ? null : round2(n);
+}
+
+function toOptStr(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  return s.length > 0 ? s : null;
+}
+
 function normalizeAiPayslip(
   raw: Record<string, unknown>,
   engine: string,
   rawText?: string
 ): PayslipExtraction {
+  const formTypeRaw = toOptStr(raw.form_type);
   const isEa =
+    Boolean(formTypeRaw) ||
     String(raw.sourceType || "").toLowerCase().includes("ea") ||
-    Number(raw.annualIncome || 0) > 0 ||
-    Boolean(raw.taxYear);
+    raw.total_gross_income !== undefined ||
+    raw.gross_salary_wages_ot !== undefined;
 
+  if (isEa) {
+    const warnings = Array.isArray(raw.warnings)
+      ? raw.warnings.map(String).filter(Boolean)
+      : [];
+
+    const ea: EaFormExtraction = {
+      form_type:
+        formTypeRaw?.includes("8C") || formTypeRaw?.includes("EC")
+          ? "C.P.8C (EC)"
+          : "C.P.8A (EA)",
+      form_version: toOptStr(raw.form_version),
+      tax_year: raw.tax_year !== null && raw.tax_year !== undefined ? Number(raw.tax_year) || null : null,
+      form_date: toOptStr(raw.form_date),
+      employer_statement_number: toOptStr(raw.employer_statement_number),
+      employer_tax_number: toOptStr(raw.employer_tax_number),
+      employee_name: toOptStr(raw.employee_name),
+      employee_designation: toOptStr(raw.employee_designation),
+      employee_staff_or_payroll_number: toOptStr(raw.employee_staff_or_payroll_number),
+      employee_nric_or_passport: toOptStr(raw.employee_nric_or_passport),
+      employee_tin: toOptStr(raw.employee_tin),
+      employee_epf_number: toOptStr(raw.employee_epf_number),
+      employee_socso_number: toOptStr(raw.employee_socso_number),
+      employee_category: toOptStr(raw.employee_category),
+      employment_status: toOptStr(raw.employment_status),
+      employment_start_date: toOptStr(raw.employment_start_date),
+      employment_end_date: toOptStr(raw.employment_end_date),
+      retirement_or_contract_end_date: toOptStr(raw.retirement_or_contract_end_date),
+      eligible_children_for_tax_relief: toOptNum(raw.eligible_children_for_tax_relief),
+      lhdnm_branch: toOptStr(raw.lhdnm_branch),
+      employer_name: toOptStr(raw.employer_name),
+      employer_address: toOptStr(raw.employer_address),
+      employer_phone_number: toOptStr(raw.employer_phone_number),
+      employer_e_number: toOptStr(raw.employer_e_number),
+      employer_income_tax_number: toOptStr(raw.employer_income_tax_number),
+      gross_salary_wages_ot: toOptNum(raw.gross_salary_wages_ot),
+      fees_commission_bonus: toOptNum(raw.fees_commission_bonus),
+      tips_perquisites_gratuity_allowances: toOptNum(raw.tips_perquisites_gratuity_allowances),
+      income_tax_paid_by_employer: toOptNum(raw.income_tax_paid_by_employer),
+      esos_benefit: toOptNum(raw.esos_benefit),
+      gratuity_or_reward: toOptNum(raw.gratuity_or_reward),
+      arrears_prior_years: toOptNum(raw.arrears_prior_years),
+      benefits_in_kind: toOptNum(raw.benefits_in_kind),
+      residential_benefit: toOptNum(raw.residential_benefit),
+      repayment_from_unapproved_fund: toOptNum(raw.repayment_from_unapproved_fund),
+      compensation_for_loss_of_employment: toOptNum(raw.compensation_for_loss_of_employment),
+      pension: toOptNum(raw.pension),
+      other_periodic_payments: toOptNum(raw.other_periodic_payments),
+      total_gross_income: toOptNum(raw.total_gross_income),
+      pcb_paid_to_lhdnm: toOptNum(raw.pcb_paid_to_lhdnm),
+      cp38: toOptNum(raw.cp38),
+      zakat_via_salary_deduction: toOptNum(raw.zakat_via_salary_deduction),
+      tp1_relief: toOptNum(raw.tp1_relief),
+      zakat_other_than_salary_deduction: toOptNum(raw.zakat_other_than_salary_deduction),
+      children_relief: toOptNum(raw.children_relief),
+      epf_employee_contribution: toOptNum(raw.epf_employee_contribution),
+      socso_employee_contribution: toOptNum(raw.socso_employee_contribution),
+      other_approved_fund_contribution: toOptNum(raw.other_approved_fund_contribution),
+      tax_exempt_benefits: toOptNum(raw.tax_exempt_benefits),
+      certified_by_name: toOptStr(raw.certified_by_name),
+      certified_by_designation: toOptStr(raw.certified_by_designation),
+      certification_date: toOptStr(raw.certification_date),
+      warnings,
+    };
+
+    const totalGross = ea.total_gross_income ?? 0;
+    const pcb = ea.pcb_paid_to_lhdnm ?? 0;
+    const zakat = ea.zakat_via_salary_deduction ?? 0;
+    const epf = ea.epf_employee_contribution ?? 0;
+    const socso = ea.socso_employee_contribution ?? 0;
+    const eis = ea.other_approved_fund_contribution ?? 0;
+
+    const notes = [`Extracted via ${engine}.`, ...warnings];
+    const foundCount = [totalGross > 0, ea.pcb_paid_to_lhdnm !== null, ea.epf_employee_contribution !== null].filter(Boolean).length;
+
+    return {
+      sourceType: "ea-form",
+      formVersion: ea.form_version || undefined,
+      yearDetected: ea.tax_year || undefined,
+      employerName: ea.employer_name || undefined,
+      employerNo: ea.employer_e_number || undefined,
+      employerAddress: ea.employer_address || undefined,
+      employeeName: ea.employee_name || undefined,
+      employeeIc: ea.employee_nric_or_passport || undefined,
+      employeePosition: ea.employee_designation || undefined,
+      employeeEpfNo: ea.employee_epf_number || undefined,
+      monthlyGross: 0,
+      ytdGross: round2(totalGross),
+      estimatedAnnualIncome: round2(totalGross),
+      grossSalaryB1a: ea.gross_salary_wages_ot ?? undefined,
+      allowancesB1c: ea.tips_perquisites_gratuity_allowances ?? undefined,
+      monthlyPcb: round2(pcb),
+      ytdPcb: round2(pcb),
+      monthlyZakat: round2(zakat),
+      ytdZakat: round2(zakat),
+      employeeEpf: round2(epf),
+      ytdEpf: round2(epf),
+      employeeSocso: round2(socso),
+      ytdSocso: round2(socso),
+      employeeEis: round2(eis),
+      ytdEis: round2(eis),
+      eaForm: ea,
+      rawText,
+      confidence: foundCount >= 2 && warnings.length === 0 ? "high" : foundCount >= 1 ? "medium" : "low",
+      notes,
+    };
+  }
+
+  // Monthly / YTD Payslip normalization
   const annualIncome = Number(raw.annualIncome) || 0;
   const monthlyGross = Number(raw.monthlyGross) || 0;
-  const ytdGross = Number(raw.ytdGross) || (isEa ? annualIncome : 0);
+  const ytdGross = Number(raw.ytdGross) || 0;
   const estimatedAnnual =
     annualIncome > 0
       ? annualIncome
@@ -36,53 +162,35 @@ function normalizeAiPayslip(
   const monthlyPcb = Number(raw.monthlyPcb) || 0;
   const zakatPaid = Number(raw.zakatPaid) || 0;
   const monthlyZakat = Number(raw.monthlyZakat) || 0;
-
   const epf = Number(raw.epfEmployee) || 0;
   const socso = Number(raw.socsoEmployee) || 0;
   const eis = Number(raw.eisEmployee) || 0;
 
-  const notes = Array.isArray(raw.notes)
-    ? raw.notes.map(String).filter(Boolean)
-    : [];
-  notes.push(`Extracted via ${engine}.`);
-
-  const confidence =
-    raw.confidence === "high" || raw.confidence === "medium" || raw.confidence === "low"
-      ? raw.confidence
-      : estimatedAnnual > 0 && (pcbPaid > 0 || epf > 0)
-      ? "high"
-      : "medium";
-
   return {
-    sourceType: isEa ? "ea-form" : ytdGross > 0 ? "ytd" : "monthly",
-    formVersion: raw.formVersion ? String(raw.formVersion) : undefined,
+    sourceType: ytdGross > 0 ? "ytd" : "monthly",
     monthDetected: raw.monthDetected ? String(raw.monthDetected) : undefined,
-    yearDetected: raw.taxYear ? Number(raw.taxYear) : undefined,
-    employerName: raw.employerName ? String(raw.employerName) : undefined,
-    employerNo: raw.employerNo ? String(raw.employerNo) : undefined,
-    employerAddress: raw.employerAddress ? String(raw.employerAddress) : undefined,
-    employeeName: raw.employeeName ? String(raw.employeeName) : undefined,
-    employeeIc: raw.employeeIc ? String(raw.employeeIc) : undefined,
-    employeePosition: raw.employeePosition ? String(raw.employeePosition) : undefined,
-    employeeEpfNo: raw.employeeEpfNo ? String(raw.employeeEpfNo) : undefined,
+    employerName: raw.employer_name ? String(raw.employer_name) : raw.employerName ? String(raw.employerName) : undefined,
     monthlyGross: round2(monthlyGross),
     ytdGross: round2(ytdGross),
     estimatedAnnualIncome: round2(estimatedAnnual),
-    grossSalaryB1a: raw.grossSalaryB1a !== undefined && raw.grossSalaryB1a !== null ? round2(Number(raw.grossSalaryB1a) || 0) : undefined,
-    allowancesB1c: raw.allowancesB1c !== undefined && raw.allowancesB1c !== null ? round2(Number(raw.allowancesB1c) || 0) : undefined,
     monthlyPcb: round2(monthlyPcb),
     ytdPcb: round2(pcbPaid || monthlyPcb),
     monthlyZakat: round2(monthlyZakat),
     ytdZakat: round2(zakatPaid || monthlyZakat),
     employeeEpf: round2(epf),
-    ytdEpf: round2(isEa ? epf : 0),
+    ytdEpf: 0,
     employeeSocso: round2(socso),
-    ytdSocso: round2(isEa ? socso : 0),
+    ytdSocso: 0,
     employeeEis: round2(eis),
-    ytdEis: round2(isEa ? eis : 0),
+    ytdEis: 0,
     rawText,
-    confidence,
-    notes,
+    confidence:
+      raw.confidence === "high" || raw.confidence === "medium" || raw.confidence === "low"
+        ? raw.confidence
+        : estimatedAnnual > 0
+        ? "high"
+        : "medium",
+    notes: [`Extracted via ${engine}.`],
   };
 }
 
@@ -129,63 +237,98 @@ export async function POST(request: Request) {
     let fastResult: PayslipExtraction | null = null;
     if (pdfText.length >= 25) {
       fastResult = parseMalaysianPayslipText(pdfText);
-      if (fastResult.confidence === "high") {
+      const isCleanEa =
+        fastResult.sourceType === "ea-form" &&
+        fastResult.confidence === "high" &&
+        (fastResult.eaForm?.warnings.length ?? 0) === 0;
+      const isCleanPayslip =
+        fastResult.sourceType !== "ea-form" && fastResult.confidence === "high";
+
+      if (isCleanEa || isCleanPayslip) {
         return NextResponse.json(fastResult);
       }
     }
 
-    // 2. AI Vision / LLM Fallback (Groq Vision / Gemini Flash)
+    // 2. AI Vision / LLM Fallback (Gemini Visual PDF/Image + Groq Vision)
     const groqKey = process.env.GROQ_API_KEY?.trim();
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
     const canUseGroq = Boolean(groqKey && groqKey !== "your-groq-api-key");
     const canUseGemini = Boolean(geminiKey && geminiKey !== "your-gemini-api-key");
 
-    const prompt = `You are an expert Malaysian LHDN personal income tax and payroll document analyzer.
-You are given a Malaysian EA Form (Borang EA / C.P.8A Pin. 2017 / Pin. 2023+ / C.P.8B - Penyata Saraan Daripada Penggajian) or a Malaysian Monthly/YTD Payslip.
+    const prompt = `Anda ialah pengekstrak data Borang EA Malaysia (C.P.8A / Penyata Saraan daripada Penggajian) dan Slip Gaji Malaysia.
+Baca dokumen (PDF, imej atau teks OCR) dengan teliti.
 
-CRITICAL EXTRACTION RULES FOR BORANG EA / C.P.8A (especially Pin. 2017):
-1. Do NOT assume the first number in the document text is the first field value; ALWAYS verify each number directly against its item label.
-2. If a field in the form has RM0.00 (or 0.00), return 0 (never null).
-3. Identify Employer from "Nama dan Alamat Majikan" and "No. Majikan E" -> "employerName", "employerAddress", "employerNo".
-4. Identify Employee from "BUTIRAN PEKERJA" -> "employeeName", "employeeIc" (No. K.P.), "employeePosition" (Jawatan), "employeeEpfNo" (No. KWSP).
-5. For income, read ONLY Bahagian B and Bahagian C:
-   - B1(a) "Gaji kasar, upah atau gaji cuti (termasuk gaji lebih masa)" -> "grossSalaryB1a"
-   - B1(c) "Tip kasar, perkuisit, penerimaan sagu hati atau elaun-elaun lain" -> "allowancesB1c"
-   - "JUMLAH" after Bahagian B and Bahagian C -> "annualIncome"
-6. For deductions in Bahagian D:
-   - "Potongan Cukai Bulanan (PCB) yang dibayar kepada LHDNM" -> "pcbPaid"
-   - "Zakat yang dibayar melalui potongan gaji" -> "zakatPaid"
-7. For employee contributions in Bahagian E:
-   - "KUMPULAN WANG SIMPANAN PEKERJA" (employee share) -> "epfEmployee"
-   - "PERKESO" (employee share) -> "socsoEmployee"
-   - "Sistem Insurans Pekerjaan (SIP)" -> "eisEmployee"
-8. Header: "Bagi Tahun Berakhir 31 Disember [YEAR]" -> "taxYear", and form version (e.g. "C.P.8A - Pin. 2017") -> "formVersion".
+PERATURAN UTAMA BORANG EA / EC (C.P.8A Pin. 2017–2024 atau C.P.8C):
+1. Jangan mengandaikan susunan teks OCR sama dengan susunan visual borang. Padankan setiap angka dengan label item yang betul berdasarkan kedudukan visual lajur dan baris.
+2. Kenal pasti jenis borang ("C.P.8A (EA)" atau "C.P.8C (EC)"), versi pin (cth. "Pin. 2017", "Pin. 2024", atau null), dan tahun saraan daripada "BAGI TAHUN BERAKHIR 31 DISEMBER".
+3. Jika maklumat tidak wujud, pulangkan null. Jika wujud dan bernilai 0.00, pulangkan 0 (bukan null). Jika tidak jelas atau bercanggah, pulangkan null dan jelaskan dalam "warnings".
+4. Baca Bahagian B dan Bahagian C sahaja untuk pendapatan. "total_gross_income" MESTI diambil daripada ruang "JUMLAH" selepas Bahagian B dan C. Jangan kira semula melainkan ruang itu tiada; jika jumlah wujud tetapi tidak konsisten dengan hasil tambah B+C, kekalkan nilai bercetak dan tambah amaran ke "warnings".
+5. Jangan masukkan PCB, CP38, KWSP, PERKESO, zakat, pelepasan, atau "tax_exempt_benefits" (Bahagian F / Jumlah Elaun/Perkuisit/Pemberian/Manfaat yang Dikecualikan Cukai) ke dalam "total_gross_income".
+6. Simpan semua nilai wang sebagai nombor (cth. 111807.69), tanpa "RM" atau koma ribuan.
 
-If this is a Monthly Payslip instead of an EA Form:
-- Basic Salary / Gross Earnings -> "monthlyGross" (and "ytdGross" if YTD column exists)
-- PCB / MTD -> "monthlyPcb" (and "ytdPcb" / "pcbPaid" if YTD column exists)
-- Zakat -> "monthlyZakat" (and "ytdZakat" / "zakatPaid" if YTD column exists)
-- EPF / KWSP (employee share) -> "epfEmployee"
-- SOCSO / PERKESO (employee share) -> "socsoEmployee"
-- EIS / SIP (employee share) -> "eisEmployee"
-- Month detected -> "monthDetected" (e.g., "October 2026")
-
-Return ONLY raw JSON (no markdown formatting, no \`\`\`json) with this exact schema:
+Jika ini Borang EA/EC, pulangkan JSON tepat dengan kunci berikut (tiada markdown):
 {
-  "sourceType": "ea-form" | "monthly" | "ytd",
-  "formVersion": string or null,
-  "employerName": string,
-  "employerNo": string or null,
-  "employerAddress": string or null,
-  "employeeName": string or null,
-  "employeeIc": string or null,
-  "employeePosition": string or null,
-  "employeeEpfNo": string or null,
-  "taxYear": number or null,
-  "monthDetected": string or null,
+  "form_type": "C.P.8A (EA)" | "C.P.8C (EC)",
+  "form_version": string | null,
+  "tax_year": number | null,
+  "form_date": string | null,
+  "employer_statement_number": string | null,
+  "employer_tax_number": string | null,
+  "employee_name": string | null,
+  "employee_designation": string | null,
+  "employee_staff_or_payroll_number": string | null,
+  "employee_nric_or_passport": string | null,
+  "employee_tin": string | null,
+  "employee_epf_number": string | null,
+  "employee_socso_number": string | null,
+  "employee_category": string | null,
+  "employment_status": string | null,
+  "employment_start_date": string | null,
+  "employment_end_date": string | null,
+  "retirement_or_contract_end_date": string | null,
+  "eligible_children_for_tax_relief": number | null,
+  "lhdnm_branch": string | null,
+  "employer_name": string | null,
+  "employer_address": string | null,
+  "employer_phone_number": string | null,
+  "employer_e_number": string | null,
+  "employer_income_tax_number": string | null,
+  "gross_salary_wages_ot": number | null,
+  "fees_commission_bonus": number | null,
+  "tips_perquisites_gratuity_allowances": number | null,
+  "income_tax_paid_by_employer": number | null,
+  "esos_benefit": number | null,
+  "gratuity_or_reward": number | null,
+  "arrears_prior_years": number | null,
+  "benefits_in_kind": number | null,
+  "residential_benefit": number | null,
+  "repayment_from_unapproved_fund": number | null,
+  "compensation_for_loss_of_employment": number | null,
+  "pension": number | null,
+  "other_periodic_payments": number | null,
+  "total_gross_income": number | null,
+  "pcb_paid_to_lhdnm": number | null,
+  "cp38": number | null,
+  "zakat_via_salary_deduction": number | null,
+  "tp1_relief": number | null,
+  "zakat_other_than_salary_deduction": number | null,
+  "children_relief": number | null,
+  "epf_employee_contribution": number | null,
+  "socso_employee_contribution": number | null,
+  "other_approved_fund_contribution": number | null,
+  "tax_exempt_benefits": number | null,
+  "certified_by_name": string | null,
+  "certified_by_designation": string | null,
+  "certification_date": string | null,
+  "warnings": [string]
+}
+
+Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
+{
+  "sourceType": "monthly" | "ytd",
+  "employerName": string | null,
+  "monthDetected": string | null,
   "annualIncome": number,
-  "grossSalaryB1a": number,
-  "allowancesB1c": number,
   "monthlyGross": number,
   "ytdGross": number,
   "pcbPaid": number,
@@ -198,7 +341,44 @@ Return ONLY raw JSON (no markdown formatting, no \`\`\`json) with this exact sch
   "confidence": "high" | "medium" | "low"
 }`;
 
-    // Try Groq Vision first if available
+    // For PDFs, Gemini can read the visual PDF layout directly via inlineData (avoids scrambled OCR text order!)
+    if (canUseGemini) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
+        const contents = [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: isPdf ? "application/pdf" : file.type || "image/jpeg",
+              data: Buffer.from(arrayBuffer).toString("base64"),
+            },
+          },
+        ];
+
+        const response = await ai.models.generateContent({
+          model: GEMINI_MODEL,
+          contents,
+          config: {
+            temperature: 0.1,
+            maxOutputTokens: 1500,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+          },
+        });
+
+        const raw = response.text || "";
+        const cleanJson = raw
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```$/i, "")
+          .trim();
+        const parsed = JSON.parse(cleanJson);
+        const aiExtraction = normalizeAiPayslip(parsed, "Gemini Vision", pdfText || undefined);
+        return NextResponse.json(aiExtraction);
+      } catch (geminiErr) {
+        console.warn("Gemini payslip/EA parse failed, falling back to Groq:", geminiErr);
+      }
+    }
+
+    // Try Groq Vision if Gemini unavailable/failed
     if (canUseGroq && (pdfText.length >= 20 || file.type.startsWith("image/"))) {
       try {
         const parsed = await callGroqJson({
@@ -210,58 +390,16 @@ Return ONLY raw JSON (no markdown formatting, no \`\`\`json) with this exact sch
               ? null
               : Buffer.from(arrayBuffer).toString("base64"),
           imageMimeType: file.type || "image/jpeg",
-          maxTokens: 600,
+          maxTokens: 1500,
         });
         const aiExtraction = normalizeAiPayslip(parsed, "Groq Vision", pdfText || undefined);
         return NextResponse.json(aiExtraction);
       } catch (groqErr) {
-        console.warn("Groq payslip parse failed, falling back to Gemini:", groqErr);
+        console.warn("Groq payslip/EA parse failed:", groqErr);
       }
     }
 
-    // Try Gemini Flash
-    if (canUseGemini) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
-        const contents =
-          pdfText.length >= 20
-            ? `${prompt}\n\nDOCUMENT TEXT:\n${pdfText.slice(0, 15000)}`
-            : [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: isPdf
-                      ? "application/pdf"
-                      : file.type || "image/jpeg",
-                    data: Buffer.from(arrayBuffer).toString("base64"),
-                  },
-                },
-              ];
-
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents,
-          config: {
-            temperature: 0.1,
-            maxOutputTokens: 600,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-          },
-        });
-
-        const raw = response.text || "";
-        const cleanJson = raw
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```$/i, "")
-          .trim();
-        const parsed = JSON.parse(cleanJson);
-        const aiExtraction = normalizeAiPayslip(parsed, "Gemini AI", pdfText || undefined);
-        return NextResponse.json(aiExtraction);
-      } catch (geminiErr) {
-        console.warn("Gemini payslip parse failed:", geminiErr);
-      }
-    }
-
-    // If fast regex had medium/low result, return it
+    // Fall back to regex result if available
     if (fastResult) {
       return NextResponse.json(fastResult);
     }
