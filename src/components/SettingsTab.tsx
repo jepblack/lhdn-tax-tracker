@@ -10,6 +10,8 @@ import {
   CloudOff,
   Crown,
   Database,
+  ExternalLink,
+  FileText,
   FileUp,
   Loader2,
   LogOut,
@@ -1225,14 +1227,20 @@ export function SettingsTab({
                   className="space-y-2.5 rounded-xl border border-emerald-200/80 bg-white/60 p-3"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 font-bold text-emerald-950">
-                      <Sparkles className="h-4 w-4 text-emerald-600" />
-                      <span>
-                        {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
-                        {payslipData.sourceType === "ea-form"
-                          ? `${personalization.language === "bm" ? "Borang EA" : "EA Form"}${payslipData.formVersion ? ` (${payslipData.formVersion})` : ""}`
-                          : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
-                      </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                        <Sparkles className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span className="truncate">
+                          {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
+                          {payslipData.sourceType === "ea-form"
+                            ? `${personalization.language === "bm" ? "Borang EA" : "EA Form"}${payslipData.formVersion ? ` (${payslipData.formVersion})` : ""}`
+                            : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 flex items-center gap-1 truncate pl-5 text-[11px] font-medium text-emerald-800">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{item.file.name}</span>
+                      </p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
@@ -1486,48 +1494,157 @@ export function SettingsTab({
           </div>
         )}
 
-        {eaEmployers.length > 0 && (
-          <div className="space-y-1.5 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-800">
-                {personalization.language === "bm"
-                  ? `Borang EA Tersimpan (TT ${profile.taxYear}) · ${eaEmployers.length} Majikan`
-                  : `Saved EA Forms (YA ${profile.taxYear}) · ${eaEmployers.length} Employer${eaEmployers.length > 1 ? "s" : ""}`}
-              </span>
-              <span className="text-[11px] font-semibold text-emerald-700">
-                {personalization.language === "bm" ? "Jumlah: " : "Combined: "}
-                {formatRM(
-                  eaEmployers.reduce((s, e) => s + e.annualIncome, 0),
-                  true
+        {(() => {
+          const yearPayslipExpenses = expenses.filter(
+            (exp) =>
+              exp.taxYear === profile.taxYear &&
+              (exp.invoiceNumber?.startsWith(`PAYSLIP-EPF-${profile.taxYear}`) ||
+                exp.invoiceNumber?.startsWith(`PAYSLIP-SOCSO-${profile.taxYear}`)) &&
+              Boolean(exp.receiptFileName || exp.receiptUrl || exp.receiptPath)
+          );
+
+          const matchedExpenseIds = new Set<string>();
+          const eaWithFiles = eaEmployers.map((emp) => {
+            const matchedExp = yearPayslipExpenses.find(
+              (exp) =>
+                exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}-${emp.key}` ||
+                exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}-${emp.key}` ||
+                (emp.fileName && exp.receiptFileName === emp.fileName)
+            );
+            if (matchedExp) {
+              yearPayslipExpenses.forEach((exp) => {
+                if (
+                  exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}-${emp.key}` ||
+                  exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}-${emp.key}` ||
+                  (matchedExp.receiptPath && exp.receiptPath === matchedExp.receiptPath)
+                ) {
+                  matchedExpenseIds.add(exp.id);
+                }
+              });
+            }
+            const fileUrl =
+              matchedExp?.receiptUrl && matchedExp.receiptUrl !== "sample://attached"
+                ? matchedExp.receiptUrl
+                : null;
+            return {
+              ...emp,
+              displayFileName: emp.fileName || matchedExp?.receiptFileName || "EA Form",
+              fileUrl,
+            };
+          });
+
+          const extraFileMap = new Map<
+            string,
+            { id: string; merchant: string; fileName: string; fileUrl: string | null }
+          >();
+          for (const exp of yearPayslipExpenses) {
+            if (matchedExpenseIds.has(exp.id)) continue;
+            const dedupeKey =
+              exp.receiptPath || exp.receiptFileName || exp.invoiceNumber || exp.id;
+            if (!extraFileMap.has(dedupeKey)) {
+              extraFileMap.set(dedupeKey, {
+                id: exp.id,
+                merchant: exp.merchant,
+                fileName: exp.receiptFileName || "EA Form / Payslip",
+                fileUrl:
+                  exp.receiptUrl && exp.receiptUrl !== "sample://attached"
+                    ? exp.receiptUrl
+                    : null,
+              });
+            }
+          }
+          const extraFiles = Array.from(extraFileMap.values());
+          const totalUploadedCount = eaWithFiles.length + extraFiles.length;
+
+          if (totalUploadedCount === 0) return null;
+
+          return (
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-800">
+                  {personalization.language === "bm"
+                    ? `Fail Borang EA / Slip Gaji Dimuat Naik (TT ${profile.taxYear}) · ${totalUploadedCount} Fail`
+                    : `Uploaded EA Forms / Payslips (YA ${profile.taxYear}) · ${totalUploadedCount} File${totalUploadedCount > 1 ? "s" : ""}`}
+                </span>
+                {eaWithFiles.length > 0 && (
+                  <span className="text-[11px] font-semibold text-emerald-700">
+                    {personalization.language === "bm" ? "Jumlah: " : "Combined: "}
+                    {formatRM(
+                      eaWithFiles.reduce((s, e) => s + e.annualIncome, 0),
+                      true
+                    )}
+                  </span>
                 )}
-              </span>
-            </div>
-            <div className="space-y-1">
-              {eaEmployers.map((emp) => (
-                <div
-                  key={emp.key}
-                  className="flex items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-1.5 text-[11px]"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-900">{emp.name}</p>
-                    <p className="text-slate-500">
-                      {personalization.language === "bm" ? "Pendapatan: " : "Income: "}
-                      {formatRM(emp.annualIncome, true)} · PCB:{" "}
-                      {formatRM(emp.pcbPaid, true)}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveEaEmployer(emp.key)}
-                    className="shrink-0 text-[11px] font-semibold text-rose-600 hover:underline"
+              </div>
+              <div className="space-y-1.5">
+                {eaWithFiles.map((emp) => (
+                  <div
+                    key={emp.key}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-2 text-[11px]"
                   >
-                    {personalization.language === "bm" ? "Buang" : "Remove"}
-                  </button>
-                </div>
-              ))}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-900">{emp.name}</p>
+                      <p className="mt-0.5 flex items-center gap-1 truncate text-slate-600">
+                        <FileText className="h-3 w-3 shrink-0 text-emerald-600" />
+                        <span className="truncate">{emp.displayFileName}</span>
+                      </p>
+                      <p className="mt-0.5 text-slate-500">
+                        {personalization.language === "bm" ? "Pendapatan: " : "Income: "}
+                        {formatRM(emp.annualIncome, true)} · PCB:{" "}
+                        {formatRM(emp.pcbPaid, true)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {emp.fileUrl && (
+                        <a
+                          href={emp.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {personalization.language === "bm" ? "Lihat" : "View"}
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEaEmployer(emp.key)}
+                        className="text-[11px] font-semibold text-rose-600 hover:underline"
+                      >
+                        {personalization.language === "bm" ? "Buang" : "Remove"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {extraFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-2 text-[11px]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-900">{file.merchant}</p>
+                      <p className="mt-0.5 flex items-center gap-1 truncate text-slate-600">
+                        <FileText className="h-3 w-3 shrink-0 text-emerald-600" />
+                        <span className="truncate">{file.fileName}</span>
+                      </p>
+                    </div>
+                    {file.fileUrl && (
+                      <a
+                        href={file.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        {personalization.language === "bm" ? "Lihat" : "View"}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
