@@ -804,7 +804,7 @@ export function TaxApp() {
     expenseData: Omit<TaxExpense, "id" | "createdAt">,
     receiptFile: File | null,
     editingId?: string
-  ) {
+  ): Promise<TaxExpense> {
     if (editingId) {
       const updated = await updateExpense(
         editingId,
@@ -815,13 +815,14 @@ export function TaxApp() {
       setExpenses((prev) =>
         prev.map((e) => (e.id === editingId ? updated : e))
       );
-      return;
+      return updated;
     }
     const created = await createExpense(expenseData, receiptFile, userId);
     setExpenses((prev) => [created, ...prev]);
     if (created.taxYear !== taxYear && SUPPORTED_TAX_YEARS.includes(created.taxYear)) {
       setTaxYear(created.taxYear);
     }
+    return created;
   }
 
   async function handleDeleteExpense(expense: TaxExpense) {
@@ -862,24 +863,31 @@ export function TaxApp() {
     kind: "epf" | "socso",
     payload: Omit<TaxExpense, "id" | "createdAt">,
     file: File | null
-  ) {
+  ): Promise<TaxExpense> {
     const existing = findExistingStatutoryRelief(payload.taxYear, kind);
     if (existing) {
-      await handleSaveExpense(
+      return await handleSaveExpense(
         {
           ...existing,
           ...payload,
-          receiptUrl: file ? existing.receiptUrl : payload.receiptUrl ?? existing.receiptUrl,
-          receiptPath: file ? existing.receiptPath : payload.receiptPath ?? existing.receiptPath,
-          receiptFileName: file ? file.name : payload.receiptFileName ?? existing.receiptFileName,
-          receiptMimeType: file ? file.type : payload.receiptMimeType ?? existing.receiptMimeType,
+          receiptUrl: file
+            ? existing.receiptUrl
+            : payload.receiptUrl ?? existing.receiptUrl,
+          receiptPath: file
+            ? existing.receiptPath
+            : payload.receiptPath ?? existing.receiptPath,
+          receiptFileName: file
+            ? file.name
+            : payload.receiptFileName ?? existing.receiptFileName,
+          receiptMimeType: file
+            ? file.type
+            : payload.receiptMimeType ?? existing.receiptMimeType,
         },
         file,
         existing.id
       );
-      return;
     }
-    await handleSaveExpense(payload, file);
+    return await handleSaveExpense(payload, file);
   }
 
   async function handleLogPayslipReliefs(
@@ -888,8 +896,9 @@ export function TaxApp() {
     payslipFile: File | null
   ) {
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    let savedEpf: TaxExpense | null = null;
     if (epfAmount > 0) {
-      await upsertStatutoryRelief(
+      savedEpf = await upsertStatutoryRelief(
         "epf",
         {
           taxYear,
@@ -907,6 +916,7 @@ export function TaxApp() {
       );
     }
     if (socsoAmount > 0) {
+      const reuseEpfReceipt = Boolean(savedEpf?.receiptPath || savedEpf?.receiptUrl);
       await upsertStatutoryRelief(
         "socso",
         {
@@ -920,8 +930,16 @@ export function TaxApp() {
           expenseDate: today,
           invoiceNumber: `PAYSLIP-SOCSO-${taxYear}`,
           aiExtracted: true,
+          ...(reuseEpfReceipt && savedEpf
+            ? {
+                receiptPath: savedEpf.receiptPath,
+                receiptUrl: savedEpf.receiptUrl,
+                receiptFileName: savedEpf.receiptFileName,
+                receiptMimeType: savedEpf.receiptMimeType,
+              }
+            : {}),
         },
-        payslipFile
+        reuseEpfReceipt ? null : payslipFile
       );
     }
   }
@@ -1582,7 +1600,9 @@ export function TaxApp() {
           setScannerOpen(false);
           openUpgradeModal(reason);
         }}
-        onSave={handleSaveExpense}
+        onSave={async (d, f, id) => {
+          await handleSaveExpense(d, f, id);
+        }}
       />
 
       {/* Pricing & Malaysia Payment Checkout Modal */}

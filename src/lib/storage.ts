@@ -558,9 +558,21 @@ export async function createExpense(
       receiptMimeType = receiptFile.type || "application/pdf";
       receiptFileName = pdfName;
 
-      const { error: uploadError } = await supabase.storage
+      let { error: uploadError } = await supabase.storage
         .from("receipts")
         .upload(receiptPath, receiptFile, { upsert: true });
+
+      if (uploadError) {
+        // Retry with unique timestamp prefix in case storage RLS disallows overwriting existing object
+        const uniquePath = `${folder}/${Date.now()}_${pdfName}`;
+        const retry = await supabase.storage
+          .from("receipts")
+          .upload(uniquePath, receiptFile, { upsert: false });
+        if (!retry.error) {
+          receiptPath = uniquePath;
+          uploadError = null;
+        }
+      }
 
       if (!uploadError) {
         const { data: signed } = await supabase.storage
@@ -693,15 +705,28 @@ export async function updateExpense(
       receiptMimeType = receiptFile.type || "application/pdf";
       receiptFileName = pdfName;
 
-      const { error: uploadError } = await supabase.storage
+      let { error: uploadError } = await supabase.storage
         .from("receipts")
         .upload(receiptPath, receiptFile, { upsert: true });
+
+      if (uploadError) {
+        const uniquePath = `${folder}/${Date.now()}_${pdfName}`;
+        const retry = await supabase.storage
+          .from("receipts")
+          .upload(uniquePath, receiptFile, { upsert: false });
+        if (!retry.error) {
+          receiptPath = uniquePath;
+          uploadError = null;
+        }
+      }
 
       if (!uploadError) {
         const { data: signed } = await supabase.storage
           .from("receipts")
           .createSignedUrl(receiptPath, 3600);
         receiptUrl = signed?.signedUrl || null;
+      } else if (!expense.receiptPath) {
+        receiptPath = null;
       }
 
       if (expense.metadata) {
