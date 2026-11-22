@@ -1,6 +1,7 @@
 export interface PayslipExtraction {
   sourceType: "monthly" | "ytd" | "ea-form";
   monthDetected?: string;
+  yearDetected?: number;
   monthlyGross: number;
   ytdGross: number;
   estimatedAnnualIncome: number;
@@ -49,7 +50,7 @@ const MONTH_MAP: Record<string, number> = {
 
 /**
  * Parses extracted text from a Malaysian payslip (Swingvy, Kakitangan, Talenox,
- * SQL Payroll, AutoCount, Workday, SAP, etc.) or EA Form (C.P.8A).
+ * SQL Payroll, AutoCount, Workday, SAP, etc.) or EA Form (C.P.8A / C.P.8B).
  */
 export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   const lines = rawText
@@ -57,13 +58,40 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
     .map((l) => l.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-  const lower = rawText.toLowerCase();
+  // EA Form detection heuristics
   const isEaForm =
-    lower.includes("c.p.8a") ||
-    lower.includes("cp8a") ||
-    lower.includes("penyata saraan") ||
-    lower.includes("statement of remuneration") ||
-    lower.includes("ea form");
+    /c\.?\s*p\.?\s*8[ab]/i.test(rawText) ||
+    /cp\s*8[ab]/i.test(rawText) ||
+    /borang\s*e\.?\s*a/i.test(rawText) ||
+    /\bea\s*form\b/i.test(rawText) ||
+    /penyata\s*saraan\s*daripada\s*penggajian/i.test(rawText) ||
+    /penyata\s*saraan/i.test(rawText) ||
+    /statement\s*of\s*remuneration/i.test(rawText) ||
+    /jumlah\s*\(\s*b1\s*[-–]\s*b5\s*\)/i.test(rawText) ||
+    /(?:bahagian\s*b\s*[:\-].*bahagian\s*d\s*[:\-])/is.test(rawText) ||
+    /(?:pendapatan\s*penggajian.*potongan\s*cukai\s*bulanan)/is.test(rawText);
+
+  // Detect tax year (especially prominent on EA Forms)
+  let yearDetected: number | undefined;
+  const yearMatch = rawText.match(
+    /(?:bagi\s*tahun|for\s*the\s*year|tahun\s*taksiran|taksiran|year\s*ended)\s*(?:berakhir|ended)?\s*(?:31\s*disember|31\s*december)?\s*(202[0-9])/i
+  );
+  if (yearMatch) {
+    const yr = parseInt(yearMatch[1], 10);
+    if (yr >= 2020 && yr <= 2035) yearDetected = yr;
+  }
+
+  // Detect employer name
+  let employerName: string | undefined;
+  const employerMatch = rawText.match(
+    /(?:nama\s*majikan|name\s*of\s*employer)\s*[:\-]?\s*([A-Za-z0-9\s.,&'()\/-]{3,80})/i
+  );
+  if (employerMatch) {
+    const raw = employerMatch[1].split(/\r?\n/)[0].trim();
+    if (raw.length > 2 && !/no\s*majikan/i.test(raw)) {
+      employerName = raw;
+    }
+  }
 
   // Detect payslip month (to estimate YTD if only monthly figures exist)
   let detectedMonthNum = new Date().getMonth() + 1;
@@ -76,37 +104,73 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
     detectedMonthNum = MONTH_MAP[monthMatch[1].toLowerCase()] || detectedMonthNum;
   }
 
-  // Helper to extract amounts on lines matching a regex
-  const findAmountsOnMatchingLines = (
+  // Helper to extract numbers formatted as currency (e.g. 5,000.00 or 5000.00)
+  const extractAmountsFromStr = (str: string): number[] => {
+    const matches = [
+      ...str.matchAll(
+        /(?:RM|MYR)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})\b/gi
+      ),
+    ];
+    const results: number[] = [];
+    for (const m of matches) {
+      const val = parseFloat(m[1].replace(/,/g, ""));
+      if (val > 0 && val < 5000000) {
+        results.push(val);
+      }
+    }
+    return results;
+  };
+
+  /**
+   * Searches for amounts on lines matching a pattern.
+   * If the matching line doesn't have an amount, it inspects up to `lookaheadLines`
+   * subsequent lines (handles PDF table extractions where headers and figures split lines).
+   */
+  const findAmountsNearPattern = (
     pattern: RegExp,
-    excludePattern?: RegExp
+    excludePattern?: RegExp,
+    lookaheadLines = 3
   ): number[] => {
     const results: number[] = [];
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       if (!pattern.test(line)) continue;
       if (excludePattern && excludePattern.test(line)) continue;
-      const matches = [
-        ...line.matchAll(
-          /(?:RM|MYR)?\s*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})/gi
-        ),
-      ];
-      for (const m of matches) {
-        const val = parseFloat(m[1].replace(/,/g, ""));
-        if (val > 0 && val < 2000000) {
-          results.push(val);
+
+      const direct = extractAmountsFromStr(line);
+      if (direct.length > 0) {
+        results.push(...direct);
+        continue;
+      }
+
+      // Check subsequent lines if current line has label only
+      for (let j = 1; j <= lookaheadLines && i + j < lines.length; j++) {
+        const nextLine = lines[i + j];
+        // Stop if entering a new major section
+        if (/^(?:bahagian\s+[a-f]|section\s+[a-f]|c\.?p\.?8[ab]|borang\s*ea)/i.test(nextLine)) {
+          break;
+        }
+        const nextAmounts = extractAmountsFromStr(nextLine);
+        if (nextAmounts.length > 0) {
+          results.push(...nextAmounts);
+          break; // take the closest line with figures
         }
       }
     }
     return results;
   };
 
-  // 1. Gross Income / Basic Salary
-  const ytdGrossCandidates = findAmountsOnMatchingLines(
+  // 1. Gross Income / Basic Salary / EA Remuneration
+  // EA Form Section B specific patterns
+  const eaGrossCandidates = findAmountsNearPattern(
+    /(jumlah\s*\(\s*b1\s*[-–]\s*b5\s*\)|jumlah\s*saraan\s*kasar|total\s*gross\s*remuneration|jumlah\s*pendapatan\s*penggajian|jumlah\s*b1|gaji\s*kasar,\s*upah|gaji\s*kasar)/i
+  );
+  const ytdGrossCandidates = findAmountsNearPattern(
     /(ytd\s*(gross|income|earnings|salary|remuneration)|total\s*gross\s*ytd|gross\s*remuneration|pendapatan\s*kasar)/i
   );
-  const monthlyGrossCandidates = findAmountsOnMatchingLines(
+  const monthlyGrossCandidates = findAmountsNearPattern(
     /(total\s*earnings|gross\s*pay|gross\s*salary|gross\s*income|basic\s*salary|basic\s*pay|gaji\s*pokok|jumlah\s*pendapatan)/i,
-    /(ytd|employer|deduction|net\s*pay|nett\s*pay)/i
+    /(ytd|employer|majikan|deduction|potongan|net\s*pay|nett\s*pay)/i
   );
 
   let ytdGross = ytdGrossCandidates.length > 0 ? Math.max(...ytdGrossCandidates) : 0;
@@ -125,12 +189,16 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   }
 
   // 2. PCB / MTD (Potongan Cukai Bulanan)
-  const ytdPcbCandidates = findAmountsOnMatchingLines(
+  // EA Form Section D1 specific
+  const eaPcbCandidates = findAmountsNearPattern(
+    /(potongan\s*cukai\s*bulanan\s*\(pcb\)|potongan\s*cukai\s*bulanan|d1[\s.:)]|cukai\s*yang\s*dipotong)/i
+  );
+  const ytdPcbCandidates = findAmountsNearPattern(
     /(ytd\s*(pcb|mtd|tax)|pcb\s*ytd|mtd\s*ytd|total\s*(pcb|mtd)|potongan\s*cukai\s*bulanan.*jumlah)/i
   );
-  const pcbCandidates = findAmountsOnMatchingLines(
+  const pcbCandidates = findAmountsNearPattern(
     /(\bpcb\b|\bmtd\b|monthly\s*tax\s*deduction|potongan\s*cukai\s*bulanan|schedular\s*tax)/i,
-    /(ytd|employer)/i
+    /(ytd|employer|majikan)/i
   );
 
   let ytdPcb = ytdPcbCandidates.length > 0 ? Math.max(...ytdPcbCandidates) : 0;
@@ -144,8 +212,12 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   }
 
   // 3. Zakat
-  const ytdZakatCandidates = findAmountsOnMatchingLines(/(ytd\s*zakat|zakat\s*ytd)/i);
-  const zakatCandidates = findAmountsOnMatchingLines(/\bzakat\b/i, /ytd/i);
+  // EA Form Section D3 specific
+  const eaZakatCandidates = findAmountsNearPattern(
+    /(zakat\s*yang\s*dibayar\s*melalui\s*potongan\s*gaji|zakat\s*potongan\s*gaji|d3[\s.:)])/i
+  );
+  const ytdZakatCandidates = findAmountsNearPattern(/(ytd\s*zakat|zakat\s*ytd)/i);
+  const zakatCandidates = findAmountsNearPattern(/\bzakat\b/i, /ytd/i);
   let ytdZakat = ytdZakatCandidates.length > 0 ? Math.max(...ytdZakatCandidates) : 0;
   let monthlyZakat = zakatCandidates.length > 0 ? zakatCandidates[0] : 0;
   if (zakatCandidates.length >= 2 && ytdZakat === 0) {
@@ -157,13 +229,18 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   }
 
   // 4. Employee EPF (KWSP)
-  const ytdEpfCandidates = findAmountsOnMatchingLines(
-    /(ytd\s*(epf|kwsp)|employee\s*epf\s*ytd|epf\s*ytd)/i,
-    /employer/i
+  // EA Form Section E1 specific
+  const eaEpfCandidates = findAmountsNearPattern(
+    /(kumpulan\s*wang\s*simpanan\s*pekerja|kwsp|epf|e1[\s.:)])/i,
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
   );
-  const epfCandidates = findAmountsOnMatchingLines(
-    /(employee\s*(epf|kwsp)|\bepf\b|\bkwsp\b)/i,
-    /(employer|majikan|ytd)/i
+  const ytdEpfCandidates = findAmountsNearPattern(
+    /(ytd\s*(epf|kwsp)|employee\s*epf\s*ytd|epf\s*ytd)/i,
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
+  );
+  const epfCandidates = findAmountsNearPattern(
+    /(employee\s*(epf|kwsp)|\bepf\b|\bkwsp\b|caruman\s*pekerja)/i,
+    /(majikan|employer|ytd|^bahagian\s+[a-f]|^section\s+[a-f])/i
   );
   let ytdEpf = ytdEpfCandidates.length > 0 ? Math.max(...ytdEpfCandidates) : 0;
   let employeeEpf = epfCandidates.length > 0 ? epfCandidates[0] : 0;
@@ -176,13 +253,22 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   }
 
   // 5. Employee SOCSO (PERKESO) & EIS (SIP)
-  const socsoCandidates = findAmountsOnMatchingLines(
-    /(employee\s*(socso|perkeso)|\bsocso\b|\bperkeso\b)/i,
-    /(employer|majikan)/i
+  // EA Form Section E2 & E3 specific
+  const eaSocsoCandidates = findAmountsNearPattern(
+    /(pertubuhan\s*keselamatan\s*sosial|perkeso|socso|e2[\s.:)])/i,
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
   );
-  const eisCandidates = findAmountsOnMatchingLines(
+  const eaEisCandidates = findAmountsNearPattern(
+    /(sistem\s*insurans\s*pekerjaan|sip|eis|e3[\s.:)])/i,
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
+  );
+  const socsoCandidates = findAmountsNearPattern(
+    /(employee\s*(socso|perkeso)|\bsocso\b|\bperkeso\b)/i,
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
+  );
+  const eisCandidates = findAmountsNearPattern(
     /(employee\s*(eis|sip)|\beis\b|\bsip\b)/i,
-    /(employer|majikan)/i
+    /(majikan|employer|^bahagian\s+[a-f]|^section\s+[a-f])/i
   );
 
   let employeeSocso = socsoCandidates.length > 0 ? socsoCandidates[0] : 0;
@@ -206,13 +292,51 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
 
   if (isEaForm) {
     sourceType = "ea-form";
-    estimatedAnnualIncome = ytdGross || monthlyGross;
-    ytdPcb = ytdPcb || monthlyPcb;
-    ytdZakat = ytdZakat || monthlyZakat;
-    ytdEpf = ytdEpf || employeeEpf;
-    ytdSocso = ytdSocso || employeeSocso;
-    ytdEis = ytdEis || employeeEis;
-    notes.push("Detected EA Form (C.P.8A) annual totals.");
+    const bestEaGross =
+      eaGrossCandidates.length > 0
+        ? Math.max(...eaGrossCandidates)
+        : ytdGross > 0
+        ? ytdGross
+        : monthlyGross;
+    estimatedAnnualIncome = bestEaGross;
+    ytdGross = bestEaGross;
+
+    ytdPcb =
+      eaPcbCandidates.length > 0
+        ? Math.max(...eaPcbCandidates)
+        : ytdPcb || monthlyPcb;
+
+    ytdZakat =
+      eaZakatCandidates.length > 0
+        ? Math.max(...eaZakatCandidates)
+        : ytdZakat || monthlyZakat;
+
+    const bestEpf =
+      eaEpfCandidates.length > 0
+        ? Math.max(...eaEpfCandidates)
+        : ytdEpf || employeeEpf;
+    ytdEpf = bestEpf;
+    employeeEpf = bestEpf;
+
+    const bestSocso =
+      eaSocsoCandidates.length > 0
+        ? Math.max(...eaSocsoCandidates)
+        : ytdSocso || employeeSocso;
+    ytdSocso = bestSocso;
+    employeeSocso = bestSocso;
+
+    const bestEis =
+      eaEisCandidates.length > 0
+        ? Math.max(...eaEisCandidates)
+        : ytdEis || employeeEis;
+    ytdEis = bestEis;
+    employeeEis = bestEis;
+
+    notes.push(
+      yearDetected
+        ? `Detected Borang EA (C.P.8A) annual totals for Year ${yearDetected}.`
+        : "Detected Borang EA (C.P.8A) annual totals."
+    );
   } else if (ytdGross > 0) {
     sourceType = "ytd";
     estimatedAnnualIncome =
@@ -268,6 +392,8 @@ export function parseMalaysianPayslipText(rawText: string): PayslipExtraction {
   return {
     sourceType,
     monthDetected,
+    yearDetected,
+    employerName,
     monthlyGross: round2(monthlyGross),
     ytdGross: round2(ytdGross),
     estimatedAnnualIncome: round2(estimatedAnnualIncome),

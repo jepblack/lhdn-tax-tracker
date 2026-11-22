@@ -128,47 +128,80 @@ export function SettingsTab({
         file.type === "application/pdf" ||
         file.name.toLowerCase().endsWith(".pdf");
 
-      if (isPdf) {
-        setPayslipProgress("Reading PDF payslip...");
-        const formData = new FormData();
-        formData.append("file", file);
+      setPayslipProgress(
+        isPdf
+          ? personalization.language === "bm"
+            ? "Membaca slip gaji / Borang EA PDF..."
+            : "Reading PDF payslip / EA Form..."
+          : personalization.language === "bm"
+          ? "Menganalisis imej slip gaji / Borang EA..."
+          : "Analyzing payslip / EA Form image..."
+      );
 
-        const res = await fetch("/api/parse-payslip", {
-          method: "POST",
-          body: formData,
-        });
-        const data = await res.json();
+      const formData = new FormData();
+      formData.append("file", file);
 
-        if (!res.ok) {
-          setPayslipError(
-            data.message ||
-              "Could not read PDF payslip. Try uploading a screenshot/photo instead."
-          );
-          return;
-        }
+      const res = await fetch("/api/parse-payslip", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (
+        res.ok &&
+        data &&
+        !data.useClientOcr &&
+        (data.estimatedAnnualIncome > 0 ||
+          data.ytdPcb > 0 ||
+          data.monthlyGross > 0 ||
+          data.monthlyPcb > 0)
+      ) {
         setPayslipData(data as PayslipExtraction);
-      } else {
-        // Image / screenshot payslip -> built-in free on-device OCR
-        setPayslipProgress("Loading on-device OCR...");
+        return;
+      }
+
+      if (!isPdf && (!res.ok || data.useClientOcr)) {
+        // Fallback to local on-device OCR for images if offline or API unavailable
+        setPayslipProgress(
+          personalization.language === "bm"
+            ? "Memuatkan OCR pada peranti..."
+            : "Loading on-device OCR..."
+        );
         const Tesseract = await import("tesseract.js");
-        const { data } = await Tesseract.recognize(file, "eng", {
+        const { data: ocrData } = await Tesseract.recognize(file, "eng", {
           logger: (m) => {
             if (
               m.status === "recognizing text" &&
               typeof m.progress === "number"
             ) {
               setPayslipProgress(
-                `Reading payslip... ${Math.round(m.progress * 100)}%`
+                personalization.language === "bm"
+                  ? `Membaca teks... ${Math.round(m.progress * 100)}%`
+                  : `Reading payslip... ${Math.round(m.progress * 100)}%`
               );
             }
           },
         });
-        const parsed = parseMalaysianPayslipText(data.text || "");
+        const parsed = parseMalaysianPayslipText(ocrData.text || "");
         setPayslipData(parsed);
+        return;
       }
+
+      if (!res.ok) {
+        setPayslipError(
+          data.message ||
+            (personalization.language === "bm"
+              ? "Gagal membaca fail. Sila masukkan nilai secara manual."
+              : "Could not read payslip / EA Form. Please enter the values manually below.")
+        );
+        return;
+      }
+      setPayslipData(data as PayslipExtraction);
     } catch {
       setPayslipError(
-        "Failed to read payslip. Try a clearer screenshot or enter the values manually below."
+        personalization.language === "bm"
+          ? "Gagal membaca dokumen. Sila muat naik imej/PDF yang lebih jelas atau masukkan nilai secara manual."
+          : "Failed to read payslip / EA Form. Try a clearer screenshot or enter the values manually below."
       );
     } finally {
       setPayslipScanning(false);
@@ -213,7 +246,11 @@ export function SettingsTab({
 
     setAppliedBanner(
       includeReliefs
-        ? "Applied income, PCB/Zakat & updated EPF/SOCSO reliefs in-place (no duplicates)!"
+        ? personalization.language === "bm"
+          ? "Pendapatan, PCB/Zakat & pelepasan KWSP/PERKESO telah dikemaskini!"
+          : "Applied income, PCB/Zakat & updated EPF/SOCSO reliefs in-place (no duplicates)!"
+        : personalization.language === "bm"
+        ? `Pendapatan, PCB & Zakat telah dikemaskini ke profil TT ${profile.taxYear} anda!`
         : "Applied income, PCB & Zakat to your YA " + profile.taxYear + " profile!"
     );
     setPayslipData(null);
@@ -935,37 +972,47 @@ export function SettingsTab({
               <div className="flex items-center gap-1.5 font-bold text-emerald-950">
                 <Sparkles className="h-4 w-4 text-emerald-600" />
                 <span>
-                  Extracted from{" "}
+                  {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
                   {payslipData.sourceType === "ea-form"
-                    ? "EA Form"
-                    : payslipData.monthDetected || "Payslip"}
+                    ? (personalization.language === "bm" ? "Borang EA" : "EA Form")
+                    : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
                 </span>
               </div>
               <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                {payslipData.confidence} confidence
+                {payslipData.confidence === "high"
+                  ? (personalization.language === "bm" ? "ketepatan tinggi" : "high confidence")
+                  : payslipData.confidence === "medium"
+                  ? (personalization.language === "bm" ? "ketepatan sederhana" : "medium confidence")
+                  : (personalization.language === "bm" ? "ketepatan rendah" : "low confidence")}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-white p-2.5">
-                <p className="text-[10px] text-slate-500">Est. Annual Income</p>
+                <p className="text-[10px] text-slate-500">
+                  {personalization.language === "bm" ? "Anggaran Pendapatan Tahunan" : "Est. Annual Income"}
+                </p>
                 <p className="font-bold text-slate-900">
                   {payslipData.estimatedAnnualIncome > 0
                     ? formatRM(payslipData.estimatedAnnualIncome)
-                    : "Not detected"}
+                    : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
                 </p>
               </div>
               <div className="rounded-xl bg-white p-2.5">
-                <p className="text-[10px] text-slate-500">PCB / MTD (YTD)</p>
+                <p className="text-[10px] text-slate-500">
+                  {personalization.language === "bm" ? "PCB / MTD (Terkumpul)" : "PCB / MTD (YTD)"}
+                </p>
                 <p className="font-bold text-slate-900">
                   {payslipData.ytdPcb > 0
                     ? formatRM(payslipData.ytdPcb, true)
-                    : "Not detected"}
+                    : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
                 </p>
               </div>
               {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0) && (
                 <div className="rounded-xl bg-white p-2.5">
-                  <p className="text-[10px] text-slate-500">Employee EPF (YTD)</p>
+                  <p className="text-[10px] text-slate-500">
+                    {personalization.language === "bm" ? "KWSP Pekerja (Terkumpul)" : "Employee EPF (YTD)"}
+                  </p>
                   <p className="font-bold text-emerald-700">
                     {formatRM(payslipData.ytdEpf || payslipData.employeeEpf, true)}
                   </p>
@@ -975,7 +1022,9 @@ export function SettingsTab({
                 payslipData.employeeSocso > 0 ||
                 payslipData.ytdEis > 0) && (
                 <div className="rounded-xl bg-white p-2.5">
-                  <p className="text-[10px] text-slate-500">SOCSO + EIS (YTD)</p>
+                  <p className="text-[10px] text-slate-500">
+                    {personalization.language === "bm" ? "PERKESO + SIP (Terkumpul)" : "SOCSO + EIS (YTD)"}
+                  </p>
                   <p className="font-bold text-emerald-700">
                     {formatRM(
                       (payslipData.ytdSocso || payslipData.employeeSocso) +
@@ -999,9 +1048,11 @@ export function SettingsTab({
                 onClick={() => handleApplyPayslip(false)}
                 className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99]"
               >
-                <span className="text-xs font-bold">Apply Income &amp; PCB</span>
+                <span className="text-xs font-bold">
+                  {personalization.language === "bm" ? "Guna Pendapatan & PCB" : "Apply Income & PCB"}
+                </span>
                 <span className="text-[10px] font-medium text-emerald-100">
-                  Profile numbers only
+                  {personalization.language === "bm" ? "Nilai profil sahaja" : "Profile numbers only"}
                 </span>
               </button>
               {(payslipData.ytdEpf > 0 ||
@@ -1014,10 +1065,10 @@ export function SettingsTab({
                   className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99]"
                 >
                   <span className="text-xs font-bold">
-                    Apply + Log EPF &amp; SOCSO
+                    {personalization.language === "bm" ? "Guna + Rekod KWSP & PERKESO" : "Apply + Log EPF & SOCSO"}
                   </span>
                   <span className="text-[10px] font-medium text-slate-300">
-                    Updates YTD reliefs (no duplicates)
+                    {personalization.language === "bm" ? "Kemas kini pelepasan terkumpul" : "Updates YTD reliefs (no duplicates)"}
                   </span>
                 </button>
               )}
@@ -1031,8 +1082,8 @@ export function SettingsTab({
                   className="text-[11px] font-semibold text-emerald-800 underline underline-offset-2"
                 >
                   {showPayslipText
-                    ? "Hide extracted text"
-                    : "View extracted payslip text"}
+                    ? (personalization.language === "bm" ? "Sembunyi teks diekstrak" : "Hide extracted text")
+                    : (personalization.language === "bm" ? "Lihat teks diekstrak" : "View extracted payslip text")}
                 </button>
                 {showPayslipText && (
                   <pre className="mt-1.5 max-h-32 overflow-auto rounded-xl bg-white p-2.5 text-[10px] text-slate-700 whitespace-pre-wrap">
