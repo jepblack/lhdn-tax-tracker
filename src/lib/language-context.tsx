@@ -2,7 +2,30 @@
 
 import { createContext, useContext } from "react";
 import { AppLanguage, getUiCopy } from "./personalization";
-import { ReliefCategory } from "./types";
+import { ReliefCategory, ReliefSubCategory } from "./types";
+
+export const SUBCATEGORY_BM: Record<string, string> = {
+  lifestyle_internet: "Langganan Internet Bulanan",
+  lifestyle_tech: "Komputer, Telefon Pintar & Tablet",
+  lifestyle_books: "Buku, Jurnal & Majalah",
+  lifestyle_skills: "Kursus Peningkatan Kemahiran / Hobi",
+  sports_equipment: "Peralatan Sukan",
+  sports_gym: "Keahlian Gimnasium / Latihan Sukan",
+  sports_facility: "Sewa Kemudahan & Yuran Pertandingan",
+  med_serious: "Penyakit Serius & Rawatan Kesuburan",
+  med_dental: "Pemeriksaan & Rawatan Pergigian",
+  med_vaccination: "Vaksinasi",
+  med_checkup: "Pemeriksaan Kesihatan Penuh & Mental",
+  med_child_disability: "Rawatan / Pemulihan Anak OKU",
+  parents_treatment: "Rawatan Perubatan, Pergigian & Penjagaan",
+  parents_checkup: "Pemeriksaan Kesihatan Penuh Ibu Bapa",
+  epf_mandatory: "Caruman Wajib / Sukarela KWSP",
+  life_insurance: "Insurans Nyawa / Takaful Keluarga",
+  edu_tertiary: "Pengajian Tinggi (Sijil / Diploma / Ijazah / PhD)",
+  edu_upskilling: "Kursus Peningkatan Kemahiran",
+  home_under_500k: "Rumah Kediaman <= RM 500k (Maks RM 7,000)",
+  home_500k_750k: "Rumah Kediaman RM 500k–750k (Maks RM 5,000)",
+};
 
 interface CategoryBmEntry {
   name: string;
@@ -131,6 +154,7 @@ interface LanguageContextValue {
     shortName: string;
     description: string;
   };
+  tSubCategory: (sub: ReliefSubCategory) => string;
 }
 
 const LanguageContext = createContext<LanguageContextValue>({
@@ -141,6 +165,7 @@ const LanguageContext = createContext<LanguageContextValue>({
     shortName: cat.shortName,
     description: cat.description,
   }),
+  tSubCategory: (sub) => sub.name,
 });
 
 export function LanguageProvider({
@@ -152,8 +177,10 @@ export function LanguageProvider({
 }) {
   const copy = getUiCopy(lang);
   const tCategory = (cat: ReliefCategory) => getLocalizedCategory(cat, lang);
+  const tSubCategory = (sub: ReliefSubCategory) =>
+    lang === "bm" && SUBCATEGORY_BM[sub.id] ? SUBCATEGORY_BM[sub.id] : sub.name;
   return (
-    <LanguageContext.Provider value={{ lang, copy, tCategory }}>
+    <LanguageContext.Provider value={{ lang, copy, tCategory, tSubCategory }}>
       {children}
     </LanguageContext.Provider>
   );

@@ -96,7 +96,7 @@ export function ReceiptsTab({
   onAddNew,
 }: ReceiptsTabProps) {
   const [vaultView, setVaultView] = useState<"receipts" | "docs">("receipts");
-  const { copy, tCategory } = useLanguage();
+  const { lang, copy, tCategory, tSubCategory } = useLanguage();
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "missing" | "review">(
     "all"
@@ -153,7 +153,9 @@ export function ReceiptsTab({
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-900">
-              YA {taxYear} Vault ({yearExpenses.length} records)
+              {lang === "bm"
+                ? `Arkib TT ${taxYear} (${yearExpenses.length} rekod)`
+                : `YA ${taxYear} Vault (${yearExpenses.length} records)`}
             </p>
             <p className="flex items-center gap-1 text-[11px] text-slate-500">
               <span>
@@ -701,7 +703,7 @@ export function ReceiptsTab({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search merchant, filename, invoice, relief..."
+            placeholder={copy.searchReceiptsPlaceholder}
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
           />
         </div>
@@ -715,7 +717,7 @@ export function ReceiptsTab({
                 : "border-slate-200 bg-white text-slate-600"
             }`}
           >
-            All ({yearExpenses.length})
+            {copy.filterAll} ({yearExpenses.length})
           </button>
           <button
             type="button"
@@ -728,7 +730,7 @@ export function ReceiptsTab({
                 : "border-slate-200 bg-white text-slate-600"
             }`}
           >
-            Needs Review ({reviewCount})
+            {lang === "bm" ? "Perlu Semakan" : "Needs Review"} ({reviewCount})
           </button>
           <button
             type="button"
@@ -791,11 +793,11 @@ export function ReceiptsTab({
                         {cat?.formBeRef || "BE"}
                       </span>
                       <span className="text-[11px] font-semibold text-emerald-700">
-                        {cat?.shortName || exp.categoryId}
+                        {cat ? tCategory(cat).shortName : exp.categoryId}
                       </span>
                       {sub && (
                         <span className="text-[11px] text-slate-400">
-                          • {sub.name}
+                          • {tSubCategory(sub)}
                         </span>
                       )}
                     </div>
