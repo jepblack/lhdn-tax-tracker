@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
@@ -115,6 +115,8 @@ export function TaxApp() {
       ? currentCalendarYear
       : SUPPORTED_TAX_YEARS[0] || 2026;
   });
+  const taxYearRef = useRef(taxYear);
+  taxYearRef.current = taxYear;
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -599,6 +601,7 @@ export function TaxApp() {
         uid ? fetchAnnualStateFromCloud(yr, uid) : Promise.resolve(null),
         fetchSubscription(uid),
       ]);
+    if (yr !== taxYearRef.current) return;
     setProfile(loadedProfile);
     setExpenses(loadedExpenses);
     setSubscription(loadedSub);
@@ -676,7 +679,7 @@ export function TaxApp() {
       if (uid) {
         syncLocalDataToCloud(uid).then((res) => {
           if (res.syncedExpenses > 0 || res.syncedProfile) {
-            refreshAllFromCloud(uid, taxYear);
+            refreshAllFromCloud(uid, taxYearRef.current);
           }
         });
       }
@@ -697,7 +700,7 @@ export function TaxApp() {
         if (uid) {
           syncLocalDataToCloud(uid).then((res) => {
             if (res.syncedExpenses > 0 || res.syncedProfile) {
-              refreshAllFromCloud(uid, taxYear);
+              refreshAllFromCloud(uid, taxYearRef.current);
             }
           });
         }
