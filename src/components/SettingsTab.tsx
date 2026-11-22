@@ -974,7 +974,7 @@ export function SettingsTab({
                 <span>
                   {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
                   {payslipData.sourceType === "ea-form"
-                    ? (personalization.language === "bm" ? "Borang EA" : "EA Form")
+                    ? `${personalization.language === "bm" ? "Borang EA" : "EA Form"}${payslipData.formVersion ? ` (${payslipData.formVersion})` : ""}`
                     : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
                 </span>
               </div>
@@ -987,28 +987,73 @@ export function SettingsTab({
               </span>
             </div>
 
+            {(payslipData.employeeName || payslipData.employerName) && (
+              <div className="grid grid-cols-1 gap-2 rounded-xl bg-white/80 p-2.5 text-[11px] sm:grid-cols-2">
+                {payslipData.employeeName && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      {personalization.language === "bm" ? "Butiran Pekerja" : "Employee Details"}
+                    </p>
+                    <p className="font-bold text-slate-900">{payslipData.employeeName}</p>
+                    <p className="text-slate-600">
+                      {[
+                        payslipData.employeeIc ? `KP: ${payslipData.employeeIc}` : null,
+                        payslipData.employeePosition || null,
+                        payslipData.employeeEpfNo ? `KWSP: ${payslipData.employeeEpfNo}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                )}
+                {payslipData.employerName && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      {personalization.language === "bm" ? "Majikan" : "Employer"}
+                    </p>
+                    <p className="font-bold text-slate-900">{payslipData.employerName}</p>
+                    {payslipData.employerNo && (
+                      <p className="text-slate-600">
+                        {personalization.language === "bm" ? "No. Majikan: " : "Employer No: "}
+                        {payslipData.employerNo}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-white p-2.5">
                 <p className="text-[10px] text-slate-500">
-                  {personalization.language === "bm" ? "Anggaran Pendapatan Tahunan" : "Est. Annual Income"}
+                  {personalization.language === "bm" ? "Jumlah Pendapatan (B + C)" : "Est. Annual Income"}
                 </p>
                 <p className="font-bold text-slate-900">
                   {payslipData.estimatedAnnualIncome > 0
-                    ? formatRM(payslipData.estimatedAnnualIncome)
+                    ? formatRM(payslipData.estimatedAnnualIncome, true)
                     : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
                 </p>
+                {payslipData.sourceType === "ea-form" &&
+                  ((payslipData.grossSalaryB1a ?? 0) > 0 || (payslipData.allowancesB1c ?? 0) > 0) && (
+                    <p className="mt-0.5 text-[10px] text-slate-500">
+                      B1(a): {formatRM(payslipData.grossSalaryB1a ?? 0, true)}
+                      {(payslipData.allowancesB1c ?? 0) > 0
+                        ? ` · B1(c): ${formatRM(payslipData.allowancesB1c ?? 0, true)}`
+                        : ""}
+                    </p>
+                  )}
               </div>
               <div className="rounded-xl bg-white p-2.5">
                 <p className="text-[10px] text-slate-500">
                   {personalization.language === "bm" ? "PCB / MTD (Terkumpul)" : "PCB / MTD (YTD)"}
                 </p>
                 <p className="font-bold text-slate-900">
-                  {payslipData.ytdPcb > 0
+                  {payslipData.ytdPcb > 0 || payslipData.sourceType === "ea-form"
                     ? formatRM(payslipData.ytdPcb, true)
                     : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
                 </p>
               </div>
-              {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0) && (
+              {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0 || payslipData.sourceType === "ea-form") && (
                 <div className="rounded-xl bg-white p-2.5">
                   <p className="text-[10px] text-slate-500">
                     {personalization.language === "bm" ? "KWSP Pekerja (Terkumpul)" : "Employee EPF (YTD)"}
@@ -1020,7 +1065,8 @@ export function SettingsTab({
               )}
               {(payslipData.ytdSocso > 0 ||
                 payslipData.employeeSocso > 0 ||
-                payslipData.ytdEis > 0) && (
+                payslipData.ytdEis > 0 ||
+                payslipData.sourceType === "ea-form") && (
                 <div className="rounded-xl bg-white p-2.5">
                   <p className="text-[10px] text-slate-500">
                     {personalization.language === "bm" ? "PERKESO + SIP (Terkumpul)" : "SOCSO + EIS (YTD)"}

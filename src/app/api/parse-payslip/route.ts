@@ -55,12 +55,21 @@ function normalizeAiPayslip(
 
   return {
     sourceType: isEa ? "ea-form" : ytdGross > 0 ? "ytd" : "monthly",
+    formVersion: raw.formVersion ? String(raw.formVersion) : undefined,
     monthDetected: raw.monthDetected ? String(raw.monthDetected) : undefined,
     yearDetected: raw.taxYear ? Number(raw.taxYear) : undefined,
     employerName: raw.employerName ? String(raw.employerName) : undefined,
+    employerNo: raw.employerNo ? String(raw.employerNo) : undefined,
+    employerAddress: raw.employerAddress ? String(raw.employerAddress) : undefined,
+    employeeName: raw.employeeName ? String(raw.employeeName) : undefined,
+    employeeIc: raw.employeeIc ? String(raw.employeeIc) : undefined,
+    employeePosition: raw.employeePosition ? String(raw.employeePosition) : undefined,
+    employeeEpfNo: raw.employeeEpfNo ? String(raw.employeeEpfNo) : undefined,
     monthlyGross: round2(monthlyGross),
     ytdGross: round2(ytdGross),
     estimatedAnnualIncome: round2(estimatedAnnual),
+    grossSalaryB1a: raw.grossSalaryB1a !== undefined && raw.grossSalaryB1a !== null ? round2(Number(raw.grossSalaryB1a) || 0) : undefined,
+    allowancesB1c: raw.allowancesB1c !== undefined && raw.allowancesB1c !== null ? round2(Number(raw.allowancesB1c) || 0) : undefined,
     monthlyPcb: round2(monthlyPcb),
     ytdPcb: round2(pcbPaid || monthlyPcb),
     monthlyZakat: round2(monthlyZakat),
@@ -132,26 +141,25 @@ export async function POST(request: Request) {
     const canUseGemini = Boolean(geminiKey && geminiKey !== "your-gemini-api-key");
 
     const prompt = `You are an expert Malaysian LHDN personal income tax and payroll document analyzer.
-You are given a Malaysian EA Form (Borang C.P.8A / C.P.8B - Penyata Saraan Daripada Penggajian) or a Malaysian Monthly/YTD Payslip.
+You are given a Malaysian EA Form (Borang EA / C.P.8A Pin. 2017 / Pin. 2023+ / C.P.8B - Penyata Saraan Daripada Penggajian) or a Malaysian Monthly/YTD Payslip.
 
-Analyze the document carefully and extract the relevant annual or monthly income and deduction figures.
-
-Key sections of Malaysian EA Form (C.P.8A / C.P.8B):
-- Bahagian B: PENDAPATAN PENGGAJIAN (Gross Remuneration / Employment Income)
-  - B1(a): Gaji kasar, upah atau gaji cuti (termasuk gaji lebih masa)
-  - B1(b): Fi, komisen atau bonus
-  - B1(c): Tip kasar, perkuisit, elaun
-  - Total at JUMLAH (B1 - B5) or JUMLAH SARAAN KASAR -> map to "annualIncome"
-- Bahagian D: JUMLAH POTONGAN
-  - D1: Potongan Cukai Bulanan (PCB) tahun semasa yang dibayar kepada LHDNM -> map to "pcbPaid"
-  - D3: Zakat yang dibayar melalui potongan gaji -> map to "zakatPaid"
-- Bahagian E: CARUMAN KEPADA KUMPULAN WANG SIMPANAN / PERKESO
-  - E1: Kumpulan Wang Simpanan Pekerja (KWSP / EPF) - caruman bahagian pekerja -> map to "epfEmployee"
-  - E2: PERKESO (SOCSO) - caruman bahagian pekerja -> map to "socsoEmployee"
-  - E3: Sistem Insurans Pekerjaan (SIP / EIS) - caruman bahagian pekerja -> map to "eisEmployee"
-- Header:
-  - Bagi Tahun Berakhir 31 Disember [YEAR] -> "taxYear"
-  - Nama Majikan -> "employerName"
+CRITICAL EXTRACTION RULES FOR BORANG EA / C.P.8A (especially Pin. 2017):
+1. Do NOT assume the first number in the document text is the first field value; ALWAYS verify each number directly against its item label.
+2. If a field in the form has RM0.00 (or 0.00), return 0 (never null).
+3. Identify Employer from "Nama dan Alamat Majikan" and "No. Majikan E" -> "employerName", "employerAddress", "employerNo".
+4. Identify Employee from "BUTIRAN PEKERJA" -> "employeeName", "employeeIc" (No. K.P.), "employeePosition" (Jawatan), "employeeEpfNo" (No. KWSP).
+5. For income, read ONLY Bahagian B and Bahagian C:
+   - B1(a) "Gaji kasar, upah atau gaji cuti (termasuk gaji lebih masa)" -> "grossSalaryB1a"
+   - B1(c) "Tip kasar, perkuisit, penerimaan sagu hati atau elaun-elaun lain" -> "allowancesB1c"
+   - "JUMLAH" after Bahagian B and Bahagian C -> "annualIncome"
+6. For deductions in Bahagian D:
+   - "Potongan Cukai Bulanan (PCB) yang dibayar kepada LHDNM" -> "pcbPaid"
+   - "Zakat yang dibayar melalui potongan gaji" -> "zakatPaid"
+7. For employee contributions in Bahagian E:
+   - "KUMPULAN WANG SIMPANAN PEKERJA" (employee share) -> "epfEmployee"
+   - "PERKESO" (employee share) -> "socsoEmployee"
+   - "Sistem Insurans Pekerjaan (SIP)" -> "eisEmployee"
+8. Header: "Bagi Tahun Berakhir 31 Disember [YEAR]" -> "taxYear", and form version (e.g. "C.P.8A - Pin. 2017") -> "formVersion".
 
 If this is a Monthly Payslip instead of an EA Form:
 - Basic Salary / Gross Earnings -> "monthlyGross" (and "ytdGross" if YTD column exists)
@@ -165,19 +173,28 @@ If this is a Monthly Payslip instead of an EA Form:
 Return ONLY raw JSON (no markdown formatting, no \`\`\`json) with this exact schema:
 {
   "sourceType": "ea-form" | "monthly" | "ytd",
+  "formVersion": string or null,
   "employerName": string,
+  "employerNo": string or null,
+  "employerAddress": string or null,
+  "employeeName": string or null,
+  "employeeIc": string or null,
+  "employeePosition": string or null,
+  "employeeEpfNo": string or null,
   "taxYear": number or null,
   "monthDetected": string or null,
-  "annualIncome": number (total annual gross salary/remuneration),
+  "annualIncome": number,
+  "grossSalaryB1a": number,
+  "allowancesB1c": number,
   "monthlyGross": number,
   "ytdGross": number,
-  "pcbPaid": number (total annual or YTD PCB/MTD paid),
+  "pcbPaid": number,
   "monthlyPcb": number,
-  "zakatPaid": number (total annual or YTD zakat paid),
+  "zakatPaid": number,
   "monthlyZakat": number,
-  "epfEmployee": number (employee EPF contribution),
-  "socsoEmployee": number (employee SOCSO contribution),
-  "eisEmployee": number (employee EIS/SIP contribution),
+  "epfEmployee": number,
+  "socsoEmployee": number,
+  "eisEmployee": number,
   "confidence": "high" | "medium" | "low"
 }`;
 
