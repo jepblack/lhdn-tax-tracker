@@ -65,6 +65,7 @@ interface SettingsTabProps {
     payslipFile: File | null,
     employerMeta?: { key: string; name: string }
   ) => Promise<void>;
+  onDeleteExpense?: (expense: TaxExpense) => Promise<void>;
   onLoadSampleData: () => void;
   onClearLocalData: () => void;
 }
@@ -84,6 +85,7 @@ export function SettingsTab({
   onUpdateProfile,
   onOpenUpgrade,
   onLogPayslipReliefs,
+  onDeleteExpense,
   onLoadSampleData,
   onClearLocalData,
 }: SettingsTabProps) {
@@ -339,6 +341,20 @@ export function SettingsTab({
   async function handleRemoveEaEmployer(keyToRemove: string) {
     const nextList = eaEmployers.filter((e) => e.key !== keyToRemove);
     saveEaEmployersForYear(nextList, profile.taxYear);
+    if (onDeleteExpense) {
+      const matchingExpenses = expenses.filter(
+        (exp) =>
+          exp.taxYear === profile.taxYear &&
+          (exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}-${keyToRemove}` ||
+            exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}-${keyToRemove}` ||
+            (eaEmployers.length <= 1 &&
+              (exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}` ||
+                exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}`)))
+      );
+      for (const exp of matchingExpenses) {
+        await onDeleteExpense(exp);
+      }
+    }
     if (nextList.length > 0) {
       const totalIncome = nextList.reduce((s, e) => s + e.annualIncome, 0);
       const totalPcb = nextList.reduce((s, e) => s + e.pcbPaid, 0);
@@ -1537,13 +1553,20 @@ export function SettingsTab({
 
           const extraFileMap = new Map<
             string,
-            { id: string; merchant: string; fileName: string; fileUrl: string | null }
+            {
+              id: string;
+              merchant: string;
+              fileName: string;
+              fileUrl: string | null;
+              linkedExpenses: TaxExpense[];
+            }
           >();
           for (const exp of yearPayslipExpenses) {
             if (matchedExpenseIds.has(exp.id)) continue;
             const dedupeKey =
               exp.receiptPath || exp.receiptFileName || exp.invoiceNumber || exp.id;
-            if (!extraFileMap.has(dedupeKey)) {
+            const existingGroup = extraFileMap.get(dedupeKey);
+            if (!existingGroup) {
               extraFileMap.set(dedupeKey, {
                 id: exp.id,
                 merchant: exp.merchant,
@@ -1552,7 +1575,10 @@ export function SettingsTab({
                   exp.receiptUrl && exp.receiptUrl !== "sample://attached"
                     ? exp.receiptUrl
                     : null,
+                linkedExpenses: [exp],
               });
+            } else {
+              existingGroup.linkedExpenses.push(exp);
             }
           }
           const extraFiles = Array.from(extraFileMap.values());
@@ -1630,17 +1656,32 @@ export function SettingsTab({
                         <span className="truncate">{file.fileName}</span>
                       </p>
                     </div>
-                    {file.fileUrl && (
-                      <a
-                        href={file.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        {personalization.language === "bm" ? "Lihat" : "View"}
-                      </a>
-                    )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {file.fileUrl && (
+                        <a
+                          href={file.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {personalization.language === "bm" ? "Lihat" : "View"}
+                        </a>
+                      )}
+                      {onDeleteExpense && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            for (const exp of file.linkedExpenses) {
+                              await onDeleteExpense(exp);
+                            }
+                          }}
+                          className="text-[11px] font-semibold text-rose-600 hover:underline"
+                        >
+                          {personalization.language === "bm" ? "Buang" : "Remove"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

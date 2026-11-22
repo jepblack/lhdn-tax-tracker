@@ -1598,6 +1598,7 @@ export function TaxApp() {
                   onUpdateProfile={handleUpdateProfile}
                   onOpenUpgrade={openUpgradeModal}
                   onLogPayslipReliefs={handleLogPayslipReliefs}
+                  onDeleteExpense={handleDeleteExpense}
                   onLoadSampleData={handleLoadSampleData}
                   onClearLocalData={handleClearLocalData}
                 />
