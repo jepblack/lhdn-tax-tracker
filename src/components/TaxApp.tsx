@@ -732,8 +732,39 @@ export function TaxApp() {
           fetchSubscription(userId),
         ]);
       if (!cancelled) {
+        // Auto-heal any PAYSLIP-SOCSO-<yr> record missing a receipt when PAYSLIP-EPF-<yr> already has the EA/payslip file
+        const healedExpenses = loadedExpenses.map((exp) => {
+          if (
+            exp.categoryId === "socso" &&
+            !exp.receiptPath &&
+            !exp.receiptUrl &&
+            (exp.invoiceNumber?.startsWith("PAYSLIP-SOCSO-") ||
+              exp.merchant.toLowerCase().includes("payslip ytd"))
+          ) {
+            const epfMatch = loadedExpenses.find(
+              (other) =>
+                other.taxYear === exp.taxYear &&
+                other.categoryId === "epf_life_insurance" &&
+                other.subCategoryId === "epf_mandatory" &&
+                Boolean(other.receiptPath || other.receiptUrl)
+            );
+            if (epfMatch) {
+              const patched: TaxExpense = {
+                ...exp,
+                receiptPath: epfMatch.receiptPath,
+                receiptUrl: epfMatch.receiptUrl,
+                receiptFileName: epfMatch.receiptFileName,
+                receiptMimeType: epfMatch.receiptMimeType,
+              };
+              updateExpense(exp.id, patched, null, userId).catch(() => {});
+              return patched;
+            }
+          }
+          return exp;
+        });
+
         setProfile(loadedProfile);
-        setExpenses(loadedExpenses);
+        setExpenses(healedExpenses);
         setSubscription(loadedSub);
         if (annualState) {
           setAnnualDocs((prev) => {
