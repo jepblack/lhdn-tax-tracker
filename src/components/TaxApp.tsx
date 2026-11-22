@@ -741,13 +741,24 @@ export function TaxApp() {
             (exp.invoiceNumber?.startsWith("PAYSLIP-SOCSO-") ||
               exp.merchant.toLowerCase().includes("payslip ytd"))
           ) {
-            const epfMatch = loadedExpenses.find(
-              (other) =>
-                other.taxYear === exp.taxYear &&
-                other.categoryId === "epf_life_insurance" &&
-                other.subCategoryId === "epf_mandatory" &&
-                Boolean(other.receiptPath || other.receiptUrl)
-            );
+            const expectedEpfInv = exp.invoiceNumber?.startsWith("PAYSLIP-SOCSO-")
+              ? exp.invoiceNumber.replace("PAYSLIP-SOCSO-", "PAYSLIP-EPF-")
+              : null;
+            const epfMatch =
+              (expectedEpfInv &&
+                loadedExpenses.find(
+                  (other) =>
+                    other.taxYear === exp.taxYear &&
+                    other.invoiceNumber === expectedEpfInv &&
+                    Boolean(other.receiptPath || other.receiptUrl)
+                )) ||
+              loadedExpenses.find(
+                (other) =>
+                  other.taxYear === exp.taxYear &&
+                  other.categoryId === "epf_life_insurance" &&
+                  other.subCategoryId === "epf_mandatory" &&
+                  Boolean(other.receiptPath || other.receiptUrl)
+              );
             if (epfMatch) {
               const patched: TaxExpense = {
                 ...exp,

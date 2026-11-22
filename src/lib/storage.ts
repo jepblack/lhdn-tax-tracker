@@ -538,10 +538,10 @@ export async function createExpense(
   }
 
   if (supabase && userId) {
-    let receiptPath: string | null = null;
-    let receiptUrl: string | null = null;
-    let receiptMimeType: string | null = null;
-    let receiptFileName: string | null = null;
+    let receiptPath: string | null = expense.receiptPath || null;
+    let receiptUrl: string | null = expense.receiptUrl || null;
+    let receiptMimeType: string | null = expense.receiptMimeType || null;
+    let receiptFileName: string | null = expense.receiptFileName || null;
 
     if (driveWebViewLink) {
       receiptPath = `gdrive:${driveWebViewLink}`;
