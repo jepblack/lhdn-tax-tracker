@@ -18,7 +18,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { formatRM } from "@/lib/calculator";
+import { calculateMaxTaxSavingGoal, formatRM } from "@/lib/calculator";
 import { RECURRING_BILL_BM } from "@/lib/language-context";
 import {
   getGoogleDriveToken,
@@ -648,6 +648,10 @@ export function SettingsTab({
         </div>
 
         {/* Tax-Saving Goal & Payday */}
+        {(() => {
+          const maxTaxGoal = calculateMaxTaxSavingGoal(profile);
+          const effectiveGoal = Math.min(personalization.taxSavingGoal, maxTaxGoal);
+          return (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
@@ -657,24 +661,47 @@ export function SettingsTab({
                 title={lang === "bm" ? "Sasaran Peribadi" : "Personal Target"}
                 text={
                   lang === "bm"
-                    ? "Memaparkan bar kemajuan di Utama untuk menjejak sejauh mana anda menghampiri sasaran penjimatan cukai tahunan anda."
-                    : "Shows a progress bar on your Dashboard tracking how close you are to your yearly tax-saving target."
+                    ? "Memaparkan bar kemajuan di Utama untuk menjejak sejauh mana anda menghampiri sasaran penjimatan cukai tahunan anda (dihadkan mengikut pendapatan)."
+                    : "Shows a progress bar on your Dashboard tracking how close you are to your yearly tax-saving target (capped based on your income)."
                 }
               />
             </label>
             <input
               type="number"
               min="0"
+              max={maxTaxGoal}
               step="100"
-              value={personalization.taxSavingGoal}
-              onChange={(e) =>
+              value={effectiveGoal}
+              onChange={(e) => {
+                const raw = Math.max(0, Number(e.target.value) || 0);
                 onUpdatePersonalization({
                   ...personalization,
-                  taxSavingGoal: Math.max(0, Number(e.target.value) || 0),
-                })
-              }
+                  taxSavingGoal: Math.min(maxTaxGoal, raw),
+                });
+              }}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
             />
+            <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+              <span>
+                {lang === "bm"
+                  ? `Had maksima pendapatan: ${formatRM(maxTaxGoal)}`
+                  : `Max based on income: ${formatRM(maxTaxGoal)}`}
+              </span>
+              {maxTaxGoal > 0 && effectiveGoal < maxTaxGoal && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdatePersonalization({
+                      ...personalization,
+                      taxSavingGoal: maxTaxGoal,
+                    })
+                  }
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  {lang === "bm" ? "Tetapkan Maks" : "Set Max"}
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
@@ -711,6 +738,8 @@ export function SettingsTab({
             />
           </div>
         </div>
+          );
+        })()}
 
         {/* Monthly Recurring Bills Manager */}
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">

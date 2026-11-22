@@ -55,6 +55,47 @@ export function calculateStatusReliefsTotal(profile: TaxProfile): number {
   return total;
 }
 
+/**
+ * Computes the realistic maximum tax saving (in RM) achievable from claiming
+ * LHDN expense reliefs given the taxpayer's gross annual income and status reliefs.
+ */
+export function calculateMaxTaxSavingGoal(profile: TaxProfile): number {
+  const statusTotal = calculateStatusReliefsTotal(profile);
+  const annualIncome = Math.max(0, profile.annualIncome || 0);
+  const baseChargeable = Math.max(0, annualIncome - statusTotal);
+  if (baseChargeable <= 0) return 0;
+
+  const baseTaxObj = calculateProgressiveTax(baseChargeable);
+  const baseRebate =
+    baseChargeable > 0 && baseChargeable <= 35000
+      ? profile.statusReliefs.spouse
+        ? 800
+        : 400
+      : 0;
+  const taxBeforeExpenses = Math.max(0, baseTaxObj.tax - baseRebate);
+
+  const totalMaxCategoryCaps = getReliefCategories(profile.taxYear).reduce(
+    (sum, cat) =>
+      sum +
+      (cat.id === "approved_donations"
+        ? Math.max(0, Math.round(annualIncome * 0.1))
+        : cat.maxLimit),
+    0
+  );
+
+  const minChargeable = Math.max(0, baseChargeable - totalMaxCategoryCaps);
+  const minTaxObj = calculateProgressiveTax(minChargeable);
+  const minRebate =
+    minChargeable > 0 && minChargeable <= 35000
+      ? profile.statusReliefs.spouse
+        ? 800
+        : 400
+      : 0;
+  const taxAfterMaxExpenses = Math.max(0, minTaxObj.tax - minRebate);
+
+  return Math.max(0, Math.round(taxBeforeExpenses - taxAfterMaxExpenses));
+}
+
 export function calculateTaxSummary(
   profile: TaxProfile,
   allExpenses: TaxExpense[]

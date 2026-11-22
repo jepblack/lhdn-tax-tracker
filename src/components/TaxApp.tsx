@@ -1403,6 +1403,7 @@ export function TaxApp() {
             <>
               {activeTab === "dashboard" && (
                 <DashboardTab
+                  profile={profile}
                   summary={summary}
                   subscription={subscription}
                   taxpayerMode={profile.taxpayerMode || "e-BE"}

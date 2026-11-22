@@ -24,7 +24,7 @@ import {
   UserCheck,
   Wallet,
 } from "lucide-react";
-import { formatRM } from "@/lib/calculator";
+import { calculateMaxTaxSavingGoal, formatRM } from "@/lib/calculator";
 import {
   PARTNER_OFFER_BM,
   RECURRING_BILL_BM,
@@ -44,6 +44,7 @@ import {
   TaxCalculationResult,
   TaxExpense,
   TaxpayerMode,
+  TaxProfile,
   UserSubscription,
 } from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
@@ -52,6 +53,7 @@ import { QuickStartChecklist } from "./QuickStartGuide";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
+  profile: TaxProfile;
   summary: TaxCalculationResult;
   subscription: UserSubscription;
   taxpayerMode: TaxpayerMode;
@@ -77,6 +79,7 @@ interface DashboardTabProps {
 }
 
 export function DashboardTab({
+  profile,
   summary,
   subscription,
   taxpayerMode,
@@ -855,7 +858,12 @@ export function DashboardTab({
       {/* Right / Action & Insights Column */}
       <div className="space-y-4 md:col-span-5">
       {/* Personal Tax-Saving Goal Card */}
-      {personalization.taxSavingGoal > 0 && (
+      {(() => {
+        const maxTaxGoal = calculateMaxTaxSavingGoal(profile);
+        const effectiveGoal =
+          maxTaxGoal > 0 ? Math.min(personalization.taxSavingGoal, maxTaxGoal) : 0;
+        if (personalization.taxSavingGoal <= 0 && maxTaxGoal <= 0) return null;
+        return (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -871,58 +879,86 @@ export function DashboardTab({
                 }
                 text={
                   personalization.language === "bm"
-                    ? "Tetapkan sasaran peribadi jumlah cukai yang ingin anda jimatkan pada Tahun Taksiran ini melalui tuntutan pelepasan LHDN."
-                    : "Set a personal goal for how much tax you want to save this Year of Assessment by claiming LHDN reliefs."
+                    ? "Tetapkan sasaran penjimatan cukai tahunan anda (dihadkan mengikut jumlah cukai maksimum yang boleh dijimat berdasarkan pendapatan anda)."
+                    : "Set your yearly tax-saving target (capped at the maximum tax saving achievable based on your income)."
                 }
               />
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setGoalDraft(String(personalization.taxSavingGoal));
-                setEditingGoal((v) => !v);
-              }}
-              className="text-[11px] font-semibold text-emerald-700 hover:underline"
-            >
-              {editingGoal ? copy.cancelBtn : copy.editBtn}
-            </button>
-          </div>
-
-          {editingGoal ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="100"
-                step="100"
-                value={goalDraft}
-                onChange={(e) => setGoalDraft(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-900"
-              />
+            {maxTaxGoal > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  const val = Math.max(100, Number(goalDraft) || 1500);
-                  onUpdatePersonalization({
-                    ...personalization,
-                    taxSavingGoal: val,
-                  });
-                  setEditingGoal(false);
+                  setGoalDraft(String(effectiveGoal));
+                  setEditingGoal((v) => !v);
                 }}
-                className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"
+                className="text-[11px] font-semibold text-emerald-700 hover:underline"
               >
-                {copy.saveBtn}
+                {editingGoal ? copy.cancelBtn : copy.editBtn}
               </button>
+            )}
+          </div>
+
+          {editingGoal ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={maxTaxGoal >= 100 ? 100 : 0}
+                  max={maxTaxGoal}
+                  step="100"
+                  value={goalDraft}
+                  onChange={(e) => {
+                    const num = Number(e.target.value);
+                    if (!Number.isNaN(num) && num > maxTaxGoal) {
+                      setGoalDraft(String(maxTaxGoal));
+                    } else {
+                      setGoalDraft(e.target.value);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = Math.max(0, Number(goalDraft) || 0);
+                    const val = Math.min(maxTaxGoal, Math.max(maxTaxGoal >= 100 ? 100 : 0, raw));
+                    onUpdatePersonalization({
+                      ...personalization,
+                      taxSavingGoal: val,
+                    });
+                    setEditingGoal(false);
+                  }}
+                  className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"
+                >
+                  {copy.saveBtn}
+                </button>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>
+                  {personalization.language === "bm"
+                    ? `Maks berdasarkan pendapatan: ${formatRM(maxTaxGoal)}`
+                    : `Max based on income: ${formatRM(maxTaxGoal)}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setGoalDraft(String(maxTaxGoal))}
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  {personalization.language === "bm" ? "Guna Maks" : "Use Max"}
+                </button>
+              </div>
             </div>
           ) : (
             (() => {
-              const goalPct = Math.min(
-                100,
-                Math.round(
-                  (summary.taxSavedByExpenseReliefs /
-                    personalization.taxSavingGoal) *
-                    100
-                )
-              );
+              const goalPct =
+                effectiveGoal > 0
+                  ? Math.min(
+                      100,
+                      Math.round(
+                        (summary.taxSavedByExpenseReliefs / effectiveGoal) * 100
+                      )
+                    )
+                  : 0;
               return (
                 <>
                   <div className="flex items-baseline justify-between text-xs">
@@ -930,7 +966,7 @@ export function DashboardTab({
                       {formatRM(summary.taxSavedByExpenseReliefs)} {copy.savedLabel}
                     </span>
                     <span className="text-slate-500">
-                      {copy.goalLabel}: {formatRM(personalization.taxSavingGoal)} ({goalPct}
+                      {copy.goalLabel}: {formatRM(effectiveGoal)} ({goalPct}
                       %)
                     </span>
                   </div>
@@ -940,12 +976,18 @@ export function DashboardTab({
                       style={{ width: `${goalPct}%` }}
                     />
                   </div>
+                  <p className="text-[10px] text-slate-400">
+                    {personalization.language === "bm"
+                      ? `Had maks berdasarkan pendapatan: ${formatRM(maxTaxGoal)}`
+                      : `Max cap based on income: ${formatRM(maxTaxGoal)}`}
+                  </p>
                 </>
               );
             })()
           )}
         </section>
-      )}
+        );
+      })()}
 
       {/* 1-Tap Monthly Recurring Bills */}
       {recurringBills.length > 0 && (
