@@ -12,6 +12,60 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 const GEMINI_MODEL = "gemini-3.8-flash";
 
+let cachedGeminiModels: string[] | null = null;
+let cachedGeminiAt = 0;
+
+async function getActiveGeminiVisionModels(apiKey: string): Promise<string[]> {
+  if (cachedGeminiModels && Date.now() - cachedGeminiAt < 10 * 60 * 1000) {
+    return cachedGeminiModels;
+  }
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const all: Array<{ name?: string; supportedGenerationMethods?: string[] }> =
+        Array.isArray(data.models) ? data.models : [];
+      const usable = all
+        .filter(
+          (m) =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes("generateContent")
+        )
+        .map((m) => String(m.name || "").replace(/^models\//, ""))
+        .filter(
+          (id) =>
+            id &&
+            !/(embedding|tts|imagen|veo|aqa|robotics|computer-use|lite)/i.test(id)
+        );
+
+      const picked: string[] = [];
+      const matchers = [
+        /gemini-3\.8-flash/i,
+        /gemini-3\.\d+-flash/i,
+        /gemini-2\.5-flash/i,
+        /gemini-2\.0-flash/i,
+        /flash/i,
+        /gemini/i,
+      ];
+      for (const rx of matchers) {
+        for (const id of usable) {
+          if (rx.test(id) && !picked.includes(id)) picked.push(id);
+        }
+      }
+      if (picked.length > 0) {
+        cachedGeminiModels = picked.slice(0, 4);
+        cachedGeminiAt = Date.now();
+        return cachedGeminiModels;
+      }
+    }
+  } catch {
+    // ignore discovery errors
+  }
+  return [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash"];
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -364,16 +418,18 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
         const contents = [
           { text: prompt },
           {
-            inlineData: {
-              mimeType: isPdf ? "application/pdf" : visualImageMimeType,
-              data: Buffer.from(arrayBuffer).toString("base64"),
-            },
+            inlineData: visualImageBase64
+              ? { mimeType: visualImageMimeType, data: visualImageBase64 }
+              : {
+                  mimeType: isPdf ? "application/pdf" : visualImageMimeType,
+                  data: Buffer.from(arrayBuffer).toString("base64"),
+                },
           },
         ];
 
         const callGeminiParsed = async (): Promise<Record<string, unknown>> => {
-          const models = [GEMINI_MODEL, "gemini-2.5-flash"];
-          let lastErr: unknown = null;
+          const models = await getActiveGeminiVisionModels(geminiKey!);
+          const errList: string[] = [];
           for (const modelName of models) {
             try {
               let res;
@@ -383,7 +439,7 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
                   contents,
                   config: {
                     temperature: 0.1,
-                    maxOutputTokens: 2500,
+                    maxOutputTokens: 4096,
                     responseMimeType: "application/json",
                     thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
                   },
@@ -396,7 +452,7 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
                     contents,
                     config: {
                       temperature: 0.1,
-                      maxOutputTokens: 2500,
+                      maxOutputTokens: 4096,
                       responseMimeType: "application/json",
                     },
                   });
@@ -412,10 +468,11 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
               const match = raw.match(/\{[\s\S]*\}/);
               return JSON.parse((match ? match[0] : raw).trim());
             } catch (modelErr) {
-              lastErr = modelErr;
+              const msg = modelErr instanceof Error ? modelErr.message.slice(0, 80) : String(modelErr);
+              errList.push(`${modelName}: ${msg}`);
             }
           }
-          throw lastErr || new Error("Gemini failed");
+          throw new Error(errList.join(" | ") || "Gemini failed");
         };
 
         const parsed = await Promise.race([
