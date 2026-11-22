@@ -106,6 +106,7 @@ export function SettingsTab({
 
   // Payslip / EA Form multi-upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
+  const [failedPayslipFiles, setFailedPayslipFiles] = useState<File[]>([]);
   const [payslipScanning, setPayslipScanning] = useState(false);
   const [payslipProgress, setPayslipProgress] = useState("");
   const [payslipError, setPayslipError] = useState<string | null>(null);
@@ -247,37 +248,55 @@ export function SettingsTab({
   async function handlePayslipFiles(files: File[]) {
     if (!files || files.length === 0) return;
     setPayslipError(null);
+    setFailedPayslipFiles([]);
     setAppliedBanner(null);
     setShowPayslipText(false);
     setPayslipScanning(true);
 
+    const failed: File[] = [];
+    let lastErrMsg: string | null = null;
+
     try {
       for (let i = 0; i < files.length; i++) {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 800));
+        }
         const file = files[i];
         setPayslipFile(file);
         const prefix = files.length > 1 ? `[${i + 1}/${files.length}] ` : "";
-        const extracted = await parseSingleFileToExtraction(file, prefix);
-        if (extracted) {
-          const itemId =
-            extracted.sourceType === "ea-form"
-              ? getEmployerMeta(extracted).key
-              : file.name;
-          setPayslipQueue((prev) => {
-            const filtered = prev.filter(
-              (p) => p.id !== itemId && p.file.name !== file.name
-            );
-            return [...filtered, { id: itemId, file, data: extracted }];
-          });
+        try {
+          const extracted = await parseSingleFileToExtraction(file, prefix);
+          if (extracted) {
+            const itemId =
+              extracted.sourceType === "ea-form"
+                ? getEmployerMeta(extracted).key
+                : file.name;
+            setPayslipQueue((prev) => {
+              const filtered = prev.filter(
+                (p) => p.id !== itemId && p.file.name !== file.name
+              );
+              return [...filtered, { id: itemId, file, data: extracted }];
+            });
+          }
+        } catch (fileErr) {
+          failed.push(file);
+          lastErrMsg =
+            fileErr instanceof Error
+              ? fileErr.message
+              : personalization.language === "bm"
+              ? "Gagal membaca dokumen. Sila muat naik imej/PDF yang lebih jelas atau masukkan nilai secara manual."
+              : "Failed to read payslip / EA Form. Try a clearer screenshot or enter the values manually below.";
         }
       }
-    } catch (err) {
-      setPayslipError(
-        err instanceof Error
-          ? err.message
-          : personalization.language === "bm"
-          ? "Gagal membaca dokumen. Sila muat naik imej/PDF yang lebih jelas atau masukkan nilai secara manual."
-          : "Failed to read payslip / EA Form. Try a clearer screenshot or enter the values manually below."
-      );
+      if (failed.length > 0) {
+        setFailedPayslipFiles(failed);
+        const fileNames = failed.map((f) => f.name).join(", ");
+        setPayslipError(
+          files.length > 1
+            ? `${lastErrMsg} (${fileNames})`
+            : lastErrMsg
+        );
+      }
     } finally {
       setPayslipScanning(false);
       setPayslipProgress("");
@@ -1188,10 +1207,18 @@ export function SettingsTab({
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <span>{payslipError}</span>
             </div>
-            {payslipFile && !payslipScanning && (
+            {(failedPayslipFiles.length > 0 || payslipFile) && !payslipScanning && (
               <button
                 type="button"
-                onClick={() => handlePayslipFiles([payslipFile])}
+                onClick={() =>
+                  handlePayslipFiles(
+                    failedPayslipFiles.length > 0
+                      ? failedPayslipFiles
+                      : payslipFile
+                      ? [payslipFile]
+                      : []
+                  )
+                }
                 className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-[0.98]"
               >
                 {personalization.language === "bm" ? "Cuba Lagi" : "Retry"}

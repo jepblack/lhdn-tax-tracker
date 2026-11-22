@@ -37,15 +37,17 @@ async function getActiveGeminiVisionModels(apiKey: string): Promise<string[]> {
         .filter(
           (id) =>
             id &&
-            !/(embedding|tts|imagen|veo|aqa|robotics|computer-use|lite)/i.test(id)
+            !/(embedding|tts|imagen|veo|aqa|robotics|computer-use)/i.test(id)
         );
 
       const picked: string[] = [];
       const matchers = [
-        /gemini-3\.8-flash/i,
-        /gemini-3\.\d+-flash/i,
-        /gemini-2\.5-flash/i,
-        /gemini-2\.0-flash/i,
+        /gemini-3\.8-flash$/i,
+        /gemini-3\.\d+-flash$/i,
+        /gemini-2\.5-flash$/i,
+        /gemini-2\.0-flash$/i,
+        /^gemini-.*flash(?!.*lite)/i,
+        /flash-lite/i,
         /flash/i,
         /gemini/i,
       ];
@@ -503,7 +505,7 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
           textContent: null,
           imageBase64: visualImageBase64,
           imageMimeType: visualImageMimeType,
-          maxTokens: 1500,
+          maxTokens: 2500,
         });
         const aiExtraction = normalizeAiPayslip(parsed, "Groq Vision", pdfText || undefined);
         return NextResponse.json(aiExtraction);
