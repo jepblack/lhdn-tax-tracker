@@ -1044,6 +1044,17 @@ export function SettingsTab({
               </span>
             </div>
 
+            {payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <span>
+                  {personalization.language === "bm"
+                    ? `Nota: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, tetapi anda sedang melihat profil TT ${profile.taxYear}. Tukar tahun di bahagian atas kepada TT ${payslipData.yearDetected} jika anda mahu menyimpan rekod ke tahun tersebut.`
+                    : `Note: This document is for YA ${payslipData.yearDetected}, while you are currently viewing YA ${profile.taxYear}. Switch the top year selector to YA ${payslipData.yearDetected} if you want to save it to that year.`}
+                </span>
+              </div>
+            )}
+
             {(payslipData.employeeName || payslipData.employerName) && (
               <div className="grid grid-cols-1 gap-2 rounded-xl bg-white/80 p-2.5 text-[11px] sm:grid-cols-2">
                 {payslipData.employeeName && (

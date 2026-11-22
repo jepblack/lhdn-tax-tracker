@@ -302,8 +302,8 @@ export function FilingToolsSheet({
   // Separate: each taxed on own chargeable income
   const selfChargeable = summary.chargeableIncome;
   const spouseChargeable = Math.max(0, sIncome - sReliefs);
-  const selfTaxSep = calculateProgressiveTax(selfChargeable);
-  const spouseTaxSep = calculateProgressiveTax(spouseChargeable);
+  const selfTaxSep = calculateProgressiveTax(selfChargeable, profile.taxYear);
+  const spouseTaxSep = calculateProgressiveTax(spouseChargeable, profile.taxYear);
   const sepRebateSelf =
     selfChargeable > 0 && selfChargeable <= 35000 ? 400 : 0;
   const sepRebateSpouse =
@@ -318,7 +318,7 @@ export function FilingToolsSheet({
     summary.totalReliefs +
     (profile.statusReliefs.spouse ? 0 : statusAmounts.spouse);
   const jointChargeable = Math.max(0, combinedIncome - jointReliefs);
-  const jointTaxRaw = calculateProgressiveTax(jointChargeable);
+  const jointTaxRaw = calculateProgressiveTax(jointChargeable, profile.taxYear);
   const jointRebate =
     jointChargeable > 0 && jointChargeable <= 35000 ? 800 : 0;
   const totalJointTax = Math.max(
@@ -903,7 +903,7 @@ export function FilingToolsSheet({
               0,
               summary.chargeableIncome - totalExtraReliefs
             );
-            const simTaxObj = calculateProgressiveTax(simChargeable);
+            const simTaxObj = calculateProgressiveTax(simChargeable, profile.taxYear);
             const simSmallRebate =
               simChargeable > 0 && simChargeable <= 35000
                 ? profile.statusReliefs.spouse

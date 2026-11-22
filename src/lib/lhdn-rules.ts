@@ -1,15 +1,16 @@
 import { ReliefCategory, StatusReliefs, TaxYear } from "./types";
 
 /**
- * Dynamic rolling 7-year LHDN Section 82A audit window:
- * Returns current calendar year + 7 prior Years of Assessment (e.g., 2026..2019 in 2026; 2027..2020 in 2027).
+ * Dynamic rolling 7-year LHDN Section 82A audit window + Budget 2027 planning year:
+ * Returns 2027..2019 in 2026.
  */
 export function getSupportedTaxYears(
   referenceYear = new Date().getFullYear()
 ): TaxYear[] {
   const currentYear = Math.max(2026, referenceYear);
+  const maxYear = Math.max(2027, currentYear);
   const years: TaxYear[] = [];
-  for (let y = currentYear; y >= currentYear - 7; y--) {
+  for (let y = maxYear; y >= currentYear - 7; y--) {
     years.push(y);
   }
   return years;
@@ -48,6 +49,19 @@ export interface StatusReliefAmounts {
 }
 
 export function getStatusReliefAmounts(year: TaxYear): StatusReliefAmounts {
+  // YA 2027 Budget 2027: Base individual relief increased from RM9,000 to RM12,000
+  if (year >= 2027) {
+    return {
+      individual: 12000,
+      disabledIndividual: 7000,
+      spouse: 4000,
+      disabledSpouse: 6000,
+      childUnder18: 2000,
+      childHigherEd: 8000,
+      disabledChild: 8000,
+      disabledChildHigherEd: 8000,
+    };
+  }
   // YA 2025 & YA 2026 updated disability caps from Budget 2025
   if (year >= 2025) {
     return {
@@ -74,14 +88,24 @@ export function getStatusReliefAmounts(year: TaxYear): StatusReliefAmounts {
 }
 
 /**
- * LHDN Malaysia Resident Individual Tax Reliefs (YA 2025 & YA 2026)
+ * LHDN Malaysia Resident Individual Tax Reliefs (YA 2019 – YA 2027)
  * Structured with parent caps and nested sub-limits so the calculator
- * accurately caps both sub-categories and their parent category.
+ * accurately caps both sub-categories and their parent category per TaxYear.
  */
 export function getReliefCategories(year: TaxYear): ReliefCategory[] {
+  const isYa2027Plus = year >= 2027;
   const isYa2025Plus = year >= 2025;
+  const isYa2024Plus = year >= 2024;
+  const isYa2023Plus = year >= 2023;
+  const isYa2022Plus = year >= 2022;
+  const isYa2021Plus = year >= 2021;
 
-  return [
+  const medicalSelfLimit = isYa2023Plus ? 10000 : isYa2021Plus ? 8000 : 6000;
+  const parentsMedicalLimit = isYa2021Plus ? 8000 : 5000;
+  const sportsLimit = isYa2024Plus ? 1000 : isYa2021Plus ? 500 : 0;
+  const socsoLimit = isYa2022Plus ? 350 : 250;
+
+  const categories: ReliefCategory[] = [
     {
       id: "lifestyle",
       name: "Lifestyle Relief",
@@ -124,57 +148,73 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
         },
       ],
     },
-    {
-      id: "sports",
-      name: "Sports Equipment & Activities",
-      shortName: "Sports",
-      group: "lifestyle",
-      maxLimit: 1000,
-      formBeRef: "F10",
-      icon: "Dumbbell",
-      description:
-        "Separate RM1,000 relief for sports equipment, facility rentals, competition fees, gym memberships, and sports training (for self, spouse, child, or parents).",
-      tips: "Claim sports & gym receipts here instead of Lifestyle so you preserve your RM2,500 Lifestyle cap!",
-      subCategories: [
-        {
-          id: "sports_equipment",
-          name: "Sports Equipment",
-          maxLimit: 1000,
-          description: "Sports gear listed under the Sports Development Act 1997 (excludes motorized bikes/wearables).",
-          examples: ["Badminton racket", "Running shoes", "Yoga mat", "Decathlon gear"],
-        },
-        {
-          id: "sports_gym",
-          name: "Gym Membership & Training",
-          maxLimit: 1000,
-          description: "Gym membership fees and sports training fees by certified instructors.",
-          examples: ["Celebrity Fitness", "Anytime Fitness", "Swimming / Tennis coaching"],
-        },
-        {
-          id: "sports_facility",
-          name: "Court Rental & Competition Fees",
-          maxLimit: 1000,
-          description: "Rental/entry fees to sports facilities and approved competition registration.",
-          examples: ["Badminton court booking", "Marathon registration", "Pickleball court"],
-        },
-      ],
-    },
+    ...(sportsLimit > 0
+      ? [
+          {
+            id: "sports",
+            name: "Sports Equipment & Activities",
+            shortName: "Sports",
+            group: "lifestyle" as const,
+            maxLimit: sportsLimit,
+            formBeRef: "F10",
+            icon: "Dumbbell",
+            description: isYa2027Plus
+              ? "Separate RM1,000 relief for sports equipment, sports shoes (sub-limit RM300), facility rentals, competition fees, and gym/training."
+              : `Separate RM${sportsLimit.toLocaleString("en-MY")} relief for sports equipment, facility rentals, competition fees, gym memberships, and sports training.`,
+            tips: "Claim sports & gym receipts here instead of Lifestyle so you preserve your RM2,500 Lifestyle cap!",
+            subCategories: [
+              {
+                id: "sports_equipment",
+                name: "Sports Equipment",
+                maxLimit: sportsLimit,
+                description: "Sports gear listed under the Sports Development Act 1997 (excludes motorized bikes/wearables).",
+                examples: ["Badminton racket", "Yoga mat", "Decathlon gear"],
+              },
+              ...(isYa2027Plus
+                ? [
+                    {
+                      id: "sports_shoes",
+                      name: "Sports Shoes (Budget 2027)",
+                      maxLimit: 300,
+                      description: "Sub-limit RM300 — Dedicated relief for sports footwear (YA 2027).",
+                      examples: ["Running shoes", "Badminton / court shoes", "Football boots"],
+                    },
+                  ]
+                : []),
+              {
+                id: "sports_gym",
+                name: "Gym Membership & Training",
+                maxLimit: sportsLimit,
+                description: "Gym membership fees and sports training fees by certified instructors.",
+                examples: ["Celebrity Fitness", "Anytime Fitness", "Swimming / Tennis coaching"],
+              },
+              {
+                id: "sports_facility",
+                name: "Court Rental & Competition Fees",
+                maxLimit: sportsLimit,
+                description: "Rental/entry fees to sports facilities and approved competition registration.",
+                examples: ["Badminton court booking", "Marathon registration", "Pickleball court"],
+              },
+            ],
+          },
+        ]
+      : []),
     {
       id: "medical_self",
       name: "Medical Expenses (Self, Spouse & Child)",
       shortName: "Medical",
       group: "medical",
-      maxLimit: 10000,
+      maxLimit: medicalSelfLimit,
       formBeRef: "F4",
       icon: "HeartPulse",
       description:
         "Serious diseases, fertility treatment, vaccinations, dental treatment, check-ups, mental health, and child learning disability intervention.",
-      tips: "Watch the nested sub-limits: Dental (RM1,000), Vaccination (RM1,000), and Check-up/Mental Health (RM1,000) all count toward the RM10,000 overall cap.",
+      tips: `Watch the nested sub-limits: Dental (RM1,000), Vaccination (RM1,000), and Check-up/Mental Health (RM1,000) all count toward the RM${medicalSelfLimit.toLocaleString("en-MY")} overall cap for YA ${year}.`,
       subCategories: [
         {
           id: "med_serious",
           name: "Serious Diseases & Fertility Treatment",
-          maxLimit: 10000,
+          maxLimit: medicalSelfLimit,
           description: "Hospitalization/treatment for serious diseases or fertility treatment for self/spouse.",
           examples: ["Hospital specialist bill", "Fertility clinic", "Cancer / heart treatment"],
         },
@@ -213,7 +253,7 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
       name: "Parents & Grandparents Medical / Care",
       shortName: "Parents Care",
       group: "family",
-      maxLimit: 8000,
+      maxLimit: parentsMedicalLimit,
       formBeRef: "F2",
       icon: "Users",
       description:
@@ -223,7 +263,7 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
         {
           id: "parents_treatment",
           name: "Medical Treatment, Dental & Carer",
-          maxLimit: 8000,
+          maxLimit: parentsMedicalLimit,
           description: "Hospital/clinic treatment, dental care, nursing home, or certified carer.",
           examples: ["Parents hospital bill", "Physiotherapy", "Certified carer"],
         },
@@ -327,44 +367,64 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
         },
       ],
     },
-    {
-      id: "first_home_interest",
-      name: "First-Home Loan Interest (YA 2025–2027)",
-      shortName: "Home Loan",
-      group: "housing",
-      maxLimit: 7000,
-      formBeRef: "F21",
-      icon: "Home",
-      description:
-        "Housing loan interest for first residential home with SPA executed between 1 Jan 2025 and 31 Dec 2027 (RM7,000 for homes ≤ RM500k; RM5,000 for RM500k–RM750k).",
-      tips: "Request the annual housing loan interest statement from your bank and retain your stamped SPA.",
-      subCategories: [
-        {
-          id: "home_under_500k",
-          name: "First Home ≤ RM500,000",
-          maxLimit: 7000,
-          description: "Up to RM7,000 per year for 3 consecutive assessment years.",
-          examples: ["Bank annual interest statement"],
-        },
-        {
-          id: "home_500k_750k",
-          name: "First Home RM500,001 – RM750,000",
-          maxLimit: 5000,
-          description: "Up to RM5,000 per year for 3 consecutive assessment years.",
-          examples: ["Bank annual interest statement"],
-        },
-      ],
-    },
+    ...(isYa2025Plus && year <= 2027
+      ? [
+          {
+            id: "first_home_interest",
+            name: "First-Home Loan Interest (YA 2025–2027)",
+            shortName: "Home Loan",
+            group: "housing" as const,
+            maxLimit: 7000,
+            formBeRef: "F21",
+            icon: "Home",
+            description:
+              "Housing loan interest for first residential home with SPA executed between 1 Jan 2025 and 31 Dec 2027 (RM7,000 for homes ≤ RM500k; RM5,000 for RM500k–RM750k).",
+            tips: "Request the annual housing loan interest statement from your bank and retain your stamped SPA.",
+            subCategories: [
+              {
+                id: "home_under_500k",
+                name: "First Home ≤ RM500,000",
+                maxLimit: 7000,
+                description: "Up to RM7,000 per year for 3 consecutive assessment years.",
+                examples: ["Bank annual interest statement"],
+              },
+              {
+                id: "home_500k_750k",
+                name: "First Home RM500,001 – RM750,000",
+                maxLimit: 5000,
+                description: "Up to RM5,000 per year for 3 consecutive assessment years.",
+                examples: ["Bank annual interest statement"],
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(year >= 2026
+      ? [
+          {
+            id: "local_tourism",
+            name: "Local Tourism & Cultural Fees",
+            shortName: "Tourism",
+            group: "lifestyle" as const,
+            maxLimit: 1000,
+            formBeRef: "F22",
+            icon: "Sparkles",
+            description:
+              "Entrance fees to local tourist attractions and cultural/arts programs in Malaysia (extended to YA 2027 under Budget 2027).",
+            tips: "Keep official tickets/receipts for registered local theme parks, museums, zoos, or cultural shows.",
+          },
+        ]
+      : []),
     {
       id: "socso",
       name: "SOCSO / PERKESO Contribution",
       shortName: "SOCSO",
       group: "savings",
-      maxLimit: 350,
+      maxLimit: socsoLimit,
       formBeRef: "F18",
       icon: "BadgeCheck",
-      description: "Employee contribution to PERKESO / SOCSO & EIS (shown on EA Form).",
-      tips: "Check your annual EA Form — almost all salaried employees can claim up to RM350 here.",
+      description: `Employee contribution to PERKESO / SOCSO & EIS (capped at RM${socsoLimit} for YA ${year}).`,
+      tips: `Check your annual EA Form — salaried employees can claim up to RM${socsoLimit} here.`,
     },
     {
       id: "childcare",
@@ -427,11 +487,13 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
       tips: "Official receipt MUST state 'Tax Exempt under Section 44(6)' with LHDN reference number. Separate from Zakat rebate!",
     },
   ];
+
+  return categories;
 }
 
 /**
- * Malaysia Resident Individual Progressive Tax Brackets (YA 2025 / YA 2026)
- * Source: LHDN Malaysia
+ * Malaysia Resident Individual Progressive Tax Brackets (YA 2019 – YA 2027)
+ * Source: LHDN Malaysia / Budget 2023 / Budget 2027
  */
 export interface TaxBracket {
   min: number;
@@ -452,3 +514,54 @@ export const MALAYSIA_TAX_BRACKETS: TaxBracket[] = [
   { min: 600000, max: 2000000, rate: 0.28, baseTax: 136400 },
   { min: 2000000, max: Infinity, rate: 0.3, baseTax: 528400 },
 ];
+
+export const MALAYSIA_TAX_BRACKETS_2027: TaxBracket[] = [
+  { min: 0, max: 5000, rate: 0.0, baseTax: 0 },
+  { min: 5000, max: 20000, rate: 0.01, baseTax: 0 },
+  { min: 20000, max: 35000, rate: 0.03, baseTax: 150 },
+  { min: 35000, max: 50000, rate: 0.06, baseTax: 600 },
+  { min: 50000, max: 70000, rate: 0.11, baseTax: 1500 },
+  { min: 70000, max: 100000, rate: 0.18, baseTax: 3700 },
+  { min: 100000, max: 150000, rate: 0.24, baseTax: 9100 },
+  { min: 150000, max: 400000, rate: 0.25, baseTax: 21100 },
+  { min: 400000, max: 600000, rate: 0.26, baseTax: 83600 },
+  { min: 600000, max: 1000000, rate: 0.28, baseTax: 135600 },
+  { min: 1000000, max: Infinity, rate: 0.3, baseTax: 247600 },
+];
+
+export const MALAYSIA_TAX_BRACKETS_2021_2022: TaxBracket[] = [
+  { min: 0, max: 5000, rate: 0.0, baseTax: 0 },
+  { min: 5000, max: 20000, rate: 0.01, baseTax: 0 },
+  { min: 20000, max: 35000, rate: 0.03, baseTax: 150 },
+  { min: 35000, max: 50000, rate: 0.08, baseTax: 600 },
+  { min: 50000, max: 70000, rate: 0.13, baseTax: 1800 },
+  { min: 70000, max: 100000, rate: 0.21, baseTax: 4400 },
+  { min: 100000, max: 250000, rate: 0.24, baseTax: 10700 },
+  { min: 250000, max: 400000, rate: 0.245, baseTax: 46700 },
+  { min: 400000, max: 600000, rate: 0.25, baseTax: 83450 },
+  { min: 600000, max: 1000000, rate: 0.26, baseTax: 133450 },
+  { min: 1000000, max: 2000000, rate: 0.28, baseTax: 237450 },
+  { min: 2000000, max: Infinity, rate: 0.3, baseTax: 517450 },
+];
+
+export const MALAYSIA_TAX_BRACKETS_2020: TaxBracket[] = [
+  { min: 0, max: 5000, rate: 0.0, baseTax: 0 },
+  { min: 5000, max: 20000, rate: 0.01, baseTax: 0 },
+  { min: 20000, max: 35000, rate: 0.03, baseTax: 150 },
+  { min: 35000, max: 50000, rate: 0.08, baseTax: 600 },
+  { min: 50000, max: 70000, rate: 0.14, baseTax: 1800 },
+  { min: 70000, max: 100000, rate: 0.21, baseTax: 4600 },
+  { min: 100000, max: 250000, rate: 0.24, baseTax: 10900 },
+  { min: 250000, max: 400000, rate: 0.245, baseTax: 46900 },
+  { min: 400000, max: 600000, rate: 0.25, baseTax: 83650 },
+  { min: 600000, max: 1000000, rate: 0.26, baseTax: 133650 },
+  { min: 1000000, max: 2000000, rate: 0.28, baseTax: 237650 },
+  { min: 2000000, max: Infinity, rate: 0.3, baseTax: 517650 },
+];
+
+export function getTaxBracketsForYear(year: TaxYear): TaxBracket[] {
+  if (year >= 2027) return MALAYSIA_TAX_BRACKETS_2027;
+  if (year >= 2023) return MALAYSIA_TAX_BRACKETS;
+  if (year >= 2021) return MALAYSIA_TAX_BRACKETS_2021_2022;
+  return MALAYSIA_TAX_BRACKETS_2020;
+}

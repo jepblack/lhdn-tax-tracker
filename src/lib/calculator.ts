@@ -1,7 +1,7 @@
 import {
   getReliefCategories,
   getStatusReliefAmounts,
-  MALAYSIA_TAX_BRACKETS,
+  getTaxBracketsForYear,
 } from "./lhdn-rules";
 import {
   CategorySummary,
@@ -10,9 +10,13 @@ import {
   TaxCalculationResult,
   TaxExpense,
   TaxProfile,
+  TaxYear,
 } from "./types";
 
-export function calculateProgressiveTax(chargeableIncome: number): {
+export function calculateProgressiveTax(
+  chargeableIncome: number,
+  taxYear: TaxYear = 2026
+): {
   tax: number;
   marginalRate: number;
 } {
@@ -20,7 +24,8 @@ export function calculateProgressiveTax(chargeableIncome: number): {
     return { tax: 0, marginalRate: 0 };
   }
 
-  for (const bracket of MALAYSIA_TAX_BRACKETS) {
+  const brackets = getTaxBracketsForYear(taxYear);
+  for (const bracket of brackets) {
     if (chargeableIncome <= bracket.max) {
       const taxableInBracket = chargeableIncome - bracket.min;
       const tax = bracket.baseTax + taxableInBracket * bracket.rate;
@@ -31,7 +36,7 @@ export function calculateProgressiveTax(chargeableIncome: number): {
     }
   }
 
-  const last = MALAYSIA_TAX_BRACKETS[MALAYSIA_TAX_BRACKETS.length - 1];
+  const last = brackets[brackets.length - 1];
   return {
     tax: Math.round((last.baseTax + (chargeableIncome - last.min) * last.rate) * 100) / 100,
     marginalRate: last.rate,
@@ -65,7 +70,7 @@ export function calculateMaxTaxSavingGoal(profile: TaxProfile): number {
   const baseChargeable = Math.max(0, annualIncome - statusTotal);
   if (baseChargeable <= 0) return 0;
 
-  const baseTaxObj = calculateProgressiveTax(baseChargeable);
+  const baseTaxObj = calculateProgressiveTax(baseChargeable, profile.taxYear);
   const baseRebate =
     baseChargeable > 0 && baseChargeable <= 35000
       ? profile.statusReliefs.spouse
@@ -84,7 +89,7 @@ export function calculateMaxTaxSavingGoal(profile: TaxProfile): number {
   );
 
   const minChargeable = Math.max(0, baseChargeable - totalMaxCategoryCaps);
-  const minTaxObj = calculateProgressiveTax(minChargeable);
+  const minTaxObj = calculateProgressiveTax(minChargeable, profile.taxYear);
   const minRebate =
     minChargeable > 0 && minChargeable <= 35000
       ? profile.statusReliefs.spouse
@@ -203,9 +208,13 @@ export function calculateTaxSummary(
     round2(profile.annualIncome - statusReliefTotal)
   );
 
-  const { tax: grossTax, marginalRate } = calculateProgressiveTax(chargeableIncome);
+  const { tax: grossTax, marginalRate } = calculateProgressiveTax(
+    chargeableIncome,
+    profile.taxYear
+  );
   const { tax: grossTaxWithoutExpenseReliefs } = calculateProgressiveTax(
-    chargeableIncomeWithoutExpenseReliefs
+    chargeableIncomeWithoutExpenseReliefs,
+    profile.taxYear
   );
 
   // Small income rebate: RM400 if chargeable income <= RM35,000 (additional RM400 if spouse relief claimed)
