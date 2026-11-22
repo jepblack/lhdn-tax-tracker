@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { calculateProgressiveTax, formatRM } from "@/lib/calculator";
+import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, getStatusReliefAmounts } from "@/lib/lhdn-rules";
 import {
   FormBeBaseline,
@@ -62,6 +63,30 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
+
+const MONTHS_BM = [
+  "Jan",
+  "Feb",
+  "Mac",
+  "Apr",
+  "Mei",
+  "Jun",
+  "Jul",
+  "Ogos",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Dis",
+];
+
+const RECURRING_LABELS_BM: Record<string, string> = {
+  unifi: "Fibre Rumah / Jalur Lebar",
+  gym: "Keahlian Gim / Sukan",
+  med_ins: "Insurans Kad Perubatan",
+  childcare: "Taska / Tadika",
+  prs: "Tokok Akhir Tahun PRS",
+  sspn: "Deposit Bersih SSPN",
+};
 
 const RECURRING_TEMPLATES = [
   {
@@ -132,6 +157,7 @@ export function FilingToolsSheet({
   onQuickAdd,
   onQuickLogTemplate,
 }: FilingToolsSheetProps) {
+  const { lang, tCategory } = useLanguage();
   const [activeTab, setActiveTab] = useState<FilingToolTab>(initialTab);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
@@ -190,7 +216,10 @@ export function FilingToolsSheet({
   const formBeRows = [
     {
       ref: "F1",
-      label: "Individual and dependent relatives",
+      label:
+        lang === "bm"
+          ? "Individu dan saudara tanggungan"
+          : "Individual and dependent relatives",
       amount: profile.statusReliefs.individual ? statusAmounts.individual : 0,
       max: statusAmounts.individual,
     },
@@ -198,7 +227,10 @@ export function FilingToolsSheet({
       ? [
           {
             ref: "F1a",
-            label: "Disabled individual (OKU)",
+            label:
+              lang === "bm"
+                ? "Individu kurang upaya (OKU)"
+                : "Disabled individual (OKU)",
             amount: statusAmounts.disabledIndividual,
             max: statusAmounts.disabledIndividual,
           },
@@ -208,7 +240,10 @@ export function FilingToolsSheet({
       ? [
           {
             ref: "F7",
-            label: "Husband / Wife / Alimony",
+            label:
+              lang === "bm"
+                ? "Suami / Isteri / Nafkah"
+                : "Husband / Wife / Alimony",
             amount: statusAmounts.spouse,
             max: statusAmounts.spouse,
           },
@@ -218,7 +253,10 @@ export function FilingToolsSheet({
       ? [
           {
             ref: "F7a",
-            label: "Disabled spouse (OKU)",
+            label:
+              lang === "bm"
+                ? "Pasangan kurang upaya (OKU)"
+                : "Disabled spouse (OKU)",
             amount: statusAmounts.disabledSpouse,
             max: statusAmounts.disabledSpouse,
           },
@@ -231,7 +269,7 @@ export function FilingToolsSheet({
       ? [
           {
             ref: "F8",
-            label: "Child relief (total)",
+            label: lang === "bm" ? "Pelepasan anak (jumlah)" : "Child relief (total)",
             amount:
               profile.statusReliefs.childrenUnder18 * statusAmounts.childUnder18 +
               profile.statusReliefs.childrenHigherEd *
@@ -251,7 +289,7 @@ export function FilingToolsSheet({
       })
       .map((c) => ({
         ref: c.category.formBeRef,
-        label: c.category.name,
+        label: tCategory(c.category).name,
         amount: c.claimable,
         max: c.category.maxLimit,
       })),
@@ -297,11 +335,14 @@ export function FilingToolsSheet({
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              LHDN Filing &amp; Tax Maximizer Tools
+              {lang === "bm"
+                ? "Alat e-Filing LHDN & Maksimum Cukai"
+                : "LHDN Filing & Tax Maximizer Tools"}
             </h2>
             <p className="text-xs text-slate-500">
-              YA {profile.taxYear} • e-Filing, recurring bills &amp; household
-              simulator
+              {lang === "bm"
+                ? `TT ${profile.taxYear} • e-Filing, bil berulang & simulator isi rumah`
+                : `YA ${profile.taxYear} • e-Filing, recurring bills & household simulator`}
             </p>
           </div>
           <button
@@ -325,7 +366,7 @@ export function FilingToolsSheet({
             }`}
           >
             <ClipboardList className="h-3.5 w-3.5" />
-            Form BE
+            {lang === "bm" ? "Borang BE" : "Form BE"}
           </button>
           <button
             type="button"
@@ -337,7 +378,7 @@ export function FilingToolsSheet({
             }`}
           >
             <Repeat className="h-3.5 w-3.5" />
-            Year-End
+            {lang === "bm" ? "Hujung Tahun" : "Year-End"}
           </button>
           <button
             type="button"
@@ -349,7 +390,7 @@ export function FilingToolsSheet({
             }`}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            What-If
+            {lang === "bm" ? "Simulasi" : "What-If"}
           </button>
           <button
             type="button"
@@ -361,7 +402,7 @@ export function FilingToolsSheet({
             }`}
           >
             <Scale className="h-3.5 w-3.5" />
-            Joint/Sep
+            {lang === "bm" ? "Bersama/Asing" : "Joint/Sep"}
           </button>
         </div>
 
@@ -397,7 +438,7 @@ export function FilingToolsSheet({
                     return {
                       catId,
                       ref: cat?.formBeRef || "BE",
-                      name: cat?.shortName || catId,
+                      name: cat ? tCategory(cat).shortName : catId,
                       declared,
                       verified,
                       diff,
@@ -419,12 +460,22 @@ export function FilingToolsSheet({
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-xs font-bold text-slate-900">
-                          Form BE Audit Reconciliation ({coveredCount}/{declaredCount} verified)
+                          {lang === "bm"
+                            ? `Penyesuaian Audit Borang BE (${coveredCount}/${declaredCount} disahkan)`
+                            : `Form BE Audit Reconciliation (${coveredCount}/${declaredCount} verified)`}
                         </p>
                         <p className="mt-0.5 text-[11px] text-slate-500">
-                          Comparing declared totals from{" "}
-                          <strong>{formBeBaseline.uploadedFileName}</strong> vs.
-                          uploaded supporting receipts.
+                          {lang === "bm" ? (
+                            <>
+                              Membandingkan jumlah diisytihar daripada{" "}
+                              <strong>{formBeBaseline.uploadedFileName}</strong> berbanding resit sokongan dimuat naik.
+                            </>
+                          ) : (
+                            <>
+                              Comparing declared totals from{" "}
+                              <strong>{formBeBaseline.uploadedFileName}</strong> vs. uploaded supporting receipts.
+                            </>
+                          )}
                         </p>
                       </div>
                       {onClearFormBeBaseline && (
@@ -433,20 +484,22 @@ export function FilingToolsSheet({
                           onClick={onClearFormBeBaseline}
                           className="text-[10px] font-semibold text-slate-400 hover:text-rose-600"
                         >
-                          Clear
+                          {lang === "bm" ? "Padam" : "Clear"}
                         </button>
                       )}
                     </div>
 
                     {totalShortfall > 0 ? (
                       <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-                        {formatRM(totalShortfall, true)} declared on Form BE still
-                        needs supporting receipts.
+                        {lang === "bm"
+                          ? `${formatRM(totalShortfall, true)} diisytihar pada Borang BE masih memerlukan resit sokongan.`
+                          : `${formatRM(totalShortfall, true)} declared on Form BE still needs supporting receipts.`}
                       </div>
                     ) : (
                       <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                        100% of your declared Form BE reliefs are backed by
-                        uploaded receipts!
+                        {lang === "bm"
+                          ? "100% pelepasan Borang BE anda disokong oleh resit yang dimuat naik!"
+                          : "100% of your declared Form BE reliefs are backed by uploaded receipts!"}
                       </div>
                     )}
 
@@ -469,15 +522,15 @@ export function FilingToolsSheet({
                                 </span>
                               </div>
                               <p className="mt-0.5 text-[10px] text-slate-500">
-                                Form BE: {formatRM(r.declared, true)} • Receipts:{" "}
-                                {formatRM(r.verified, true)}
+                                {lang === "bm" ? "Borang BE" : "Form BE"}: {formatRM(r.declared, true)} •{" "}
+                                {lang === "bm" ? "Resit" : "Receipts"}: {formatRM(r.verified, true)}
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {isShort ? (
                                 <>
                                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                                    Short {formatRM(r.declared - r.verified)}
+                                    {lang === "bm" ? "Kurang" : "Short"} {formatRM(r.declared - r.verified)}
                                   </span>
                                   <button
                                     type="button"
@@ -487,16 +540,16 @@ export function FilingToolsSheet({
                                     }}
                                     className="rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
                                   >
-                                    + Proof
+                                    {lang === "bm" ? "+ Bukti" : "+ Proof"}
                                   </button>
                                 </>
                               ) : isExtra ? (
                                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
-                                  Unclaimed +{formatRM(r.verified)}
+                                  {lang === "bm" ? "Belum Tuntut" : "Unclaimed"} +{formatRM(r.verified)}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                                  <CheckCircle2 className="h-3 w-3" /> Verified
+                                  <CheckCircle2 className="h-3 w-3" /> {lang === "bm" ? "Disahkan" : "Verified"}
                                 </span>
                               )}
                             </div>
@@ -510,12 +563,22 @@ export function FilingToolsSheet({
 
               <div className="rounded-2xl bg-emerald-50 p-3.5 text-xs text-emerald-950">
                 <p className="font-bold">
-                  Ready for MyTax e-Filing (Form BE — YA {profile.taxYear})
+                  {lang === "bm"
+                    ? `Sedia untuk e-Filing MyTax (Borang BE — TT ${profile.taxYear})`
+                    : `Ready for MyTax e-Filing (Form BE — YA ${profile.taxYear})`}
                 </p>
                 <p className="mt-0.5 text-[11px] text-emerald-800">
-                  Tap <strong>Copy</strong> on any box below to paste straight
-                  into LHDN MyTax e-BE. Total reliefs:{" "}
-                  <strong>{formatRM(summary.totalReliefs, true)}</strong>.
+                  {lang === "bm" ? (
+                    <>
+                      Ketik <strong>Salin</strong> pada mana-mana kotak di bawah untuk tampal terus ke MyTax e-BE LHDN. Jumlah pelepasan:{" "}
+                      <strong>{formatRM(summary.totalReliefs, true)}</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Tap <strong>Copy</strong> on any box below to paste straight into LHDN MyTax e-BE. Total reliefs:{" "}
+                      <strong>{formatRM(summary.totalReliefs, true)}</strong>.
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -538,7 +601,7 @@ export function FilingToolsSheet({
                         </div>
                         {row.max > 0 && (
                           <p className="mt-0.5 text-[10px] text-slate-400">
-                            Max cap {formatRM(row.max)}
+                            {lang === "bm" ? "Had maks" : "Max cap"} {formatRM(row.max)}
                           </p>
                         )}
                       </div>
@@ -561,11 +624,11 @@ export function FilingToolsSheet({
                         >
                           {isCopied ? (
                             <>
-                              <Check className="h-3 w-3" /> Copied
+                              <Check className="h-3 w-3" /> {lang === "bm" ? "Disalin" : "Copied"}
                             </>
                           ) : (
                             <>
-                              <Copy className="h-3 w-3" /> Copy
+                              <Copy className="h-3 w-3" /> {lang === "bm" ? "Salin" : "Copy"}
                             </>
                           )}
                         </button>
@@ -578,19 +641,25 @@ export function FilingToolsSheet({
               {/* Final Summary Totals */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-1.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Chargeable Income</span>
+                  <span className="text-slate-600">
+                    {lang === "bm" ? "Pendapatan Bercukai" : "Chargeable Income"}
+                  </span>
                   <span className="font-bold text-slate-900">
                     {formatRM(summary.chargeableIncome, true)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Net Tax Payable</span>
+                  <span className="text-slate-600">
+                    {lang === "bm" ? "Cukai Bersih Perlu Dibayar" : "Net Tax Payable"}
+                  </span>
                   <span className="font-bold text-slate-900">
                     {formatRM(summary.netTaxPayable, true)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">PCB / MTD Paid</span>
+                  <span className="text-slate-600">
+                    {lang === "bm" ? "PCB / MTD Telah Dibayar" : "PCB / MTD Paid"}
+                  </span>
                   <span className="font-bold text-slate-900">
                     {formatRM(summary.pcbPaid, true)}
                   </span>
@@ -598,8 +667,12 @@ export function FilingToolsSheet({
                 <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-bold">
                   <span>
                     {summary.estimatedRefund >= 0
-                      ? "Estimated LHDN Refund"
-                      : "Estimated Balance Payable"}
+                      ? lang === "bm"
+                        ? "Anggaran Lebihan LHDN (Refund)"
+                        : "Estimated LHDN Refund"
+                      : lang === "bm"
+                        ? "Anggaran Baki Perlu Dibayar"
+                        : "Estimated Balance Payable"}
                   </span>
                   <span
                     className={
@@ -623,12 +696,18 @@ export function FilingToolsSheet({
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-medium text-emerald-100">
-                      YA {profile.taxYear} Cutoff Countdown
+                      {lang === "bm"
+                        ? `Kiraan Detik Tutup TT ${profile.taxYear}`
+                        : `YA ${profile.taxYear} Cutoff Countdown`}
                     </p>
                     <p className="mt-0.5 text-xl font-bold">
                       {daysLeft > 0
-                        ? `${daysLeft} days left until 31 Dec ${profile.taxYear}`
-                        : `YA ${profile.taxYear} period closed`}
+                        ? lang === "bm"
+                          ? `${daysLeft} hari lagi hingga 31 Dis ${profile.taxYear}`
+                          : `${daysLeft} days left until 31 Dec ${profile.taxYear}`
+                        : lang === "bm"
+                          ? `Tempoh TT ${profile.taxYear} telah tamat`
+                          : `YA ${profile.taxYear} period closed`}
                     </p>
                   </div>
                   <CalendarClock className="h-8 w-8 text-emerald-200" />
@@ -639,7 +718,9 @@ export function FilingToolsSheet({
                   className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm hover:bg-white/25 active:scale-[0.99]"
                 >
                   <CalendarClock className="h-3.5 w-3.5" />
-                  Add 15 Dec &amp; 15 Apr Reminders to Calendar (.ics)
+                  {lang === "bm"
+                    ? "Tambah Peringatan 15 Dis & 15 Apr ke Kalendar (.ics)"
+                    : "Add 15 Dec & 15 Apr Reminders to Calendar (.ics)"}
                 </button>
               </div>
 
@@ -647,7 +728,9 @@ export function FilingToolsSheet({
               <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-slate-900">
-                    Home Broadband Tracker ({broadbandMonths.size}/12 months)
+                    {lang === "bm"
+                      ? `Penjejak Jalur Lebar Rumah (${broadbandMonths.size}/12 bulan)`
+                      : `Home Broadband Tracker (${broadbandMonths.size}/12 months)`}
                   </p>
                   <button
                     type="button"
@@ -657,11 +740,11 @@ export function FilingToolsSheet({
                     }}
                     className="text-[11px] font-semibold text-emerald-700"
                   >
-                    + Upload Bill
+                    {lang === "bm" ? "+ Muat Naik Bil" : "+ Upload Bill"}
                   </button>
                 </div>
                 <div className="grid grid-cols-6 gap-1.5">
-                  {MONTHS.map((label, idx) => {
+                  {(lang === "bm" ? MONTHS_BM : MONTHS).map((label, idx) => {
                     const logged = broadbandMonths.has(idx + 1);
                     return (
                       <div
@@ -683,11 +766,14 @@ export function FilingToolsSheet({
               {/* 1-Tap Recurring Bill Templates */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2.5">
                 <p className="text-xs font-bold text-slate-900">
-                  1-Tap Recurring Expense Templates
+                  {lang === "bm"
+                    ? "Templat Perbelanjaan Berulang 1-Tap"
+                    : "1-Tap Recurring Expense Templates"}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Quickly log a recurring expense now, then attach the PDF/bill
-                  in Vault anytime.
+                  {lang === "bm"
+                    ? "Rekod perbelanjaan berulang dengan pantas sekarang, kemudian lampirkan PDF/bil dalam Arkib bila-bila masa."
+                    : "Quickly log a recurring expense now, then attach the PDF/bill in Vault anytime."}
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {RECURRING_TEMPLATES.map((tpl) => {
@@ -699,10 +785,10 @@ export function FilingToolsSheet({
                       >
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold text-slate-900">
-                            {tpl.label}
+                            {lang === "bm" ? RECURRING_LABELS_BM[tpl.id] ?? tpl.label : tpl.label}
                           </p>
                           <p className="text-[11px] text-slate-500">
-                            Default {formatRM(tpl.defaultAmount)}
+                            {lang === "bm" ? "Lalai" : "Default"} {formatRM(tpl.defaultAmount)}
                           </p>
                         </div>
                         <button
@@ -732,11 +818,11 @@ export function FilingToolsSheet({
                         >
                           {isJustLogged ? (
                             <>
-                              <Check className="h-3 w-3" /> Logged
+                              <Check className="h-3 w-3" /> {lang === "bm" ? "Direkod" : "Logged"}
                             </>
                           ) : (
                             <>
-                              <Plus className="h-3 w-3" /> Log
+                              <Plus className="h-3 w-3" /> {lang === "bm" ? "Rekod" : "Log"}
                             </>
                           )}
                         </button>
@@ -751,20 +837,28 @@ export function FilingToolsSheet({
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
                     <Sparkles className="h-4 w-4 text-emerald-600" />
-                    Highest-ROI Remaining Caps (at{" "}
-                    {Math.round(summary.marginalRate * 100)}% bracket)
+                    {lang === "bm"
+                      ? `Baki Had ROI Tertinggi (pada kadar ${Math.round(summary.marginalRate * 100)}%)`
+                      : `Highest-ROI Remaining Caps (at ${Math.round(summary.marginalRate * 100)}% bracket)`}
                   </div>
-                  {summary.opportunities.map((o) => (
+                  {summary.opportunities.map((o) => {
+                    const oppCat = getReliefCategories(profile.taxYear).find(
+                      (c) => c.id === o.categoryId
+                    );
+                    return (
                     <div
                       key={o.categoryId}
                       className="flex items-center justify-between rounded-xl bg-white p-2.5 text-xs"
                     >
                       <div>
                         <p className="font-semibold text-slate-900">
-                          {o.categoryName} — {formatRM(o.remainingCap)} left
+                          {oppCat ? tCategory(oppCat).name : o.categoryName} — {formatRM(o.remainingCap)}{" "}
+                          {lang === "bm" ? "baki" : "left"}
                         </p>
                         <p className="text-[11px] text-emerald-700 font-medium">
-                          Saves up to {formatRM(o.estimatedTaxSavings)} in tax
+                          {lang === "bm"
+                            ? `Jimat sehingga ${formatRM(o.estimatedTaxSavings)} cukai`
+                            : `Saves up to ${formatRM(o.estimatedTaxSavings)} in tax`}
                         </p>
                       </div>
                       <button
@@ -775,10 +869,11 @@ export function FilingToolsSheet({
                         }}
                         className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white"
                       >
-                        + Add
+                        {lang === "bm" ? "+ Tambah" : "+ Add"}
                       </button>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
             </div>
@@ -829,7 +924,7 @@ export function FilingToolsSheet({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[11px] uppercase tracking-wider text-emerald-100">
-                        Additional Tax Saved
+                        {lang === "bm" ? "Tambahan Cukai Dijimatkan" : "Additional Tax Saved"}
                       </p>
                       <p className="text-2xl font-bold">
                         {formatRM(extraTaxSaved, true)}
@@ -837,7 +932,7 @@ export function FilingToolsSheet({
                     </div>
                     <div className="rounded-xl bg-white/15 px-3 py-1.5 text-right">
                       <p className="text-[10px] uppercase text-emerald-100">
-                        Tax Bracket
+                        {lang === "bm" ? "Kadar Cukai" : "Tax Bracket"}
                       </p>
                       <p className="text-sm font-bold">
                         {Math.round(summary.marginalRate * 100)}% →{" "}
@@ -853,14 +948,19 @@ export function FilingToolsSheet({
                   </div>
                   <div className="flex items-center justify-between border-t border-white/15 pt-2 text-xs text-emerald-100">
                     <span>
-                      New Est. {simRefund >= 0 ? "Refund" : "Balance Due"}:{" "}
+                      {lang === "bm"
+                        ? simRefund >= 0
+                          ? "Anggaran Lebihan Baharu"
+                          : "Anggaran Baki Baharu"
+                        : `New Est. ${simRefund >= 0 ? "Refund" : "Balance Due"}`}
+                      :{" "}
                       <strong className="text-white">
                         {formatRM(Math.abs(simRefund), true)}
                       </strong>
                     </span>
                     {droppedBracket && (
                       <span className="rounded-full bg-amber-400/25 px-2 py-0.5 text-[10px] font-bold text-amber-100">
-                        Bracket Dropped!
+                        {lang === "bm" ? "Kadar Cukai Turun!" : "Bracket Dropped!"}
                       </span>
                     )}
                   </div>
@@ -868,35 +968,51 @@ export function FilingToolsSheet({
 
                 <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                   <SliderRow
-                    label="Extra PRS Top-Up"
+                    label={lang === "bm" ? "Tokok Tambahan PRS" : "Extra PRS Top-Up"}
                     value={extraPrs}
                     max={Math.max(0, Math.round(prsRem))}
                     step={100}
                     onChange={setExtraPrs}
                   />
                   <SliderRow
-                    label="Extra Lifestyle / Sports"
+                    label={
+                      lang === "bm"
+                        ? "Tambahan Gaya Hidup / Sukan"
+                        : "Extra Lifestyle / Sports"
+                    }
                     value={extraLifestyleSports}
                     max={Math.max(0, Math.round(lsRem))}
                     step={100}
                     onChange={setExtraLifestyleSports}
                   />
                   <SliderRow
-                    label="Extra SSPN Net Deposit"
+                    label={
+                      lang === "bm"
+                        ? "Tambahan Deposit Bersih SSPN"
+                        : "Extra SSPN Net Deposit"
+                    }
                     value={extraSspn}
                     max={Math.max(0, Math.round(sspnRem))}
                     step={250}
                     onChange={setExtraSspn}
                   />
                   <SliderRow
-                    label="Extra Sec. 44(6) Donations"
+                    label={
+                      lang === "bm"
+                        ? "Tambahan Derma Sek. 44(6)"
+                        : "Extra Sec. 44(6) Donations"
+                    }
                     value={extraDonations}
                     max={Math.min(15000, Math.max(0, Math.round(donRem)))}
                     step={100}
                     onChange={setExtraDonations}
                   />
                   <SliderRow
-                    label="Extra Zakat / Fitrah (Direct Rebate)"
+                    label={
+                      lang === "bm"
+                        ? "Tambahan Zakat / Fitrah (Rebat Terus)"
+                        : "Extra Zakat / Fitrah (Direct Rebate)"
+                    }
                     value={extraZakat}
                     max={Math.max(500, Math.round(summary.netTaxPayable))}
                     step={50}
@@ -914,7 +1030,7 @@ export function FilingToolsSheet({
                     }}
                     className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600"
                   >
-                    Reset Sliders
+                    {lang === "bm" ? "Set Semula Gelangsar" : "Reset Sliders"}
                   </button>
                 </div>
               </div>
@@ -925,16 +1041,29 @@ export function FilingToolsSheet({
           {activeTab === "joint-vs-separate" && (
             <div className="space-y-4">
               <p className="text-xs text-slate-600">
-                Compare total Malaysian household income tax under{" "}
-                <strong>Separate Assessment</strong> vs{" "}
-                <strong>Joint Assessment</strong> (using your YA{" "}
-                {profile.taxYear} figures + your spouse&apos;s estimates).
+                {lang === "bm" ? (
+                  <>
+                    Bandingkan jumlah cukai pendapatan isi rumah Malaysia di bawah{" "}
+                    <strong>Taksiran Berasingan</strong> berbanding{" "}
+                    <strong>Taksiran Bersama</strong> (menggunakan angka TT{" "}
+                    {profile.taxYear} anda + anggaran pasangan).
+                  </>
+                ) : (
+                  <>
+                    Compare total Malaysian household income tax under{" "}
+                    <strong>Separate Assessment</strong> vs{" "}
+                    <strong>Joint Assessment</strong> (using your YA{" "}
+                    {profile.taxYear} figures + your spouse&apos;s estimates).
+                  </>
+                )}
               </p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Spouse Annual Income (RM)
+                    {lang === "bm"
+                      ? "Pendapatan Tahunan Pasangan (RM)"
+                      : "Spouse Annual Income (RM)"}
                   </label>
                   <input
                     type="number"
@@ -947,7 +1076,9 @@ export function FilingToolsSheet({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Spouse Total Reliefs (RM)
+                    {lang === "bm"
+                      ? "Jumlah Pelepasan Pasangan (RM)"
+                      : "Spouse Total Reliefs (RM)"}
                   </label>
                   <input
                     type="number"
@@ -969,26 +1100,38 @@ export function FilingToolsSheet({
                 }`}
               >
                 <p className="text-[11px] font-bold uppercase tracking-wider opacity-75">
-                  Recommended Filing Method
+                  {lang === "bm" ? "Kaedah e-Filing Disyorkan" : "Recommended Filing Method"}
                 </p>
                 <p className="mt-1 text-lg font-bold">
                   {separateSaves >= 0
-                    ? `Separate Assessment saves ${formatRM(separateSaves, true)}`
-                    : `Joint Assessment saves ${formatRM(Math.abs(separateSaves), true)}`}
+                    ? lang === "bm"
+                      ? `Taksiran Berasingan jimat ${formatRM(separateSaves, true)}`
+                      : `Separate Assessment saves ${formatRM(separateSaves, true)}`
+                    : lang === "bm"
+                      ? `Taksiran Bersama jimat ${formatRM(Math.abs(separateSaves), true)}`
+                      : `Joint Assessment saves ${formatRM(Math.abs(separateSaves), true)}`}
                 </p>
                 <p className="mt-1 text-xs opacity-85">
                   {separateSaves >= 0
-                    ? "In Malaysia, Separate Assessment almost always wins when both spouses earn income, because each spouse gets lower progressive brackets + individual RM9,000 relief."
-                    : "Joint Assessment wins here because combining income with the RM4,000 spouse relief reduces your household's total tax."}
+                    ? lang === "bm"
+                      ? "Di Malaysia, Taksiran Berasingan hampir selalu lebih jimat apabila kedua-dua pasangan berpendapatan, kerana masing-masing mendapat kadar cukai progresif lebih rendah + pelepasan individu RM9,000."
+                      : "In Malaysia, Separate Assessment almost always wins when both spouses earn income, because each spouse gets lower progressive brackets + individual RM9,000 relief."
+                    : lang === "bm"
+                      ? "Taksiran Bersama lebih jimat di sini kerana penggabungan pendapatan dengan pelepasan pasangan RM4,000 mengurangkan jumlah cukai isi rumah."
+                      : "Joint Assessment wins here because combining income with the RM4,000 spouse relief reduces your household's total tax."}
                 </p>
               </div>
 
               {/* Side-by-Side Comparison */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-1.5">
-                  <p className="font-bold text-slate-900">Separate Assessment</p>
+                  <p className="font-bold text-slate-900">
+                    {lang === "bm" ? "Taksiran Berasingan" : "Separate Assessment"}
+                  </p>
                   <div className="flex justify-between text-slate-600">
-                    <span>Your Tax ({Math.round(selfTaxSep.marginalRate * 100)}%)</span>
+                    <span>
+                      {lang === "bm" ? "Cukai Anda" : "Your Tax"} ({Math.round(selfTaxSep.marginalRate * 100)}%)
+                    </span>
                     <span>
                       {formatRM(
                         Math.max(
@@ -1001,7 +1144,7 @@ export function FilingToolsSheet({
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>
-                      Spouse ({Math.round(spouseTaxSep.marginalRate * 100)}%)
+                      {lang === "bm" ? "Pasangan" : "Spouse"} ({Math.round(spouseTaxSep.marginalRate * 100)}%)
                     </span>
                     <span>
                       {formatRM(
@@ -1011,23 +1154,25 @@ export function FilingToolsSheet({
                     </span>
                   </div>
                   <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-900">
-                    <span>Household Total</span>
+                    <span>{lang === "bm" ? "Jumlah Isi Rumah" : "Household Total"}</span>
                     <span>{formatRM(totalSeparateTax, true)}</span>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-1.5">
-                  <p className="font-bold text-slate-900">Joint Assessment</p>
+                  <p className="font-bold text-slate-900">
+                    {lang === "bm" ? "Taksiran Bersama" : "Joint Assessment"}
+                  </p>
                   <div className="flex justify-between text-slate-600">
-                    <span>Combined Income</span>
+                    <span>{lang === "bm" ? "Pendapatan Gabungan" : "Combined Income"}</span>
                     <span>{formatRM(combinedIncome)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>Joint Bracket</span>
+                    <span>{lang === "bm" ? "Kadar Bersama" : "Joint Bracket"}</span>
                     <span>{Math.round(jointTaxRaw.marginalRate * 100)}%</span>
                   </div>
                   <div className="flex justify-between border-t border-slate-100 pt-1.5 font-bold text-slate-900">
-                    <span>Household Total</span>
+                    <span>{lang === "bm" ? "Jumlah Isi Rumah" : "Household Total"}</span>
                     <span>{formatRM(totalJointTax, true)}</span>
                   </div>
                 </div>
@@ -1035,14 +1180,28 @@ export function FilingToolsSheet({
 
               {/* Pro Tip on Splitting Reliefs */}
               <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
-                <strong>Pro Tip:</strong> Claim shared reliefs (like{" "}
-                <strong>Children</strong>, <strong>Childcare RM3,000</strong>,{" "}
-                <strong>SSPN</strong>, and <strong>Medical</strong>) on whoever
-                is in the higher tax bracket (
-                {selfTaxSep.marginalRate >= spouseTaxSep.marginalRate
-                  ? `You at ${Math.round(selfTaxSep.marginalRate * 100)}%`
-                  : `Your spouse at ${Math.round(spouseTaxSep.marginalRate * 100)}%`}
-                ) to maximize Ringgit saved!
+                {lang === "bm" ? (
+                  <>
+                    <strong>Tip Pro:</strong> Tuntut pelepasan berkongsi (seperti{" "}
+                    <strong>Anak</strong>, <strong>Taska RM3,000</strong>,{" "}
+                    <strong>SSPN</strong>, dan <strong>Perubatan</strong>) pada pasangan dalam kadar cukai lebih tinggi (
+                    {selfTaxSep.marginalRate >= spouseTaxSep.marginalRate
+                      ? `Anda pada ${Math.round(selfTaxSep.marginalRate * 100)}%`
+                      : `Pasangan anda pada ${Math.round(spouseTaxSep.marginalRate * 100)}%`}
+                    ) untuk memaksimumkan penjimatan Ringgit!
+                  </>
+                ) : (
+                  <>
+                    <strong>Pro Tip:</strong> Claim shared reliefs (like{" "}
+                    <strong>Children</strong>, <strong>Childcare RM3,000</strong>,{" "}
+                    <strong>SSPN</strong>, and <strong>Medical</strong>) on whoever
+                    is in the higher tax bracket (
+                    {selfTaxSep.marginalRate >= spouseTaxSep.marginalRate
+                      ? `You at ${Math.round(selfTaxSep.marginalRate * 100)}%`
+                      : `Your spouse at ${Math.round(spouseTaxSep.marginalRate * 100)}%`}
+                    ) to maximize Ringgit saved!
+                  </>
+                )}
               </div>
             </div>
           )}

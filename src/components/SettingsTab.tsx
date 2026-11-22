@@ -81,7 +81,8 @@ export function SettingsTab({
   onClearLocalData,
 }: SettingsTabProps) {
   const amounts = getStatusReliefAmounts(profile.taxYear);
-  const copy = getUiCopy(personalization.language);
+  const lang = personalization.language;
+  const copy = getUiCopy(lang);
   const payslipInputRef = useRef<HTMLInputElement>(null);
 
   const [email, setEmail] = useState("");
@@ -506,11 +507,14 @@ export function SettingsTab({
             }`}
           >
             <p className="text-xs font-bold text-slate-900">
-              Salaried Individual (Form e-BE)
+              {personalization.language === "bm"
+                ? "Individu Makan Gaji (Borang e-BE)"
+                : "Salaried Individual (Form e-BE)"}
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500">
-              Employment income only • e-Filing deadline 30 April{" "}
-              {profile.taxYear + 1}
+              {personalization.language === "bm"
+                ? `Pendapatan penggajian sahaja • Akhir e-Filing 30 April ${profile.taxYear + 1}`
+                : `Employment income only • e-Filing deadline 30 April ${profile.taxYear + 1}`}
             </p>
           </button>
           <button
@@ -523,11 +527,14 @@ export function SettingsTab({
             }`}
           >
             <p className="text-xs font-bold text-slate-900">
-              Freelancer / Sole Prop / Mixed (Form e-B)
+              {personalization.language === "bm"
+                ? "Pekerja Bebas / Perniagaan (Borang e-B)"
+                : "Freelancer / Sole Prop / Mixed (Form e-B)"}
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500">
-              Business + personal reliefs • Deadline 30 June{" "}
-              {profile.taxYear + 1} • CP500 instalments
+              {personalization.language === "bm"
+                ? `Pelepasan perniagaan + peribadi • Akhir 30 Jun ${profile.taxYear + 1} • Ansuran CP500`
+                : `Business + personal reliefs • Deadline 30 June ${profile.taxYear + 1} • CP500 instalments`}
             </p>
           </button>
         </div>
@@ -579,7 +586,7 @@ export function SettingsTab({
         {/* Life-Stage Presets */}
         <div>
           <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-slate-700">
-            <span>1-Tap Life-Stage Preset</span>
+            <span>{copy.lifeStagePresetLabel}</span>
             <InfoHint
               align="left"
               title="Auto-Configures Your App"
@@ -625,7 +632,7 @@ export function SettingsTab({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-              <span>Tax-Saving Goal (RM)</span>
+              <span>{copy.taxSavingGoalLabel}</span>
               <InfoHint
                 align="left"
                 title="Personal Target"
@@ -648,7 +655,7 @@ export function SettingsTab({
           </div>
           <div>
             <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-              <span>Monthly Payday Reminder (Day 1–31)</span>
+              <span>{copy.paydayReminderLabel}</span>
               <InfoHint
                 align="right"
                 title="Payday Nudge"
@@ -659,7 +666,11 @@ export function SettingsTab({
               type="number"
               min="1"
               max="31"
-              placeholder="e.g. 25 (optional)"
+              placeholder={
+                personalization.language === "bm"
+                  ? "cth. 25 (pilihan)"
+                  : "e.g. 25 (optional)"
+              }
               value={personalization.paydayDay ?? ""}
               onChange={(e) => {
                 const raw = e.target.value;
@@ -678,7 +689,7 @@ export function SettingsTab({
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1 text-xs font-bold text-slate-800">
-              <span>1-Tap Monthly Recurring Bills</span>
+              <span>{copy.recurringBillsMgrTitle}</span>
               <InfoHint
                 align="left"
                 title="Quick Monthly Logging"
@@ -686,7 +697,7 @@ export function SettingsTab({
               />
             </span>
             <span className="text-[10px] font-semibold text-slate-500">
-              {recurringBills.length} saved
+              {recurringBills.length} {copy.savedCount}
             </span>
           </div>
 
@@ -708,7 +719,7 @@ export function SettingsTab({
                   }
                   className="text-[11px] font-semibold text-rose-600 hover:underline"
                 >
-                  Remove
+                  {copy.removeBtn}
                 </button>
               </div>
             ))}
@@ -717,7 +728,11 @@ export function SettingsTab({
           <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-4">
             <input
               type="text"
-              placeholder="Merchant (e.g. Taska)"
+              placeholder={
+                personalization.language === "bm"
+                  ? "Kedai (cth. Taska)"
+                  : "Merchant (e.g. Taska)"
+              }
               value={newBillMerchant}
               onChange={(e) => setNewBillMerchant(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs sm:col-span-2"
@@ -725,7 +740,9 @@ export function SettingsTab({
             <input
               type="number"
               min="1"
-              placeholder="RM / month"
+              placeholder={
+                personalization.language === "bm" ? "RM / bulan" : "RM / month"
+              }
               value={newBillAmount}
               onChange={(e) => setNewBillAmount(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
@@ -735,10 +752,20 @@ export function SettingsTab({
               onChange={(e) => setNewBillCategory(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
             >
-              <option value="lifestyle">Lifestyle</option>
-              <option value="sports">Sports / Gym</option>
-              <option value="edu_med_insurance">Med Insurance</option>
-              <option value="childcare">Childcare</option>
+              <option value="lifestyle">
+                {personalization.language === "bm" ? "Gaya Hidup" : "Lifestyle"}
+              </option>
+              <option value="sports">
+                {personalization.language === "bm" ? "Sukan / Gim" : "Sports / Gym"}
+              </option>
+              <option value="edu_med_insurance">
+                {personalization.language === "bm"
+                  ? "Insurans Perubatan"
+                  : "Med Insurance"}
+              </option>
+              <option value="childcare">
+                {personalization.language === "bm" ? "Taska / Tadika" : "Childcare"}
+              </option>
               <option value="sspn">SSPN</option>
             </select>
           </div>
@@ -755,7 +782,10 @@ export function SettingsTab({
                   categoryId: newBillCategory,
                   subCategoryId: null,
                   amount: amt,
-                  description: "Monthly recurring bill",
+                  description:
+                    personalization.language === "bm"
+                      ? "Bil bulanan berulang"
+                      : "Monthly recurring bill",
                 },
               ]);
               setNewBillMerchant("");
@@ -763,7 +793,7 @@ export function SettingsTab({
             }}
             className="w-full rounded-lg border border-emerald-300 bg-emerald-50 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
           >
-            + Add Recurring Bill
+            {copy.addRecurringBtn}
           </button>
         </div>
       </section>
@@ -800,7 +830,7 @@ export function SettingsTab({
             ) : (
               <FileUp className="h-3.5 w-3.5" />
             )}
-            Upload Payslip
+            {copy.uploadPayslipBtn}
           </button>
         </div>
 
@@ -1131,17 +1161,23 @@ export function SettingsTab({
                   <div>
                     <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                       <Database className="h-3.5 w-3.5 text-slate-600" />
-                      7-Year LHDN Drive Archive (Optional)
+                      {lang === "bm"
+                        ? "Arkib Google Drive 7-Tahun LHDN (Pilihan)"
+                        : "7-Year LHDN Drive Archive (Optional)"}
                     </h3>
                     <p className="mt-0.5 text-[11px] text-slate-600">
                       {driveConnected
-                        ? `Connected! Backs up raw PDFs & Form BE worksheets directly to My Drive / CukaiKu / Receipts / ${profile.taxYear}`
-                        : "Optional: Automatically deposit an independent backup of all receipts and worksheets directly into your personal Google Drive for 7-year audit peace of mind."}
+                        ? lang === "bm"
+                          ? `Disambungkan! Sandaran PDF asal & helaian Borang BE terus ke My Drive / CukaiKu / Receipts / ${profile.taxYear}`
+                          : `Connected! Backs up raw PDFs & Form BE worksheets directly to My Drive / CukaiKu / Receipts / ${profile.taxYear}`
+                        : lang === "bm"
+                          ? "Pilihan: Simpan sandaran automatik semua resit dan helaian kerja terus ke Google Drive peribadi anda untuk ketenangan audit 7 tahun."
+                          : "Optional: Automatically deposit an independent backup of all receipts and worksheets directly into your personal Google Drive for 7-year audit peace of mind."}
                     </p>
                   </div>
                   {driveConnected && (
                     <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                      Connected
+                      {lang === "bm" ? "Disambungkan" : "Connected"}
                     </span>
                   )}
                 </div>
@@ -1160,7 +1196,9 @@ export function SettingsTab({
                         ) : (
                           <Cloud className="h-3.5 w-3.5" />
                         )}
-                        Back Up YA {profile.taxYear} to Drive
+                        {lang === "bm"
+                          ? `Sandar TT ${profile.taxYear} ke Drive`
+                          : `Back Up YA ${profile.taxYear} to Drive`}
                       </button>
                       {driveFolderUrl && (
                         <a
@@ -1373,7 +1411,7 @@ export function SettingsTab({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 text-slate-500" />
-          <h2 className="text-sm font-bold text-slate-900">Data Tools</h2>
+          <h2 className="text-sm font-bold text-slate-900">{copy.dataToolsTitle}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -1382,7 +1420,9 @@ export function SettingsTab({
             className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Load Sample YA {profile.taxYear} Data
+            {lang === "bm"
+              ? `Muat Data Contoh TT ${profile.taxYear}`
+              : `Load Sample YA ${profile.taxYear} Data`}
           </button>
           <button
             type="button"
@@ -1390,7 +1430,7 @@ export function SettingsTab({
             className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Clear Local Data
+            {copy.clearYearBtn}
           </button>
         </div>
       </section>
