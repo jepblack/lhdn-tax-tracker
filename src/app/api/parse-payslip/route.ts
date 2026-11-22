@@ -198,6 +198,7 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const renderedImage = formData.get("renderedImage") as File | null;
 
     if (!file) {
       return NextResponse.json(
@@ -341,6 +342,20 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
   "confidence": "high" | "medium" | "low"
 }`;
 
+    // Prepare visual image (either uploaded image OR client-rendered JPEG of PDF Page 1)
+    let visualImageBase64: string | null = null;
+    let visualImageMimeType = "image/jpeg";
+    if (!isPdf && file.type.startsWith("image/")) {
+      visualImageBase64 = Buffer.from(arrayBuffer).toString("base64");
+      visualImageMimeType = file.type || "image/jpeg";
+    } else if (renderedImage && renderedImage.size > 0) {
+      const imgBuf = await renderedImage.arrayBuffer();
+      if (imgBuf.byteLength > 0) {
+        visualImageBase64 = Buffer.from(imgBuf).toString("base64");
+        visualImageMimeType = renderedImage.type || "image/jpeg";
+      }
+    }
+
     // For PDFs, Gemini can read the visual PDF layout directly via inlineData (avoids scrambled OCR text order!)
     if (canUseGemini) {
       try {
@@ -349,34 +364,44 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
           { text: prompt },
           {
             inlineData: {
-              mimeType: isPdf ? "application/pdf" : file.type || "image/jpeg",
+              mimeType: isPdf ? "application/pdf" : visualImageMimeType,
               data: Buffer.from(arrayBuffer).toString("base64"),
             },
           },
         ];
 
         const callGemini = async () => {
-          try {
-            return await ai.models.generateContent({
-              model: GEMINI_MODEL,
-              contents,
-              config: {
-                temperature: 0.1,
-                maxOutputTokens: 1500,
-                thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-              },
-            });
-          } catch (cfgErr) {
-            const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
-            if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
+          const models = [GEMINI_MODEL, "gemini-2.5-flash"];
+          let lastErr: unknown = null;
+          for (const modelName of models) {
+            try {
               return await ai.models.generateContent({
-                model: GEMINI_MODEL,
+                model: modelName,
                 contents,
-                config: { temperature: 0.1, maxOutputTokens: 1500 },
+                config: {
+                  temperature: 0.1,
+                  maxOutputTokens: 1500,
+                  thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+                },
               });
+            } catch (cfgErr) {
+              const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+              if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
+                try {
+                  return await ai.models.generateContent({
+                    model: modelName,
+                    contents,
+                    config: { temperature: 0.1, maxOutputTokens: 1500 },
+                  });
+                } catch (retryErr) {
+                  lastErr = retryErr;
+                }
+              } else {
+                lastErr = cfgErr;
+              }
             }
-            throw cfgErr;
           }
+          throw lastErr || new Error("Gemini failed");
         };
 
         const response = await Promise.race([
@@ -399,18 +424,18 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
       }
     }
 
-    // Try Groq Vision if Gemini unavailable/failed
-    if (canUseGroq && (pdfText.length >= 20 || file.type.startsWith("image/"))) {
+    // Try Groq Vision if Gemini unavailable/failed.
+    // CRITICAL: When visualImageBase64 is available (including rendered PDF page 1),
+    // pass textContent=null so Groq uses its Vision model on the real layout
+    // rather than scrambled unpdf text!
+    if (canUseGroq && (visualImageBase64 || pdfText.length >= 20)) {
       try {
         const parsed = await callGroqJson({
           apiKey: groqKey!,
           prompt,
-          textContent: pdfText.length >= 20 ? pdfText : null,
-          imageBase64:
-            pdfText.length >= 20
-              ? null
-              : Buffer.from(arrayBuffer).toString("base64"),
-          imageMimeType: file.type || "image/jpeg",
+          textContent: visualImageBase64 ? null : pdfText,
+          imageBase64: visualImageBase64,
+          imageMimeType: visualImageMimeType,
           maxTokens: 1500,
         });
         const aiExtraction = normalizeAiPayslip(parsed, "Groq Vision", pdfText || undefined);

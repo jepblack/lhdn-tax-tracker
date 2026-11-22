@@ -30,6 +30,7 @@ import {
   parseMalaysianPayslipText,
   PayslipExtraction,
 } from "@/lib/payslip-parser";
+import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
 import {
   getUiCopy,
@@ -140,6 +141,13 @@ export function SettingsTab({
 
       const formData = new FormData();
       formData.append("file", file);
+
+      if (isPdf) {
+        const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1600);
+        if (renderedJpeg) {
+          formData.append("renderedImage", renderedJpeg);
+        }
+      }
 
       const res = await fetch("/api/parse-payslip", {
         method: "POST",
