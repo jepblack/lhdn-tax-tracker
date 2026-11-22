@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import { useLanguage } from "@/lib/language-context";
 import {
   FREE_AI_SCAN_LIMIT,
   PRICING_PLANS,
@@ -89,6 +90,7 @@ export function PricingModal({
     useState<PaymentGatewayId>("stripe");
   const [processing, setProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const { copy } = useLanguage();
 
   if (!isOpen) return null;
 
@@ -166,14 +168,14 @@ export function PricingModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold">
-                  Upgrade to CukaiKu Pro
+                  {copy.pricingTitle}
                 </h2>
                 <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold uppercase text-slate-950">
                   YA {taxYear} Pass
                 </span>
               </div>
               <p className="text-xs text-emerald-100/85">
-                Unlimited AI Receipt Vision + 7-Year LHDN Audit Pack
+                {copy.pricingSub}
               </p>
             </div>
           </div>

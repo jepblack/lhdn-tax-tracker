@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { runLocalReceiptOcr } from "@/lib/local-ocr";
 import { enqueueOfflineReceipt } from "@/lib/offline-queue";
@@ -138,6 +139,7 @@ export function ReceiptScannerModal({
   const [isSaving, setIsSaving] = useState(false);
 
   // Full-Screen Viewfinder Mode Toggle (Receipt OCR vs MyInvois QR), Claim Type (e-B), and Offline Queue state
+  const { copy } = useLanguage();
   const [scannerMode, setScannerMode] = useState<"ocr" | "qr">(initialScannerMode);
   const [claimType, setClaimType] = useState<ExpenseClaimType>("personal_relief");
   const [myInvoisUuid, setMyInvoisUuid] = useState<string>("");
@@ -703,7 +705,7 @@ export function ReceiptScannerModal({
               }`}
             >
               <Camera className="h-3.5 w-3.5" />
-              Receipt OCR
+              {copy.scannerPhotoTab}
             </button>
             <button
               type="button"
@@ -715,7 +717,7 @@ export function ReceiptScannerModal({
               }`}
             >
               <QrCode className="h-3.5 w-3.5" />
-              MyInvois QR
+              {copy.scannerQrTab}
             </button>
           </div>
 
@@ -1626,9 +1628,9 @@ export function ReceiptScannerModal({
                     Saving...
                   </>
                 ) : editingExpense ? (
-                  "Update Receipt"
+                  copy.scannerUpdateBtn
                 ) : (
-                  "Save Receipt"
+                  copy.scannerSaveBtn
                 )}
               </button>
             </>

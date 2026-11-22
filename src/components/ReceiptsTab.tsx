@@ -25,6 +25,7 @@ import {
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories } from "@/lib/lhdn-rules";
+import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
@@ -95,6 +96,7 @@ export function ReceiptsTab({
   onAddNew,
 }: ReceiptsTabProps) {
   const [vaultView, setVaultView] = useState<"receipts" | "docs">("receipts");
+  const { copy, tCategory } = useLanguage();
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "missing" | "review">(
     "all"
@@ -155,7 +157,7 @@ export function ReceiptsTab({
             </p>
             <p className="flex items-center gap-1 text-[11px] text-slate-500">
               <span>
-                LHDN 7-year retention until{" "}
+                {copy.retentionUntil}{" "}
                 <strong className="text-slate-700">{taxYear + 8}</strong>
               </span>
               <InfoHint
@@ -202,7 +204,7 @@ export function ReceiptsTab({
             ) : (
               <Archive className="h-3.5 w-3.5" />
             )}
-            Audit ZIP
+            {copy.auditZipBtn}
           </button>
         </div>
       </div>
@@ -219,7 +221,7 @@ export function ReceiptsTab({
                 : "text-slate-500"
             }`}
           >
-            Receipts ({yearExpenses.length})
+            {copy.receiptsTabBtn} ({yearExpenses.length})
           </button>
           <button
             type="button"
@@ -230,7 +232,7 @@ export function ReceiptsTab({
                 : "text-slate-500"
             }`}
           >
-            Annual Docs ({annualDocs.filter((d) => d.taxYear === taxYear).length})
+            {copy.annualDocsTabBtn} ({annualDocs.filter((d) => d.taxYear === taxYear).length})
           </button>
         </div>
         <InfoHint
@@ -739,7 +741,7 @@ export function ReceiptsTab({
                 : "border-slate-200 bg-white text-slate-600"
             }`}
           >
-            No File ({missingCount})
+            {copy.missingBadge} ({missingCount})
           </button>
         </div>
       </div>
@@ -749,12 +751,12 @@ export function ReceiptsTab({
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
           <FileText className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm font-semibold text-slate-800">
-            No receipts found
+            {copy.emptyReceiptsTitle.replace("{year}", String(taxYear))}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {yearExpenses.length === 0
-              ? `Snap or upload your first YA ${taxYear} receipt to build your audit vault.`
-              : "Try clearing your search or filter."}
+              ? copy.emptyReceiptsDesc.replace("{year}", String(taxYear))
+              : copy.searchReceiptsPlaceholder}
           </p>
           {yearExpenses.length === 0 && (
             <button
@@ -762,7 +764,7 @@ export function ReceiptsTab({
               onClick={onAddNew}
               className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
             >
-              + Scan Receipt
+              {copy.addFirstReceiptBtn}
             </button>
           )}
         </div>

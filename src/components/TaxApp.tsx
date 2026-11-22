@@ -57,6 +57,7 @@ import {
   updateExpense,
   uploadAnnualDocToSupabase,
 } from "@/lib/storage";
+import { LanguageProvider } from "@/lib/language-context";
 import {
   DEFAULT_PERSONALIZATION,
   getCurrentYearMonth,
@@ -1016,11 +1017,12 @@ export function TaxApp() {
   ];
 
   return (
-    <div
-      className={`min-h-screen overflow-x-hidden bg-canvas text-slate-900 ${
-        privacyBlur ? "privacy-mode" : ""
-      }`}
-    >
+    <LanguageProvider lang={personalization.language}>
+      <div
+        className={`min-h-screen overflow-x-hidden bg-canvas text-slate-900 ${
+          privacyBlur ? "privacy-mode" : ""
+        }`}
+      >
       {/* Top Sticky Responsive Header */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 pt-safe backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-3 py-2.5 sm:px-6 sm:py-3">
@@ -1620,6 +1622,7 @@ export function TaxApp() {
         onLoadSampleData={handleLoadSampleData}
       />
     </div>
+    </LanguageProvider>
   );
 }
 

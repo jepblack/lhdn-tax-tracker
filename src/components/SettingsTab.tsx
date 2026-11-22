@@ -460,10 +460,10 @@ export function SettingsTab({
                 <h2 className="text-sm font-bold">
                   CukaiKu{" "}
                   {subscription.planTier === "family"
-                    ? "Family & Joint Pass"
+                    ? copy.familyPassLabel
                     : subscription.planTier === "pro"
-                    ? "Pro Pass"
-                    : "Free Starter"}
+                    ? copy.proPassLabel
+                    : copy.freeStarterLabel}
                 </h2>
                 <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-100">
                   {subscription.planTier}
@@ -480,7 +480,7 @@ export function SettingsTab({
             onClick={() => onOpenUpgrade()}
             className="shrink-0 rounded-xl bg-amber-400 px-3 py-2 text-xs font-extrabold text-slate-950 shadow-xs hover:bg-amber-300 active:scale-95"
           >
-            {subscription.planTier === "free" ? "Upgrade (RM 29)" : "Manage Pass"}
+            {subscription.planTier === "free" ? copy.upgradeBtn : copy.managePassBtn}
           </button>
         </div>
       </section>
@@ -1012,7 +1012,7 @@ export function SettingsTab({
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
           <h2 className="text-sm font-bold text-slate-900">
-            Status &amp; Family Reliefs (No Receipt Needed)
+            {copy.statusReliefsTitle}
           </h2>
           <InfoHint
             title="Automatic LHDN Reliefs"
@@ -1022,43 +1022,43 @@ export function SettingsTab({
 
         <div className="divide-y divide-slate-100">
           <ToggleRow
-            label="Individual & Dependent Relatives"
+            label={copy.statusIndividual}
             amount={amounts.individual}
             checked={profile.statusReliefs.individual}
             onChange={(v) => updateStatus("individual", v)}
           />
           <ToggleRow
-            label="Disabled Individual (OKU)"
+            label={copy.statusDisabledIndividual}
             amount={amounts.disabledIndividual}
             checked={profile.statusReliefs.disabledIndividual}
             onChange={(v) => updateStatus("disabledIndividual", v)}
           />
           <ToggleRow
-            label="Spouse Relief (No Income / Joint)"
+            label={copy.statusSpouse}
             amount={amounts.spouse}
             checked={profile.statusReliefs.spouse}
             onChange={(v) => updateStatus("spouse", v)}
           />
           <ToggleRow
-            label="Disabled Spouse (OKU)"
+            label={copy.statusDisabledSpouse}
             amount={amounts.disabledSpouse}
             checked={profile.statusReliefs.disabledSpouse}
             onChange={(v) => updateStatus("disabledSpouse", v)}
           />
           <CounterRow
-            label="Unmarried Children (Under 18)"
+            label={copy.statusChildUnder18}
             unitAmount={amounts.childUnder18}
             value={profile.statusReliefs.childrenUnder18}
             onChange={(v) => updateStatus("childrenUnder18", v)}
           />
           <CounterRow
-            label="Children 18+ (Diploma / Degree)"
+            label={copy.statusChildHigherEd}
             unitAmount={amounts.childHigherEd}
             value={profile.statusReliefs.childrenHigherEd}
             onChange={(v) => updateStatus("childrenHigherEd", v)}
           />
           <CounterRow
-            label="Disabled Child (OKU)"
+            label={copy.statusDisabledChild}
             unitAmount={amounts.disabledChild}
             value={profile.statusReliefs.disabledChildren}
             onChange={(v) => updateStatus("disabledChildren", v)}
@@ -1076,7 +1076,7 @@ export function SettingsTab({
               <CloudOff className="h-4 w-4 text-slate-400" />
             )}
             <h2 className="text-sm font-bold text-slate-900">
-              Cloud Sync &amp; 7-Year LHDN Vault
+              {copy.cloudVaultTitle}
             </h2>
           </div>
           <span
@@ -1109,10 +1109,10 @@ export function SettingsTab({
                   </div>
                   <div>
                     <p className="text-xs font-bold text-emerald-950">
-                      CukaiKu Cloud Sync: Active
+                      {copy.cloudActiveTitle}
                     </p>
                     <p className="text-[11px] text-emerald-800">
-                      Signed in as <strong>{userEmail}</strong> • All receipts &amp; reliefs sync across your devices.
+                      {userEmail}
                     </p>
                   </div>
                 </div>
@@ -1121,7 +1121,7 @@ export function SettingsTab({
                   onClick={handleSignOut}
                   className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-95"
                 >
-                  <LogOut className="h-3.5 w-3.5" /> Sign Out
+                  <LogOut className="h-3.5 w-3.5" /> {copy.signOutBtn}
                 </button>
               </div>
 
@@ -1181,7 +1181,7 @@ export function SettingsTab({
                       className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 active:scale-[0.99]"
                     >
                       <Cloud className="h-3.5 w-3.5 text-blue-600" />
-                      Enable Google Drive Archive (Optional)
+                      {copy.enableDriveBtn}
                     </button>
                   )}
 
@@ -1197,7 +1197,7 @@ export function SettingsTab({
                     ) : (
                       <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-600" />
                     )}
-                    Push Local Receipts to Cloud
+                    {copy.pushLocalBtn}
                   </button>
                 </div>
               </div>
@@ -1234,10 +1234,10 @@ export function SettingsTab({
               <div className="rounded-xl bg-amber-50/90 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
                 <p className="font-semibold flex items-center gap-1.5">
                   <CloudOff className="h-3.5 w-3.5 text-amber-600" />
-                  Currently in Local Browser Mode
+                  {copy.localBrowserMode}
                 </p>
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Receipts and numbers entered on this device stay in this browser only. To sync across your phone and PC, sign in below with the <strong>same account</strong> on both devices.
+                  {copy.localBrowserDesc}
                 </p>
               </div>
               <p className="text-xs text-slate-500">

@@ -25,6 +25,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import { useLanguage } from "@/lib/language-context";
 import { matchPartnerOffersToOpportunities } from "@/lib/monetization";
 import {
   getCurrentYearMonth,
@@ -103,7 +104,7 @@ export function DashboardTab({
   const [loggingBillId, setLoggingBillId] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState(String(personalization.taxSavingGoal));
-  const copy = getUiCopy(personalization.language);
+  const { copy, tCategory } = useLanguage();
   const currentMonth = getCurrentYearMonth();
   const nearPayday = isNearPayday(personalization.paydayDay);
 
@@ -578,7 +579,7 @@ export function DashboardTab({
           <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700">
             <ClipboardList className="h-4 w-4" />
           </div>
-          <span className="text-[10px] font-bold text-slate-800">Form BE</span>
+          <span className="text-[10px] font-bold text-slate-800">{copy.toolFormBe}</span>
         </button>
 
         <button
@@ -589,7 +590,9 @@ export function DashboardTab({
           <div className="rounded-xl bg-teal-50 p-2 text-teal-700">
             <Repeat className="h-4 w-4" />
           </div>
-          <span className="text-[10px] font-bold text-slate-800">Year-End</span>
+          <span className="text-[10px] font-bold text-slate-800">
+            {personalization.language === "bm" ? "Hujung Tahun" : "Year-End"}
+          </span>
         </button>
 
         <button
@@ -600,7 +603,7 @@ export function DashboardTab({
           <div className="rounded-xl bg-amber-50 p-2 text-amber-700">
             <SlidersHorizontal className="h-4 w-4" />
           </div>
-          <span className="text-[10px] font-bold text-slate-800">What-If</span>
+          <span className="text-[10px] font-bold text-slate-800">{copy.toolWhatIf}</span>
         </button>
 
         <button
@@ -611,7 +614,7 @@ export function DashboardTab({
           <div className="rounded-xl bg-indigo-50 p-2 text-indigo-700">
             <Scale className="h-4 w-4" />
           </div>
-          <span className="text-[10px] font-bold text-slate-800">Joint/Sep</span>
+          <span className="text-[10px] font-bold text-slate-800">{copy.toolJointSep}</span>
         </button>
       </section>
 
@@ -712,7 +715,7 @@ export function DashboardTab({
                     </span>
                   </div>
                   <p className="mt-2 truncate text-xs font-bold text-slate-900">
-                    {item.category.shortName}
+                    {tCategory(item.category).shortName}
                   </p>
                   <p className="privacy-sensitive mt-0.5 text-xs font-extrabold text-emerald-700">
                     {formatRM(item.claimable)}{" "}
@@ -797,7 +800,7 @@ export function DashboardTab({
               }}
               className="text-[11px] font-semibold text-emerald-700 hover:underline"
             >
-              {editingGoal ? "Cancel" : "Edit"}
+              {editingGoal ? copy.cancelBtn : copy.editBtn}
             </button>
           </div>
 
@@ -823,7 +826,7 @@ export function DashboardTab({
                 }}
                 className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"
               >
-                Save
+                {copy.saveBtn}
               </button>
             </div>
           ) : (
@@ -840,10 +843,10 @@ export function DashboardTab({
                 <>
                   <div className="flex items-baseline justify-between text-xs">
                     <span className="privacy-sensitive font-extrabold text-emerald-700">
-                      {formatRM(summary.taxSavedByExpenseReliefs)} saved
+                      {formatRM(summary.taxSavedByExpenseReliefs)} {copy.savedLabel}
                     </span>
                     <span className="text-slate-500">
-                      Goal: {formatRM(personalization.taxSavingGoal)} ({goalPct}
+                      {copy.goalLabel}: {formatRM(personalization.taxSavingGoal)} ({goalPct}
                       %)
                     </span>
                   </div>

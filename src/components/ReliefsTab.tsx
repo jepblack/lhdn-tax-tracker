@@ -11,7 +11,8 @@ import {
   Star,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
-import { AppLanguage, getUiCopy } from "@/lib/personalization";
+import { useLanguage } from "@/lib/language-context";
+import { AppLanguage } from "@/lib/personalization";
 import { CategorySummary } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 import { ReliefIcon } from "./ReliefIcon";
@@ -44,7 +45,7 @@ export function ReliefsTab({
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
-  const copy = getUiCopy(language);
+  const { copy, tCategory } = useLanguage();
 
   const groupLabels: Record<string, string> = {
     all: copy.filterAll,
@@ -137,11 +138,11 @@ export function ReliefsTab({
                           {item.category.formBeRef}
                         </span>
                         <h3 className="text-sm font-semibold text-slate-900">
-                          {item.category.name}
+                          {tCategory(item.category).name}
                         </h3>
                       </div>
                       <p className="mt-1 text-xs text-slate-500 line-clamp-2">
-                        {item.category.description}
+                        {tCategory(item.category).description}
                       </p>
                     </div>
                   </div>
