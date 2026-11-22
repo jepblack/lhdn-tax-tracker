@@ -461,6 +461,11 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
           maxTokens: 1500,
         });
         const aiExtraction = normalizeAiPayslip(parsed, "Groq Text", pdfText);
+        if (!visualImageBase64) {
+          aiExtraction.notes.push("(Note: Client PDF-to-image render unavailable; used text fallback.)");
+        } else if (aiDebugReason) {
+          aiExtraction.notes.push(`(Vision fallback note: ${aiDebugReason.trim()})`);
+        }
         return NextResponse.json(aiExtraction);
       } catch (groqTextErr) {
         const msg = groqTextErr instanceof Error ? groqTextErr.message.slice(0, 120) : "Groq Text error";
