@@ -371,53 +371,60 @@ Jika ini Slip Gaji Bulanan/YTD (bukan Borang EA/EC), pulangkan JSON:
           },
         ];
 
-        const callGemini = async () => {
+        const callGeminiParsed = async (): Promise<Record<string, unknown>> => {
           const models = [GEMINI_MODEL, "gemini-2.5-flash"];
           let lastErr: unknown = null;
           for (const modelName of models) {
             try {
-              return await ai.models.generateContent({
-                model: modelName,
-                contents,
-                config: {
-                  temperature: 0.1,
-                  maxOutputTokens: 1500,
-                  thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-                },
-              });
-            } catch (cfgErr) {
-              const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
-              if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
-                try {
-                  return await ai.models.generateContent({
+              let res;
+              try {
+                res = await ai.models.generateContent({
+                  model: modelName,
+                  contents,
+                  config: {
+                    temperature: 0.1,
+                    maxOutputTokens: 2500,
+                    responseMimeType: "application/json",
+                    thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+                  },
+                });
+              } catch (cfgErr) {
+                const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+                if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
+                  res = await ai.models.generateContent({
                     model: modelName,
                     contents,
-                    config: { temperature: 0.1, maxOutputTokens: 1500 },
+                    config: {
+                      temperature: 0.1,
+                      maxOutputTokens: 2500,
+                      responseMimeType: "application/json",
+                    },
                   });
-                } catch (retryErr) {
-                  lastErr = retryErr;
+                } else {
+                  throw cfgErr;
                 }
-              } else {
-                lastErr = cfgErr;
               }
+
+              const raw = String(res.text || "")
+                .replace(/^```(?:json)?\s*/i, "")
+                .replace(/\s*```$/i, "")
+                .trim();
+              const match = raw.match(/\{[\s\S]*\}/);
+              return JSON.parse((match ? match[0] : raw).trim());
+            } catch (modelErr) {
+              lastErr = modelErr;
             }
           }
           throw lastErr || new Error("Gemini failed");
         };
 
-        const response = await Promise.race([
-          callGemini(),
+        const parsed = await Promise.race([
+          callGeminiParsed(),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("AI_TIMEOUT")), 20000)
+            setTimeout(() => reject(new Error("AI_TIMEOUT")), 25000)
           ),
         ]);
 
-        const raw = response.text || "";
-        const cleanJson = raw
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```$/i, "")
-          .trim();
-        const parsed = JSON.parse(cleanJson);
         const aiExtraction = normalizeAiPayslip(parsed, "Gemini Vision", pdfText || undefined);
         return NextResponse.json(aiExtraction);
       } catch (geminiErr) {
