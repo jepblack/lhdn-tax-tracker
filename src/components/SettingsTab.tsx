@@ -100,14 +100,14 @@ export function SettingsTab({
   const [newBillAmount, setNewBillAmount] = useState("");
   const [newBillCategory, setNewBillCategory] = useState("lifestyle");
 
-  // Payslip upload state
+  // Payslip / EA Form multi-upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
   const [payslipScanning, setPayslipScanning] = useState(false);
   const [payslipProgress, setPayslipProgress] = useState("");
   const [payslipError, setPayslipError] = useState<string | null>(null);
-  const [payslipData, setPayslipData] = useState<PayslipExtraction | null>(
-    null
-  );
+  const [payslipQueue, setPayslipQueue] = useState<
+    Array<{ id: string; file: File; data: PayslipExtraction }>
+  >([]);
   const [showPayslipText, setShowPayslipText] = useState(false);
   const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
   const [eaEmployers, setEaEmployers] = useState<
@@ -156,21 +156,16 @@ export function SettingsTab({
   const [migratingLocal, setMigratingLocal] = useState(false);
   const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
 
-  async function handlePayslipUpload(file: File | undefined) {
-    if (!file) return;
-    setPayslipFile(file);
-    setPayslipError(null);
-    setPayslipData(null);
-    setAppliedBanner(null);
-    setShowPayslipText(false);
-    setPayslipScanning(true);
+  async function parseSingleFileToExtraction(
+    file: File,
+    prefix: string
+  ): Promise<PayslipExtraction | null> {
+    const isPdf =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
 
-    try {
-      const isPdf =
-        file.type === "application/pdf" ||
-        file.name.toLowerCase().endsWith(".pdf");
-
-      setPayslipProgress(
+    setPayslipProgress(
+      `${prefix}${
         isPdf
           ? personalization.language === "bm"
             ? "Membaca slip gaji / Borang EA PDF..."
@@ -178,77 +173,104 @@ export function SettingsTab({
           : personalization.language === "bm"
           ? "Menganalisis imej slip gaji / Borang EA..."
           : "Analyzing payslip / EA Form image..."
-      );
+      }`
+    );
 
-      const formData = new FormData();
-      formData.append("file", file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-      if (isPdf) {
-        const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1600);
-        if (renderedJpeg) {
-          formData.append("renderedImage", renderedJpeg);
-        }
+    if (isPdf) {
+      const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1600);
+      if (renderedJpeg) {
+        formData.append("renderedImage", renderedJpeg);
       }
+    }
 
-      const res = await fetch("/api/parse-payslip", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
+    const res = await fetch("/api/parse-payslip", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
 
-      if (
-        res.ok &&
-        data &&
-        !data.useClientOcr &&
-        (data.estimatedAnnualIncome > 0 ||
-          data.ytdPcb > 0 ||
-          data.monthlyGross > 0 ||
-          data.monthlyPcb > 0)
-      ) {
-        setPayslipData(data as PayslipExtraction);
-        return;
-      }
+    if (
+      res.ok &&
+      data &&
+      !data.useClientOcr &&
+      (data.estimatedAnnualIncome > 0 ||
+        data.ytdPcb > 0 ||
+        data.monthlyGross > 0 ||
+        data.monthlyPcb > 0)
+    ) {
+      return data as PayslipExtraction;
+    }
 
-      if (!isPdf && !data?.retryable && (!res.ok || data.useClientOcr)) {
-        // Fallback to local on-device OCR for images if offline or API unavailable
-        setPayslipProgress(
+    if (!isPdf && !data?.retryable && (!res.ok || data.useClientOcr)) {
+      setPayslipProgress(
+        `${prefix}${
           personalization.language === "bm"
             ? "Memuatkan OCR pada peranti..."
             : "Loading on-device OCR..."
-        );
-        const Tesseract = await import("tesseract.js");
-        const { data: ocrData } = await Tesseract.recognize(file, "eng", {
-          logger: (m) => {
-            if (
-              m.status === "recognizing text" &&
-              typeof m.progress === "number"
-            ) {
-              setPayslipProgress(
+        }`
+      );
+      const Tesseract = await import("tesseract.js");
+      const { data: ocrData } = await Tesseract.recognize(file, "eng", {
+        logger: (m) => {
+          if (m.status === "recognizing text" && typeof m.progress === "number") {
+            setPayslipProgress(
+              `${prefix}${
                 personalization.language === "bm"
                   ? `Membaca teks... ${Math.round(m.progress * 100)}%`
                   : `Reading payslip... ${Math.round(m.progress * 100)}%`
-              );
-            }
-          },
-        });
-        const parsed = parseMalaysianPayslipText(ocrData.text || "");
-        setPayslipData(parsed);
-        return;
-      }
+              }`
+            );
+          }
+        },
+      });
+      return parseMalaysianPayslipText(ocrData.text || "");
+    }
 
-      if (!res.ok) {
-        setPayslipError(
-          data.message ||
-            (personalization.language === "bm"
-              ? "Gagal membaca fail. Sila masukkan nilai secara manual."
-              : "Could not read payslip / EA Form. Please enter the values manually below.")
-        );
-        return;
+    if (!res.ok) {
+      throw new Error(
+        data.message ||
+          (personalization.language === "bm"
+            ? "Gagal membaca fail. Sila masukkan nilai secara manual."
+            : "Could not read payslip / EA Form. Please enter the values manually below.")
+      );
+    }
+    return data as PayslipExtraction;
+  }
+
+  async function handlePayslipFiles(files: File[]) {
+    if (!files || files.length === 0) return;
+    setPayslipError(null);
+    setAppliedBanner(null);
+    setShowPayslipText(false);
+    setPayslipScanning(true);
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setPayslipFile(file);
+        const prefix = files.length > 1 ? `[${i + 1}/${files.length}] ` : "";
+        const extracted = await parseSingleFileToExtraction(file, prefix);
+        if (extracted) {
+          const itemId =
+            extracted.sourceType === "ea-form"
+              ? getEmployerMeta(extracted).key
+              : file.name;
+          setPayslipQueue((prev) => {
+            const filtered = prev.filter(
+              (p) => p.id !== itemId && p.file.name !== file.name
+            );
+            return [...filtered, { id: itemId, file, data: extracted }];
+          });
+        }
       }
-      setPayslipData(data as PayslipExtraction);
-    } catch {
+    } catch (err) {
       setPayslipError(
-        personalization.language === "bm"
+        err instanceof Error
+          ? err.message
+          : personalization.language === "bm"
           ? "Gagal membaca dokumen. Sila muat naik imej/PDF yang lebih jelas atau masukkan nilai secara manual."
           : "Failed to read payslip / EA Form. Try a clearer screenshot or enter the values manually below."
       );
@@ -335,81 +357,86 @@ export function SettingsTab({
     }
   }
 
-  async function handleApplyPayslip(
-    includeReliefs: boolean,
-    mode: "combine" | "replace" = "combine"
-  ) {
-    if (!payslipData) return;
+  async function handleApplyPayslipQueue(includeReliefs: boolean) {
+    if (payslipQueue.length === 0) return;
 
-    if (payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear) {
+    const mismatch = payslipQueue.find(
+      (item) =>
+        item.data.yearDetected && item.data.yearDetected !== profile.taxYear
+    );
+    if (mismatch) {
       setPayslipError(
         personalization.language === "bm"
-          ? `Tidak boleh diguna: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, bukan TT ${profile.taxYear}. Sila tukar tahun di bahagian atas kepada TT ${payslipData.yearDetected} dahulu.`
-          : `Cannot apply: This document is for YA ${payslipData.yearDetected}, not YA ${profile.taxYear}. Please switch the top year selector to YA ${payslipData.yearDetected} first.`
+          ? `Tidak boleh diguna: Dokumen (${mismatch.file.name}) adalah untuk TT ${mismatch.data.yearDetected}, bukan TT ${profile.taxYear}. Sila tukar tahun di bahagian atas kepada TT ${mismatch.data.yearDetected} dahulu.`
+          : `Cannot apply: Document (${mismatch.file.name}) is for YA ${mismatch.data.yearDetected}, not YA ${profile.taxYear}. Please switch the top year selector to YA ${mismatch.data.yearDetected} first.`
       );
       return;
     }
 
-    const derivedChildren = deriveChildrenFromEaForm(
-      payslipData.eaForm?.children_relief,
-      payslipData.eaForm?.eligible_children_for_tax_relief
-    );
+    let nextEaList = [...eaEmployers];
+    let finalIncome = profile.annualIncome;
+    let finalPcb = profile.pcbPaid;
+    let finalZakat = profile.zakatPaid;
+    let finalChildren: { childrenUnder18: number; childrenHigherEd: number } | null =
+      null;
 
-    const epf = payslipData.ytdEpf || payslipData.employeeEpf;
-    const socsoTotal =
-      (payslipData.ytdSocso || payslipData.employeeSocso) +
-      (payslipData.ytdEis || payslipData.employeeEis);
-    const pcbVal =
-      payslipData.ytdPcb > 0
-        ? payslipData.ytdPcb
-        : payslipData.monthlyPcb > 0
-        ? payslipData.monthlyPcb
-        : 0;
-    const zakatVal =
-      payslipData.ytdZakat > 0
-        ? payslipData.ytdZakat
-        : payslipData.monthlyZakat > 0
-        ? payslipData.monthlyZakat
-        : 0;
+    for (const item of payslipQueue) {
+      const p = item.data;
+      const derivedChildren = deriveChildrenFromEaForm(
+        p.eaForm?.children_relief,
+        p.eaForm?.eligible_children_for_tax_relief
+      );
+      const epf = p.ytdEpf || p.employeeEpf;
+      const socsoTotal =
+        (p.ytdSocso || p.employeeSocso) + (p.ytdEis || p.employeeEis);
+      const pcbVal = p.ytdPcb > 0 ? p.ytdPcb : p.monthlyPcb > 0 ? p.monthlyPcb : 0;
+      const zakatVal =
+        p.ytdZakat > 0 ? p.ytdZakat : p.monthlyZakat > 0 ? p.monthlyZakat : 0;
 
-    let finalIncome =
-      payslipData.estimatedAnnualIncome > 0
-        ? payslipData.estimatedAnnualIncome
-        : profile.annualIncome;
-    let finalPcb = pcbVal > 0 ? pcbVal : profile.pcbPaid;
-    let finalZakat = zakatVal > 0 ? zakatVal : profile.zakatPaid;
-    let finalChildren = derivedChildren;
-    let employerMeta: { key: string; name: string } | undefined = undefined;
+      let employerMeta: { key: string; name: string } | undefined = undefined;
+      if (p.sourceType === "ea-form") {
+        employerMeta = getEmployerMeta(p);
+        const record = {
+          key: employerMeta.key,
+          name: employerMeta.name,
+          employerNo: p.employerNo || null,
+          annualIncome: p.estimatedAnnualIncome || 0,
+          pcbPaid: pcbVal,
+          zakatPaid: zakatVal,
+          epfEmployee: epf,
+          socsoTotal,
+          childrenUnder18:
+            derivedChildren?.childrenUnder18 ?? profile.statusReliefs.childrenUnder18,
+          childrenHigherEd:
+            derivedChildren?.childrenHigherEd ?? profile.statusReliefs.childrenHigherEd,
+          fileName: item.file.name || "EA Form",
+        };
+        nextEaList = [...nextEaList.filter((e) => e.key !== record.key), record];
+        finalIncome =
+          Math.round(nextEaList.reduce((s, e) => s + e.annualIncome, 0) * 100) /
+          100;
+        finalPcb =
+          Math.round(nextEaList.reduce((s, e) => s + e.pcbPaid, 0) * 100) / 100;
+        finalZakat =
+          Math.round(nextEaList.reduce((s, e) => s + e.zakatPaid, 0) * 100) / 100;
+        finalChildren = {
+          childrenUnder18: Math.max(...nextEaList.map((e) => e.childrenUnder18)),
+          childrenHigherEd: Math.max(...nextEaList.map((e) => e.childrenHigherEd)),
+        };
+      } else {
+        if (p.estimatedAnnualIncome > 0) finalIncome = p.estimatedAnnualIncome;
+        if (pcbVal > 0) finalPcb = pcbVal;
+        if (zakatVal > 0) finalZakat = zakatVal;
+        if (derivedChildren) finalChildren = derivedChildren;
+      }
 
-    if (payslipData.sourceType === "ea-form") {
-      employerMeta = getEmployerMeta(payslipData);
-      const record = {
-        key: employerMeta.key,
-        name: employerMeta.name,
-        employerNo: payslipData.employerNo || null,
-        annualIncome: payslipData.estimatedAnnualIncome || 0,
-        pcbPaid: pcbVal,
-        zakatPaid: zakatVal,
-        epfEmployee: epf,
-        socsoTotal,
-        childrenUnder18: derivedChildren?.childrenUnder18 ?? profile.statusReliefs.childrenUnder18,
-        childrenHigherEd: derivedChildren?.childrenHigherEd ?? profile.statusReliefs.childrenHigherEd,
-        fileName: payslipFile?.name || "EA Form",
-      };
+      if (includeReliefs && (epf > 0 || socsoTotal > 0)) {
+        await onLogPayslipReliefs(epf, socsoTotal, item.file, employerMeta);
+      }
+    }
 
-      const baseList =
-        mode === "replace"
-          ? []
-          : eaEmployers.filter((e) => e.key !== record.key);
-      const nextList = [...baseList, record];
-      saveEaEmployersForYear(nextList, profile.taxYear);
-
-      finalIncome = Math.round(nextList.reduce((s, e) => s + e.annualIncome, 0) * 100) / 100;
-      finalPcb = Math.round(nextList.reduce((s, e) => s + e.pcbPaid, 0) * 100) / 100;
-      finalZakat = Math.round(nextList.reduce((s, e) => s + e.zakatPaid, 0) * 100) / 100;
-      const maxU18 = Math.max(...nextList.map((e) => e.childrenUnder18));
-      const maxHigher = Math.max(...nextList.map((e) => e.childrenHigherEd));
-      finalChildren = { childrenUnder18: maxU18, childrenHigherEd: maxHigher };
+    if (nextEaList.length !== eaEmployers.length || payslipQueue.some((q) => q.data.sourceType === "ea-form")) {
+      saveEaEmployersForYear(nextEaList, profile.taxYear);
     }
 
     const nextProfile: TaxProfile = {
@@ -428,20 +455,16 @@ export function SettingsTab({
 
     await onUpdateProfile(nextProfile);
 
-    if (includeReliefs && (epf > 0 || socsoTotal > 0)) {
-      await onLogPayslipReliefs(epf, socsoTotal, payslipFile, employerMeta);
-    }
-
     setAppliedBanner(
       includeReliefs
         ? personalization.language === "bm"
-          ? "Pendapatan, PCB/Zakat & pelepasan KWSP/PERKESO telah dikemaskini!"
-          : "Applied income, PCB/Zakat & updated EPF/SOCSO reliefs in-place (no duplicates)!"
+          ? `Pendapatan, PCB/Zakat & pelepasan KWSP/PERKESO (${payslipQueue.length} fail) telah dikemaskini!`
+          : `Applied income, PCB/Zakat & updated EPF/SOCSO reliefs (${payslipQueue.length} file${payslipQueue.length > 1 ? "s" : ""})!`
         : personalization.language === "bm"
         ? `Pendapatan, PCB & Zakat telah dikemaskini ke profil TT ${profile.taxYear} anda!`
-        : "Applied income, PCB & Zakat to your YA " + profile.taxYear + " profile!"
+        : `Applied income, PCB & Zakat to your YA ${profile.taxYear} profile!`
     );
-    setPayslipData(null);
+    setPayslipQueue([]);
   }
 
   async function handleAuth(mode: "signin" | "signup") {
@@ -1107,10 +1130,13 @@ export function SettingsTab({
           <input
             ref={payslipInputRef}
             type="file"
+            multiple
             accept="application/pdf,image/*"
             className="hidden"
             onChange={(e) => {
-              handlePayslipUpload(e.target.files?.[0]);
+              if (e.target.files && e.target.files.length > 0) {
+                handlePayslipFiles(Array.from(e.target.files));
+              }
               e.target.value = "";
             }}
           />
@@ -1147,7 +1173,7 @@ export function SettingsTab({
             {payslipFile && !payslipScanning && (
               <button
                 type="button"
-                onClick={() => handlePayslipUpload(payslipFile)}
+                onClick={() => handlePayslipFiles([payslipFile])}
                 className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-[0.98]"
               >
                 {personalization.language === "bm" ? "Cuba Lagi" : "Retry"}
@@ -1164,290 +1190,299 @@ export function SettingsTab({
           </div>
         )}
 
-        {/* Extracted Payslip Preview Card */}
-        {payslipData && (
+        {/* Extracted Payslip / EA Form Preview Queue */}
+        {payslipQueue.length > 0 && (
           <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
-                <Sparkles className="h-4 w-4 text-emerald-600" />
-                <span>
-                  {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
-                  {payslipData.sourceType === "ea-form"
-                    ? `${personalization.language === "bm" ? "Borang EA" : "EA Form"}${payslipData.formVersion ? ` (${payslipData.formVersion})` : ""}`
-                    : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
-                </span>
-              </div>
-              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                {payslipData.confidence === "high"
-                  ? (personalization.language === "bm" ? "ketepatan tinggi" : "high confidence")
-                  : payslipData.confidence === "medium"
-                  ? (personalization.language === "bm" ? "ketepatan sederhana" : "medium confidence")
-                  : (personalization.language === "bm" ? "ketepatan rendah" : "low confidence")}
-              </span>
-            </div>
-
-            {payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear && (
-              <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-2.5 text-[11px] font-medium text-rose-900">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />
+            {payslipQueue.length > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-100/90 px-3 py-2 text-[11px] font-bold text-emerald-950">
                 <span>
                   {personalization.language === "bm"
-                    ? `Tahun Tidak Sepadan: Dokumen ini adalah untuk TT ${payslipData.yearDetected}, tetapi anda sedang melihat TT ${profile.taxYear}. Kemas kini disekat — sila tukar pemilih tahun di bahagian atas kepada TT ${payslipData.yearDetected} dahulu.`
-                    : `Year Mismatch: This document is for YA ${payslipData.yearDetected}, while you are currently viewing YA ${profile.taxYear}. Applying is blocked — please switch the top year selector to YA ${payslipData.yearDetected} first.`}
+                    ? `${payslipQueue.length} Borang EA/Slip Gaji sedia digabung (TT ${profile.taxYear})`
+                    : `${payslipQueue.length} EA Forms / Payslips ready to combine (YA ${profile.taxYear})`}
+                </span>
+                <span>
+                  {formatRM(
+                    payslipQueue.reduce((s, q) => s + (q.data.estimatedAnnualIncome || 0), 0),
+                    true
+                  )}{" "}
+                  · PCB:{" "}
+                  {formatRM(
+                    payslipQueue.reduce(
+                      (s, q) => s + (q.data.ytdPcb || q.data.monthlyPcb || 0),
+                      0
+                    ),
+                    true
+                  )}
                 </span>
               </div>
             )}
 
-            {payslipData.sourceType === "ea-form" &&
-              eaEmployers.length > 0 &&
-              (!payslipData.yearDetected || payslipData.yearDetected === profile.taxYear) && (() => {
-                const meta = getEmployerMeta(payslipData);
-                const exists = eaEmployers.some((e) => e.key === meta.key);
-                return (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-2.5 text-[11px] text-sky-900">
-                    {exists ? (
+            {payslipQueue.map((item) => {
+              const payslipData = item.data;
+              return (
+                <div
+                  key={item.id}
+                  className="space-y-2.5 rounded-xl border border-emerald-200/80 bg-white/60 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                      <Sparkles className="h-4 w-4 text-emerald-600" />
                       <span>
-                        {personalization.language === "bm"
-                          ? `Sepadan dengan majikan tersimpan (${meta.name}) — akan mengemaskini rekod majikan ini tanpa pengiraan berganda.`
-                          : `Matches saved employer (${meta.name}) — will update this employer in-place without double-counting.`}
+                        {personalization.language === "bm" ? "Diekstrak daripada " : "Extracted from "}
+                        {payslipData.sourceType === "ea-form"
+                          ? `${personalization.language === "bm" ? "Borang EA" : "EA Form"}${payslipData.formVersion ? ` (${payslipData.formVersion})` : ""}`
+                          : payslipData.monthDetected || (personalization.language === "bm" ? "Slip Gaji" : "Payslip")}
                       </span>
-                    ) : (
-                      <span>
-                        {personalization.language === "bm"
-                          ? `Majikan baharu dikesan (${meta.name})! Mengklik Guna akan menggabungkan Pendapatan, PCB & Zakat dengan ${eaEmployers.length} Borang EA sedia ada dan merekod KWSP/PERKESO secara berasingan.`
-                          : `Additional employer detected (${meta.name})! Applying will combine Income, PCB & Zakat with your ${eaEmployers.length} saved EA Form(s) and log separate EPF/SOCSO entries.`}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        {payslipData.confidence === "high"
+                          ? (personalization.language === "bm" ? "ketepatan tinggi" : "high confidence")
+                          : payslipData.confidence === "medium"
+                          ? (personalization.language === "bm" ? "ketepatan sederhana" : "medium confidence")
+                          : (personalization.language === "bm" ? "ketepatan rendah" : "low confidence")}
                       </span>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPayslipQueue((prev) => prev.filter((q) => q.id !== item.id))
+                        }
+                        className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        {personalization.language === "bm" ? "Buang" : "Remove"}
+                      </button>
+                    </div>
                   </div>
-                );
-              })()}
 
-            {(payslipData.employeeName || payslipData.employerName) && (
-              <div className="grid grid-cols-1 gap-2 rounded-xl bg-white/80 p-2.5 text-[11px] sm:grid-cols-2">
-                {payslipData.employeeName && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {personalization.language === "bm" ? "Butiran Pekerja" : "Employee Details"}
-                    </p>
-                    <p className="font-bold text-slate-900">{payslipData.employeeName}</p>
-                    <p className="text-slate-600">
-                      {[
-                        payslipData.employeeIc ? `KP: ${payslipData.employeeIc}` : null,
-                        payslipData.employeePosition || null,
-                        payslipData.employeeEpfNo ? `KWSP: ${payslipData.employeeEpfNo}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  </div>
-                )}
-                {payslipData.employerName && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      {personalization.language === "bm" ? "Majikan" : "Employer"}
-                    </p>
-                    <p className="font-bold text-slate-900">{payslipData.employerName}</p>
-                    {payslipData.employerNo && (
-                      <p className="text-slate-600">
-                        {personalization.language === "bm" ? "No. Majikan: " : "Employer No: "}
-                        {payslipData.employerNo}
+                  {payslipData.yearDetected && payslipData.yearDetected !== profile.taxYear && (
+                    <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-2.5 text-[11px] font-medium text-rose-900">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />
+                      <span>
+                        {personalization.language === "bm"
+                          ? `Tahun Tidak Sepadan: Dokumen (${item.file.name}) adalah untuk TT ${payslipData.yearDetected}, tetapi anda sedang melihat TT ${profile.taxYear}. Kemas kini disekat — sila tukar pemilih tahun di bahagian atas kepada TT ${payslipData.yearDetected} dahulu.`
+                          : `Year Mismatch: Document (${item.file.name}) is for YA ${payslipData.yearDetected}, while you are currently viewing YA ${profile.taxYear}. Applying is blocked — please switch the top year selector to YA ${payslipData.yearDetected} first.`}
+                      </span>
+                    </div>
+                  )}
+
+                  {payslipData.sourceType === "ea-form" &&
+                    eaEmployers.length > 0 &&
+                    (!payslipData.yearDetected || payslipData.yearDetected === profile.taxYear) && (() => {
+                      const meta = getEmployerMeta(payslipData);
+                      const exists = eaEmployers.some((e) => e.key === meta.key);
+                      return (
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 p-2 text-[11px] text-sky-900">
+                          {exists
+                            ? (personalization.language === "bm"
+                                ? `Sepadan dengan majikan tersimpan (${meta.name}) — akan mengemaskini rekod majikan ini tanpa pengiraan berganda.`
+                                : `Matches saved employer (${meta.name}) — will update this employer in-place without double-counting.`)
+                            : (personalization.language === "bm"
+                                ? `Majikan baharu dikesan (${meta.name})! Mengklik Guna akan menggabungkan Pendapatan, PCB & Zakat dengan ${eaEmployers.length} Borang EA sedia ada dan merekod KWSP/PERKESO secara berasingan.`
+                                : `Additional employer detected (${meta.name})! Applying will combine Income, PCB & Zakat with your ${eaEmployers.length} saved EA Form(s) and log separate EPF/SOCSO entries.`)}
+                        </div>
+                      );
+                    })()}
+
+                  {(payslipData.employeeName || payslipData.employerName) && (
+                    <div className="grid grid-cols-1 gap-2 rounded-xl bg-white p-2.5 text-[11px] sm:grid-cols-2">
+                      {payslipData.employeeName && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            {personalization.language === "bm" ? "Butiran Pekerja" : "Employee Details"}
+                          </p>
+                          <p className="font-bold text-slate-900">{payslipData.employeeName}</p>
+                          <p className="text-slate-600">
+                            {[
+                              payslipData.employeeIc ? `KP: ${payslipData.employeeIc}` : null,
+                              payslipData.employeePosition || null,
+                              payslipData.employeeEpfNo ? `KWSP: ${payslipData.employeeEpfNo}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+                      )}
+                      {payslipData.employerName && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            {personalization.language === "bm" ? "Majikan" : "Employer"}
+                          </p>
+                          <p className="font-bold text-slate-900">{payslipData.employerName}</p>
+                          {payslipData.employerNo && (
+                            <p className="text-slate-600">
+                              {personalization.language === "bm" ? "No. Majikan: " : "Employer No: "}
+                              {payslipData.employerNo}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-white p-2.5">
+                      <p className="text-[10px] text-slate-500">
+                        {personalization.language === "bm" ? "Jumlah Pendapatan (B + C)" : "Est. Annual Income"}
                       </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white p-2.5">
-                <p className="text-[10px] text-slate-500">
-                  {personalization.language === "bm" ? "Jumlah Pendapatan (B + C)" : "Est. Annual Income"}
-                </p>
-                <p className="font-bold text-slate-900">
-                  {payslipData.estimatedAnnualIncome > 0
-                    ? formatRM(payslipData.estimatedAnnualIncome, true)
-                    : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
-                </p>
-                {payslipData.sourceType === "ea-form" &&
-                  ((payslipData.grossSalaryB1a ?? 0) > 0 || (payslipData.allowancesB1c ?? 0) > 0) && (
-                    <p className="mt-0.5 text-[10px] text-slate-500">
-                      B1(a): {formatRM(payslipData.grossSalaryB1a ?? 0, true)}
-                      {(payslipData.allowancesB1c ?? 0) > 0
-                        ? ` · B1(c): ${formatRM(payslipData.allowancesB1c ?? 0, true)}`
-                        : ""}
-                    </p>
-                  )}
-              </div>
-              <div className="rounded-xl bg-white p-2.5">
-                <p className="text-[10px] text-slate-500">
-                  {personalization.language === "bm" ? "PCB / MTD (Terkumpul)" : "PCB / MTD (YTD)"}
-                </p>
-                <p className="font-bold text-slate-900">
-                  {payslipData.ytdPcb > 0 || payslipData.sourceType === "ea-form"
-                    ? formatRM(payslipData.ytdPcb, true)
-                    : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
-                </p>
-              </div>
-              {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0 || payslipData.sourceType === "ea-form") && (
-                <div className="rounded-xl bg-white p-2.5">
-                  <p className="text-[10px] text-slate-500">
-                    {personalization.language === "bm" ? "KWSP Pekerja (Terkumpul)" : "Employee EPF (YTD)"}
-                  </p>
-                  <p className="font-bold text-emerald-700">
-                    {formatRM(payslipData.ytdEpf || payslipData.employeeEpf, true)}
-                  </p>
-                </div>
-              )}
-              {(payslipData.ytdSocso > 0 ||
-                payslipData.employeeSocso > 0 ||
-                payslipData.ytdEis > 0 ||
-                payslipData.sourceType === "ea-form") && (
-                <div className="rounded-xl bg-white p-2.5">
-                  <p className="text-[10px] text-slate-500">
-                    {personalization.language === "bm" ? "PERKESO + SIP (Terkumpul)" : "SOCSO + EIS (YTD)"}
-                  </p>
-                  <p className="font-bold text-emerald-700">
-                    {formatRM(
-                      (payslipData.ytdSocso || payslipData.employeeSocso) +
-                        (payslipData.ytdEis || payslipData.employeeEis),
-                      true
-                    )}
-                  </p>
-                </div>
-              )}
-              {(payslipData.ytdZakat > 0 ||
-                payslipData.monthlyZakat > 0 ||
-                payslipData.sourceType === "ea-form") && (
-                <div className="rounded-xl bg-white p-2.5">
-                  <p className="text-[10px] text-slate-500">
-                    {personalization.language === "bm" ? "Zakat (Potongan Gaji)" : "Zakat (Salary Deduction)"}
-                  </p>
-                  <p className="font-bold text-slate-900">
-                    {formatRM(payslipData.ytdZakat || payslipData.monthlyZakat, true)}
-                  </p>
-                </div>
-              )}
-              {payslipData.eaForm?.tax_exempt_benefits !== null &&
-                payslipData.eaForm?.tax_exempt_benefits !== undefined && (
-                  <div className="rounded-xl bg-white p-2.5">
-                    <p className="text-[10px] text-slate-500">
-                      {personalization.language === "bm"
-                        ? "Elaun Dikecualikan Cukai (Bhg. F)"
-                        : "Tax-Exempt Allowances (Sec. F)"}
-                    </p>
-                    <p className="font-bold text-slate-700">
-                      {formatRM(payslipData.eaForm.tax_exempt_benefits, true)}
-                    </p>
-                  </div>
-                )}
-              {(() => {
-                const derived = deriveChildrenFromEaForm(
-                  payslipData.eaForm?.children_relief,
-                  payslipData.eaForm?.eligible_children_for_tax_relief
-                );
-                if (!derived) return null;
-                const totalChildren = derived.childrenUnder18 + derived.childrenHigherEd;
-                return (
-                  <div className="col-span-2 rounded-xl bg-white p-2.5">
-                    <p className="text-[10px] text-slate-500">
-                      {personalization.language === "bm"
-                        ? "Bilangan Anak Layak (D5: Pelepasan Anak)"
-                        : "Eligible Children (D5: Child Relief)"}
-                    </p>
-                    <p className="font-bold text-slate-900">
-                      {totalChildren}{" "}
-                      {personalization.language === "bm" ? "orang anak" : totalChildren === 1 ? "child" : "children"}
-                      {payslipData.eaForm?.children_relief !== null &&
-                        payslipData.eaForm?.children_relief !== undefined && (
-                          <span className="ml-1.5 text-[11px] font-medium text-slate-500">
-                            ({formatRM(payslipData.eaForm.children_relief, true)})
-                          </span>
+                      <p className="font-bold text-slate-900">
+                        {payslipData.estimatedAnnualIncome > 0
+                          ? formatRM(payslipData.estimatedAnnualIncome, true)
+                          : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
+                      </p>
+                      {payslipData.sourceType === "ea-form" &&
+                        ((payslipData.grossSalaryB1a ?? 0) > 0 || (payslipData.allowancesB1c ?? 0) > 0) && (
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            B1(a): {formatRM(payslipData.grossSalaryB1a ?? 0, true)}
+                            {(payslipData.allowancesB1c ?? 0) > 0
+                              ? ` · B1(c): ${formatRM(payslipData.allowancesB1c ?? 0, true)}`
+                              : ""}
+                          </p>
                         )}
-                    </p>
+                    </div>
+                    <div className="rounded-xl bg-white p-2.5">
+                      <p className="text-[10px] text-slate-500">
+                        {personalization.language === "bm" ? "PCB / MTD (Terkumpul)" : "PCB / MTD (YTD)"}
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {payslipData.ytdPcb > 0 || payslipData.sourceType === "ea-form"
+                          ? formatRM(payslipData.ytdPcb, true)
+                          : (personalization.language === "bm" ? "Tidak dikesan" : "Not detected")}
+                      </p>
+                    </div>
+                    {(payslipData.ytdEpf > 0 || payslipData.employeeEpf > 0 || payslipData.sourceType === "ea-form") && (
+                      <div className="rounded-xl bg-white p-2.5">
+                        <p className="text-[10px] text-slate-500">
+                          {personalization.language === "bm" ? "KWSP Pekerja (Terkumpul)" : "Employee EPF (YTD)"}
+                        </p>
+                        <p className="font-bold text-emerald-700">
+                          {formatRM(payslipData.ytdEpf || payslipData.employeeEpf, true)}
+                        </p>
+                      </div>
+                    )}
+                    {(payslipData.ytdSocso > 0 ||
+                      payslipData.employeeSocso > 0 ||
+                      payslipData.ytdEis > 0 ||
+                      payslipData.sourceType === "ea-form") && (
+                      <div className="rounded-xl bg-white p-2.5">
+                        <p className="text-[10px] text-slate-500">
+                          {personalization.language === "bm" ? "PERKESO + SIP (Terkumpul)" : "SOCSO + EIS (YTD)"}
+                        </p>
+                        <p className="font-bold text-emerald-700">
+                          {formatRM(
+                            (payslipData.ytdSocso || payslipData.employeeSocso) +
+                              (payslipData.ytdEis || payslipData.employeeEis),
+                            true
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    {(payslipData.ytdZakat > 0 ||
+                      payslipData.monthlyZakat > 0 ||
+                      payslipData.sourceType === "ea-form") && (
+                      <div className="rounded-xl bg-white p-2.5">
+                        <p className="text-[10px] text-slate-500">
+                          {personalization.language === "bm" ? "Zakat (Potongan Gaji)" : "Zakat (Salary Deduction)"}
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {formatRM(payslipData.ytdZakat || payslipData.monthlyZakat, true)}
+                        </p>
+                      </div>
+                    )}
+                    {payslipData.eaForm?.tax_exempt_benefits !== null &&
+                      payslipData.eaForm?.tax_exempt_benefits !== undefined && (
+                        <div className="rounded-xl bg-white p-2.5">
+                          <p className="text-[10px] text-slate-500">
+                            {personalization.language === "bm"
+                              ? "Elaun Dikecualikan Cukai (Bhg. F)"
+                              : "Tax-Exempt Allowances (Sec. F)"}
+                          </p>
+                          <p className="font-bold text-slate-700">
+                            {formatRM(payslipData.eaForm.tax_exempt_benefits, true)}
+                          </p>
+                        </div>
+                      )}
                   </div>
-                );
-              })()}
-            </div>
 
-            {payslipData.eaForm?.warnings && payslipData.eaForm.warnings.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-                <p className="font-bold">
-                  {personalization.language === "bm" ? "Amaran Semakan:" : "Extraction Warnings:"}
-                </p>
-                <ul className="mt-1 list-disc pl-4">
-                  {payslipData.eaForm.warnings.map((w, idx) => (
-                    <li key={idx}>{w}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {payslipData.notes.length > 0 && (
-              <p className="text-[11px] text-emerald-900">
-                {payslipData.notes.join(" ")}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={Boolean(
-                  (payslipData.yearDetected &&
-                    payslipData.yearDetected !== profile.taxYear) ||
-                    (payslipData.estimatedAnnualIncome <= 0 &&
-                      payslipData.ytdPcb <= 0 &&
-                      payslipData.monthlyPcb <= 0)
-                )}
-                onClick={() => handleApplyPayslip(false)}
-                className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <span className="text-xs font-bold">
-                  {personalization.language === "bm" ? "Guna Pendapatan & PCB" : "Apply Income & PCB"}
-                </span>
-                <span className="text-[10px] font-medium text-emerald-100">
-                  {personalization.language === "bm" ? "Nilai profil sahaja" : "Profile numbers only"}
-                </span>
-              </button>
-              {(payslipData.ytdEpf > 0 ||
-                payslipData.employeeEpf > 0 ||
-                payslipData.ytdSocso > 0 ||
-                payslipData.employeeSocso > 0) && (
-                <button
-                  type="button"
-                  disabled={Boolean(
-                    payslipData.yearDetected &&
-                      payslipData.yearDetected !== profile.taxYear
+                  {payslipData.eaForm?.warnings && payslipData.eaForm.warnings.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+                      <p className="font-bold">
+                        {personalization.language === "bm" ? "Amaran Semakan:" : "Extraction Warnings:"}
+                      </p>
+                      <ul className="mt-0.5 list-disc pl-4">
+                        {payslipData.eaForm.warnings.map((w, idx) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
-                  onClick={() => handleApplyPayslip(true)}
-                  className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <span className="text-xs font-bold">
-                    {personalization.language === "bm" ? "Guna + Rekod KWSP & PERKESO" : "Apply + Log EPF & SOCSO"}
-                  </span>
-                  <span className="text-[10px] font-medium text-slate-300">
-                    {personalization.language === "bm" ? "Kemas kini pelepasan terkumpul" : "Updates YTD reliefs (no duplicates)"}
-                  </span>
-                </button>
-              )}
-            </div>
+                </div>
+              );
+            })}
 
-            {payslipData.rawText && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowPayslipText((v) => !v)}
-                  className="text-[11px] font-semibold text-emerald-800 underline underline-offset-2"
-                >
-                  {showPayslipText
-                    ? (personalization.language === "bm" ? "Sembunyi teks diekstrak" : "Hide extracted text")
-                    : (personalization.language === "bm" ? "Lihat teks diekstrak" : "View extracted payslip text")}
-                </button>
-                {showPayslipText && (
-                  <pre className="mt-1.5 max-h-32 overflow-auto rounded-xl bg-white p-2.5 text-[10px] text-slate-700 whitespace-pre-wrap">
-                    {payslipData.rawText}
-                  </pre>
-                )}
-              </div>
-            )}
+            {(() => {
+              const hasMismatch = payslipQueue.some(
+                (q) => q.data.yearDetected && q.data.yearDetected !== profile.taxYear
+              );
+              const hasAnyValue = payslipQueue.some(
+                (q) =>
+                  q.data.estimatedAnnualIncome > 0 ||
+                  q.data.ytdPcb > 0 ||
+                  q.data.monthlyPcb > 0
+              );
+              const hasAnyRelief = payslipQueue.some(
+                (q) =>
+                  q.data.ytdEpf > 0 ||
+                  q.data.employeeEpf > 0 ||
+                  q.data.ytdSocso > 0 ||
+                  q.data.employeeSocso > 0
+              );
+              return (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={hasMismatch || !hasAnyValue}
+                    onClick={() => handleApplyPayslipQueue(false)}
+                    className="flex flex-1 flex-col items-center justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <span className="text-xs font-bold">
+                      {payslipQueue.length > 1
+                        ? personalization.language === "bm"
+                          ? `Gabung & Guna Semua (${payslipQueue.length})`
+                          : `Combine & Apply All (${payslipQueue.length})`
+                        : personalization.language === "bm"
+                        ? "Guna Pendapatan & PCB"
+                        : "Apply Income & PCB"}
+                    </span>
+                    <span className="text-[10px] font-medium text-emerald-100">
+                      {personalization.language === "bm" ? "Nilai profil sahaja" : "Profile numbers only"}
+                    </span>
+                  </button>
+                  {hasAnyRelief && (
+                    <button
+                      type="button"
+                      disabled={hasMismatch || !hasAnyValue}
+                      onClick={() => handleApplyPayslipQueue(true)}
+                      className="flex flex-1 flex-col items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <span className="text-xs font-bold">
+                        {payslipQueue.length > 1
+                          ? personalization.language === "bm"
+                            ? `Gabung Semua + Rekod KWSP & PERKESO`
+                            : `Apply All + Log EPF & SOCSO`
+                          : personalization.language === "bm"
+                          ? "Guna + Rekod KWSP & PERKESO"
+                          : "Apply + Log EPF & SOCSO"}
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-300">
+                        {personalization.language === "bm"
+                          ? "Simpan rekod berasingan per majikan"
+                          : "Saves separate entries per employer"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
