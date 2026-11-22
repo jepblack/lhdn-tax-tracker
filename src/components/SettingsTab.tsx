@@ -1509,7 +1509,9 @@ export function SettingsTab({
               (exp) =>
                 exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}-${emp.key}` ||
                 exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}-${emp.key}` ||
-                (emp.fileName && exp.receiptFileName === emp.fileName)
+                (eaEmployers.length === 1 &&
+                  (exp.invoiceNumber === `PAYSLIP-EPF-${profile.taxYear}` ||
+                    exp.invoiceNumber === `PAYSLIP-SOCSO-${profile.taxYear}`))
             );
             if (matchedExp) {
               yearPayslipExpenses.forEach((exp) => {

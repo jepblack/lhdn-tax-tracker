@@ -974,6 +974,13 @@ export function TaxApp() {
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     const empKey = employerMeta?.key;
     const empLabel = employerMeta?.name ? ` — ${employerMeta.name}` : " (Payslip YTD)";
+    const storageFile =
+      payslipFile && empKey && !payslipFile.name.startsWith(`${empKey}-`)
+        ? new File([payslipFile], `${empKey}-${payslipFile.name}`, {
+            type: payslipFile.type,
+            lastModified: payslipFile.lastModified,
+          })
+        : payslipFile;
     let savedEpf: TaxExpense | null = null;
     if (epfAmount > 0) {
       savedEpf = await upsertStatutoryRelief(
@@ -990,7 +997,7 @@ export function TaxApp() {
           invoiceNumber: empKey ? `PAYSLIP-EPF-${taxYear}-${empKey}` : `PAYSLIP-EPF-${taxYear}`,
           aiExtracted: true,
         },
-        payslipFile,
+        storageFile,
         empKey
       );
     }
@@ -1018,7 +1025,7 @@ export function TaxApp() {
               }
             : {}),
         },
-        reuseEpfReceipt ? null : payslipFile,
+        reuseEpfReceipt ? null : storageFile,
         empKey
       );
     }
