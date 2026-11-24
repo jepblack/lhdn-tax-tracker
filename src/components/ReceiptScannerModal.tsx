@@ -29,6 +29,11 @@ import {
 } from "@/lib/myinvois-qr";
 import { formatRM } from "@/lib/calculator";
 import { checkCategoryAgeEligibility } from "@/lib/children-profiles";
+import {
+  detectReceiptQuad,
+  processScannedReceiptCanvas,
+  Quad,
+} from "@/lib/document-scanner";
 import { getPackageResourceLimits } from "@/lib/monetization";
 import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
@@ -362,7 +367,174 @@ export function ReceiptScannerModal({
     };
   }, [liveQrActive, isOpen, stopQrCamera]);
 
+  const docVideoRef = useRef<HTMLVideoElement>(null);
+  const docOverlayRef = useRef<HTMLCanvasElement>(null);
+  const docStreamRef = useRef<MediaStream | null>(null);
+  const docQuadRef = useRef<Quad | null>(null);
+  const [docCamActive, setDocCamActive] = useState(false);
+  const [docEdgesFound, setDocEdgesFound] = useState(false);
+  const [docProcessing, setDocProcessing] = useState(false);
+
+  const stopDocCamera = useCallback(() => {
+    if (docStreamRef.current) {
+      docStreamRef.current.getTracks().forEach((t) => t.stop());
+      docStreamRef.current = null;
+    }
+    if (docVideoRef.current) {
+      docVideoRef.current.srcObject = null;
+    }
+    docQuadRef.current = null;
+    setDocEdgesFound(false);
+    setDocCamActive(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || scannerMode !== "ocr") {
+      stopDocCamera();
+    }
+    return () => stopDocCamera();
+  }, [isOpen, scannerMode, stopDocCamera]);
+
+  useEffect(() => {
+    if (!docCamActive || !isOpen) return;
+    let cancelled = false;
+    let timerId: number | null = null;
+    const workCanvas = document.createElement("canvas");
+
+    const tick = () => {
+      if (cancelled) return;
+      const video = docVideoRef.current;
+      const overlay = docOverlayRef.current;
+      if (
+        video &&
+        overlay &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0
+      ) {
+        const w = 320;
+        const h = Math.max(180, Math.round((video.videoHeight * w) / video.videoWidth));
+        workCanvas.width = w;
+        workCanvas.height = h;
+        const wctx = workCanvas.getContext("2d", { willReadFrequently: true });
+        if (wctx) {
+          wctx.drawImage(video, 0, 0, w, h);
+          const quad = detectReceiptQuad(workCanvas);
+          docQuadRef.current = quad;
+          setDocEdgesFound(Boolean(quad));
+
+          overlay.width = overlay.clientWidth || w;
+          overlay.height = overlay.clientHeight || h;
+          const octx = overlay.getContext("2d");
+          if (octx) {
+            octx.clearRect(0, 0, overlay.width, overlay.height);
+            if (quad) {
+              octx.strokeStyle = "#10B981";
+              octx.fillStyle = "rgba(16, 185, 129, 0.16)";
+              octx.lineWidth = 3;
+              octx.beginPath();
+              octx.moveTo(quad[0].x * overlay.width, quad[0].y * overlay.height);
+              octx.lineTo(quad[1].x * overlay.width, quad[1].y * overlay.height);
+              octx.lineTo(quad[2].x * overlay.width, quad[2].y * overlay.height);
+              octx.lineTo(quad[3].x * overlay.width, quad[3].y * overlay.height);
+              octx.closePath();
+              octx.fill();
+              octx.stroke();
+
+              for (const pt of quad) {
+                octx.beginPath();
+                octx.arc(pt.x * overlay.width, pt.y * overlay.height, 5, 0, Math.PI * 2);
+                octx.fillStyle = "#34D399";
+                octx.fill();
+              }
+            }
+          }
+        }
+      }
+      if (!cancelled) {
+        timerId = window.setTimeout(tick, 220);
+      }
+    };
+
+    timerId = window.setTimeout(tick, 250);
+    return () => {
+      cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+  }, [docCamActive, isOpen]);
+
   if (!isOpen) return null;
+
+  async function startLiveDocCamera() {
+    setScanNotice(null);
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setScanNotice(
+        lang === "bm"
+          ? "Pengimbas kamera langsung tidak disokong pada pelayar ini. Sila guna Ambil Gambar Resit."
+          : "Live camera scanner is not supported in this browser. Use Snap Photo instead."
+      );
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      docStreamRef.current = stream;
+      setDocCamActive(true);
+      setSheetExpanded(true);
+      requestAnimationFrame(() => {
+        if (docVideoRef.current) {
+          docVideoRef.current.srcObject = stream;
+          docVideoRef.current.play().catch(() => {});
+        }
+      });
+    } catch {
+      setScanNotice(
+        lang === "bm"
+          ? "Akses kamera disekat atau tiada kamera dikesan. Sila guna Muat Naik Foto."
+          : "Camera access was blocked or unavailable. Use Upload Photo instead."
+      );
+      stopDocCamera();
+    }
+  }
+
+  async function captureAndProcessDocScan() {
+    const video = docVideoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
+    setDocProcessing(true);
+    try {
+      const fullCanvas = document.createElement("canvas");
+      fullCanvas.width = video.videoWidth;
+      fullCanvas.height = video.videoHeight;
+      const ctx = fullCanvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+
+      const { file: bwFile } = await processScannedReceiptCanvas(
+        fullCanvas,
+        `receipt-bw-${Date.now()}.jpg`,
+        docQuadRef.current
+      );
+      stopDocCamera();
+      await handleFileSelected(bwFile);
+    } catch {
+      setScanNotice(
+        lang === "bm"
+          ? "Gagal memproses imbasan resit. Sila cuba lagi."
+          : "Could not process receipt scan. Please try again."
+      );
+    } finally {
+      setDocProcessing(false);
+    }
+  }
 
   async function startLiveQrCamera() {
     setScanNotice(null);
@@ -1041,7 +1213,89 @@ export function ReceiptScannerModal({
           />
 
           {/* Camera & Upload Buttons */}
-          <div className="grid grid-cols-2 gap-2.5">
+          {scannerMode === "ocr" && docCamActive && (
+            <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500 bg-black">
+              <video
+                ref={docVideoRef}
+                playsInline
+                muted
+                autoPlay
+                className="h-64 w-full object-cover"
+              />
+              <canvas
+                ref={docOverlayRef}
+                className="pointer-events-none absolute inset-0 h-full w-full"
+              />
+              <div className="flex items-center justify-between gap-2 bg-slate-900/90 px-3 py-2 text-[11px] text-white">
+                <span className="font-medium text-emerald-300">
+                  {docEdgesFound
+                    ? lang === "bm"
+                      ? "Tepi resit dikesan — sedia untuk imbas B&W"
+                      : "Receipt edges locked — ready for B&W scan"
+                    : lang === "bm"
+                    ? "Halakan kamera ke atas resit di permukaan gelap…"
+                    : "Hold camera over receipt on contrasting surface…"}
+                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={docProcessing}
+                    onClick={captureAndProcessDocScan}
+                    className="rounded-lg bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    {docProcessing
+                      ? lang === "bm"
+                        ? "Memproses…"
+                        : "Processing…"
+                      : lang === "bm"
+                      ? "Imbas B&W"
+                      : "Capture B&W"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopDocCamera}
+                    className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold hover:bg-white/25"
+                  >
+                    {lang === "bm" ? "Henti" : "Stop"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div
+            className={`grid gap-2.5 ${
+              scannerMode === "ocr" ? "grid-cols-3" : "grid-cols-2"
+            }`}
+          >
+            {scannerMode === "ocr" && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (docCamActive) {
+                    stopDocCamera();
+                  } else {
+                    startLiveDocCamera();
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-emerald-500 bg-emerald-600 p-3 text-white transition hover:bg-emerald-700 active:scale-[0.98]"
+              >
+                {docCamActive ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Video className="h-5 w-5" />
+                )}
+                <span className="text-[11px] font-bold leading-tight text-center">
+                  {docCamActive
+                    ? lang === "bm"
+                      ? "Tutup Pengimbas"
+                      : "Close Scanner"
+                    : lang === "bm"
+                    ? "Imbas Dokumen B&W"
+                    : "Doc Scan (B&W)"}
+                </span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -1055,7 +1309,7 @@ export function ReceiptScannerModal({
                   cameraInputRef.current?.click();
                 }
               }}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/70 p-4 text-emerald-800 transition active:scale-[0.98]"
+              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/70 p-3 text-emerald-800 transition active:scale-[0.98]"
             >
               {scannerMode === "qr" ? (
                 liveQrActive ? (
@@ -1064,9 +1318,9 @@ export function ReceiptScannerModal({
                   <Video className="h-6 w-6 text-emerald-600" />
                 )
               ) : (
-                <Camera className="h-6 w-6 text-emerald-600" />
+                <Camera className="h-5 w-5 text-emerald-600" />
               )}
-              <span className="text-xs font-semibold">
+              <span className="text-[11px] font-semibold leading-tight text-center">
                 {scannerMode === "qr"
                   ? liveQrActive
                     ? lang === "bm"
@@ -1076,18 +1330,18 @@ export function ReceiptScannerModal({
                     ? "Imbas Kamera QR Langsung"
                     : "Live QR Camera"
                   : lang === "bm"
-                  ? "Ambil Gambar Resit"
-                  : "Snap Any Receipt"}
+                  ? "Ambil Gambar"
+                  : "Snap Photo"}
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-slate-700 transition active:scale-[0.98]"
+              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-3 text-slate-700 transition active:scale-[0.98]"
             >
-              <Upload className="h-6 w-6 text-slate-500" />
-              <span className="text-xs font-semibold">
+              <Upload className="h-5 w-5 text-slate-500" />
+              <span className="text-[11px] font-semibold leading-tight text-center">
                 {lang === "bm" ? "Muat Naik Foto / PDF" : "Upload Photo / PDF"}
               </span>
             </button>
