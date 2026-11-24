@@ -255,8 +255,6 @@ export function ReceiptScannerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialFile]);
 
-  if (!isOpen) return null;
-
   function parseMyInvoisQrText(text: string): {
     rawUrl: string;
     invoiceUuid: string;
@@ -360,6 +358,8 @@ export function ReceiptScannerModal({
       if (timerId !== null) window.clearTimeout(timerId);
     };
   }, [liveQrActive, isOpen, stopQrCamera]);
+
+  if (!isOpen) return null;
 
   async function startLiveQrCamera() {
     setScanNotice(null);
