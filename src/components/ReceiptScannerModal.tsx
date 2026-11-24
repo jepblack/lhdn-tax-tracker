@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import jsQR from "jsqr";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -19,9 +18,15 @@ import {
   Sparkles,
   Upload,
   UserCheck,
+  Video,
   WifiOff,
   X,
 } from "lucide-react";
+import {
+  decodeQrFromCanvas,
+  decodeQrFromFile,
+  parseMyInvoisQrText as parseMyInvoisQrShared,
+} from "@/lib/myinvois-qr";
 import { formatRM } from "@/lib/calculator";
 import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
@@ -257,59 +262,144 @@ export function ReceiptScannerModal({
     invoiceUuid: string;
     isOfficial: boolean;
   } {
-    const trimmed = text.trim();
-    const isOfficial = /myinvois\.hasil\.gov\.my/i.test(trimmed);
-    const uuidMatch = trimmed.match(
-      /myinvois\.hasil\.gov\.my\/([A-Z0-9\-]{8,40})/i
-    );
-    const fallbackId = trimmed.split("/").filter(Boolean).pop() || trimmed;
+    const parsed = parseMyInvoisQrShared(text);
     return {
-      rawUrl: trimmed,
-      invoiceUuid: (uuidMatch ? uuidMatch[1] : fallbackId).slice(0, 32),
-      isOfficial,
+      rawUrl: parsed.rawUrl,
+      invoiceUuid: parsed.invoiceUuid,
+      isOfficial: parsed.isOfficialMyInvois,
     };
   }
 
   async function tryDecodeMyInvoisQrFromFile(
     file: File
   ): Promise<string | null> {
-    if (!file.type.startsWith("image/")) return null;
-    return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const maxDim = 1200;
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
+    return await decodeQrFromFile(file);
+  }
+
+  const qrVideoRef = useRef<HTMLVideoElement>(null);
+  const qrStreamRef = useRef<MediaStream | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [liveQrActive, setLiveQrActive] = useState(false);
+
+  const stopQrCamera = useCallback(() => {
+    if (qrStreamRef.current) {
+      qrStreamRef.current.getTracks().forEach((t) => t.stop());
+      qrStreamRef.current = null;
+    }
+    if (qrVideoRef.current) {
+      qrVideoRef.current.srcObject = null;
+    }
+    setLiveQrActive(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || scannerMode !== "qr") {
+      stopQrCamera();
+    }
+    return () => stopQrCamera();
+  }, [isOpen, scannerMode, stopQrCamera]);
+
+  useEffect(() => {
+    if (!liveQrActive || !isOpen) return;
+    let cancelled = false;
+    let timerId: number | null = null;
+    let scanningFrame = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const video = qrVideoRef.current;
+      if (
+        video &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
+        !scanningFrame
+      ) {
+        scanningFrame = true;
+        try {
+          if (!qrCanvasRef.current) {
+            qrCanvasRef.current = document.createElement("canvas");
           }
+          const canvas = qrCanvasRef.current;
+          const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const qrText = await decodeQrFromCanvas(canvas);
+            if (qrText && !cancelled) {
+              const parsedQr = parseMyInvoisQrText(qrText);
+              setQrDetectedUrl(parsedQr.rawUrl);
+              setMyInvoisUuid(parsedQr.invoiceUuid);
+              setInvoiceNumber((prev) => prev || parsedQr.invoiceUuid);
+              setDescription((prev) =>
+                prev
+                  ? prev
+                  : `MyInvois e-Invoice (${
+                      parsedQr.isOfficial ? "Verified LHDN" : "QR"
+                    }): ${parsedQr.rawUrl}`
+              );
+              setScanNotice(null);
+              stopQrCamera();
+              return;
+            }
+          }
+        } finally {
+          scanningFrame = false;
         }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          URL.revokeObjectURL(url);
-          resolve(null);
-          return;
+      }
+      if (!cancelled) {
+        timerId = window.setTimeout(tick, 180);
+      }
+    };
+
+    timerId = window.setTimeout(tick, 250);
+    return () => {
+      cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+  }, [liveQrActive, isOpen, stopQrCamera]);
+
+  async function startLiveQrCamera() {
+    setScanNotice(null);
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setScanNotice(
+        lang === "bm"
+          ? "Kamera langsung tidak disokong pada pelayar ini. Sila guna Ambil Gambar / Muat Naik Foto."
+          : "Live camera is not supported in this browser. Use Snap / Upload Photo instead."
+      );
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      qrStreamRef.current = stream;
+      setLiveQrActive(true);
+      setSheetExpanded(true);
+      requestAnimationFrame(() => {
+        if (qrVideoRef.current) {
+          qrVideoRef.current.srcObject = stream;
+          qrVideoRef.current.play().catch(() => {});
         }
-        ctx.drawImage(img, 0, 0, width, height);
-        const imageData = ctx.getImageData(0, 0, width, height);
-        URL.revokeObjectURL(url);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        resolve(code?.data || null);
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve(null);
-      };
-      img.src = url;
-    });
+      });
+    } catch {
+      setScanNotice(
+        lang === "bm"
+          ? "Akses kamera disekat atau tiada kamera dikesan. Sila guna Muat Naik Foto."
+          : "Camera access was blocked or unavailable. Use Upload Photo or paste the MyInvois link below."
+      );
+      stopQrCamera();
+    }
   }
 
   const selectedCategory = categories.find((c) => c.id === categoryId);
@@ -732,7 +822,13 @@ export function ReceiptScannerModal({
 
         {/* Rectangular Receipt / QR Framing Guide */}
         <div
-          onClick={() => cameraInputRef.current?.click()}
+          onClick={() => {
+            if (scannerMode === "qr") {
+              startLiveQrCamera();
+            } else {
+              cameraInputRef.current?.click();
+            }
+          }}
           className={`my-2 flex w-full max-w-xs cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-400/80 bg-slate-900/60 p-4 text-center transition ${
             sheetExpanded ? "h-28" : "h-64"
           }`}
@@ -895,19 +991,37 @@ export function ReceiptScannerModal({
           <div className="grid grid-cols-2 gap-2.5">
             <button
               type="button"
-              onClick={() => cameraInputRef.current?.click()}
+              onClick={() => {
+                if (scannerMode === "qr") {
+                  if (liveQrActive) {
+                    stopQrCamera();
+                  } else {
+                    startLiveQrCamera();
+                  }
+                } else {
+                  cameraInputRef.current?.click();
+                }
+              }}
               className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/70 p-4 text-emerald-800 transition active:scale-[0.98]"
             >
               {scannerMode === "qr" ? (
-                <QrCode className="h-6 w-6 text-emerald-600" />
+                liveQrActive ? (
+                  <X className="h-6 w-6 text-rose-600" />
+                ) : (
+                  <Video className="h-6 w-6 text-emerald-600" />
+                )
               ) : (
                 <Camera className="h-6 w-6 text-emerald-600" />
               )}
               <span className="text-xs font-semibold">
                 {scannerMode === "qr"
-                  ? lang === "bm"
-                    ? "Ambil Gambar QR MyInvois"
-                    : "Snap MyInvois QR"
+                  ? liveQrActive
+                    ? lang === "bm"
+                      ? "Henti Kamera QR"
+                      : "Stop QR Camera"
+                    : lang === "bm"
+                    ? "Imbas Kamera QR Langsung"
+                    : "Live QR Camera"
                   : lang === "bm"
                   ? "Ambil Gambar Resit"
                   : "Snap Any Receipt"}
@@ -956,6 +1070,34 @@ export function ReceiptScannerModal({
                 <p className="font-mono text-[11px] text-emerald-800">
                   UUID: {myInvoisUuid}
                 </p>
+              )}
+              {scannerMode === "qr" && liveQrActive && (
+                <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500 bg-black">
+                  <video
+                    ref={qrVideoRef}
+                    playsInline
+                    muted
+                    autoPlay
+                    className="h-52 w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="h-32 w-32 rounded-2xl border-2 border-emerald-400/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 text-[11px] text-white">
+                    <span className="text-emerald-300">
+                      {lang === "bm"
+                        ? "Halakan kamera ke kod QR MyInvois…"
+                        : "Point camera at MyInvois QR code…"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={stopQrCamera}
+                      className="rounded-lg bg-white/15 px-2 py-0.5 font-semibold"
+                    >
+                      {lang === "bm" ? "Henti" : "Stop"}
+                    </button>
+                  </div>
+                </div>
               )}
               {scannerMode === "qr" && (
                 <div className="flex gap-2">
