@@ -20,7 +20,11 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { calculateMaxTaxSavingGoal, formatRM } from "@/lib/calculator";
+import {
+  calculateMaxTaxSavingGoal,
+  calculateTaxSummary,
+  formatRM,
+} from "@/lib/calculator";
 import { RECURRING_BILL_BM } from "@/lib/language-context";
 import {
   getGoogleDriveToken,
@@ -1843,6 +1847,61 @@ export function SettingsTab({
             />
           </div>
         </div>
+
+        {/* Live Tax Bracket & Chargeable Income Calculation Summary */}
+        {(() => {
+          const liveSummary = calculateTaxSummary(profile, expenses);
+          const bracketPct = Math.round(liveSummary.marginalRate * 100);
+          const isRefund = liveSummary.estimatedRefund >= 0;
+          return (
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-3 text-xs sm:grid-cols-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {lang === "bm"
+                    ? `Kadar Cukai (TT ${profile.taxYear})`
+                    : `Tax Bracket (YA ${profile.taxYear})`}
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-emerald-700">
+                  {bracketPct}%
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {lang === "bm" ? "Pendapatan Bercukai" : "Chargeable Income"}
+                </p>
+                <p className="mt-0.5 text-sm font-bold text-slate-900">
+                  {formatRM(liveSummary.chargeableIncome, true)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {lang === "bm" ? "Cukai Bersih" : "Net Tax Payable"}
+                </p>
+                <p className="mt-0.5 text-sm font-bold text-slate-900">
+                  {formatRM(liveSummary.netTaxPayable, true)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {isRefund
+                    ? lang === "bm"
+                      ? "Anggaran Lebihan"
+                      : "Est. LHDN Refund"
+                    : lang === "bm"
+                    ? "Baki Perlu Dibayar"
+                    : "Est. Tax Due"}
+                </p>
+                <p
+                  className={`mt-0.5 text-sm font-extrabold ${
+                    isRefund ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                >
+                  {formatRM(Math.abs(liveSummary.estimatedRefund), true)}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* Automatic & Family Status Reliefs */}

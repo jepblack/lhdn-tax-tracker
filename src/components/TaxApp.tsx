@@ -22,7 +22,10 @@ import {
   Sun,
   WifiOff,
 } from "lucide-react";
-import { calculateTaxSummary } from "@/lib/calculator";
+import {
+  calculateMaxTaxSavingGoal,
+  calculateTaxSummary,
+} from "@/lib/calculator";
 import {
   getGoogleDriveToken,
   saveGoogleDriveToken,
@@ -918,7 +921,18 @@ export function TaxApp() {
         individual: true,
       },
     };
+    const incomeOrStatusChanged =
+      normalized.annualIncome !== profile.annualIncome ||
+      JSON.stringify(normalized.statusReliefs) !==
+        JSON.stringify(profile.statusReliefs);
     setProfile(normalized);
+    if (incomeOrStatusChanged) {
+      const nextMaxGoal = calculateMaxTaxSavingGoal(normalized);
+      handleUpdatePersonalization({
+        ...personalization,
+        taxSavingGoal: nextMaxGoal,
+      });
+    }
     await persistProfile(normalized, userId);
   }
 
