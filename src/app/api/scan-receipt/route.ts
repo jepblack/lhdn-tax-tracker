@@ -17,6 +17,62 @@ export const maxDuration = 60;
 
 const GEMINI_MODEL = "gemini-3.8-flash";
 
+let cachedGeminiModels: string[] | null = null;
+let cachedGeminiAt = 0;
+
+async function getActiveGeminiVisionModels(apiKey: string): Promise<string[]> {
+  if (cachedGeminiModels && Date.now() - cachedGeminiAt < 10 * 60 * 1000) {
+    return cachedGeminiModels;
+  }
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const all: Array<{ name?: string; supportedGenerationMethods?: string[] }> =
+        Array.isArray(data.models) ? data.models : [];
+      const usable = all
+        .filter(
+          (m) =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes("generateContent")
+        )
+        .map((m) => String(m.name || "").replace(/^models\//, ""))
+        .filter(
+          (id) =>
+            id &&
+            !/(embedding|tts|imagen|veo|aqa|robotics|computer-use)/i.test(id)
+        );
+
+      const picked: string[] = [];
+      const matchers = [
+        /gemini-3\.8-flash$/i,
+        /gemini-3\.\d+-flash$/i,
+        /gemini-2\.5-flash$/i,
+        /gemini-2\.0-flash$/i,
+        /^gemini-.*flash(?!.*lite)/i,
+        /flash-lite/i,
+        /flash/i,
+        /gemini/i,
+      ];
+      for (const rx of matchers) {
+        for (const id of usable) {
+          if (rx.test(id) && !picked.includes(id)) picked.push(id);
+        }
+      }
+      if (picked.length > 0) {
+        cachedGeminiModels = picked.slice(0, 5);
+        cachedGeminiAt = Date.now();
+        return cachedGeminiModels;
+      }
+    }
+  } catch {
+    // ignore discovery errors
+  }
+  return [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+}
+
 interface AuthAndQuotaStatus {
   allowed: boolean;
   quotaExceeded: boolean;
@@ -424,19 +480,12 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
               { inlineData: { mimeType: supportedMime, data: base64Data } },
             ];
 
-        // Automatic 1-retry on transient 503 UNAVAILABLE spikes + fast low-thinking config
-        let response;
-        try {
-          response = await generateFastWithGemini(ai, contents, 1200);
-        } catch (firstErr) {
-          const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-          if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
-            await new Promise((r) => setTimeout(r, 1200));
-            response = await generateFastWithGemini(ai, contents, 1200);
-          } else {
-            throw firstErr;
-          }
-        }
+        const response = await generateFastWithGemini(
+          ai,
+          geminiKey!,
+          contents,
+          1400
+        );
 
         if (response.text) {
           const jsonMatch = response.text.match(/\{[\s\S]*\}/);
@@ -489,34 +538,48 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
 
 async function generateFastWithGemini(
   ai: GoogleGenAI,
+  apiKey: string,
   contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
   maxOutputTokens: number
 ) {
-  // Gemini 3.x uses thinkingLevel: MINIMAL for fastest (~1-3s) structured extraction
-  try {
-    return await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        temperature: 0.1,
-        maxOutputTokens,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-      },
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("400") || msg.includes("INVALID_ARGUMENT")) {
-      return await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          temperature: 0.1,
-          maxOutputTokens,
-        },
-      });
+  const models = await getActiveGeminiVisionModels(apiKey);
+  const errors: string[] = [];
+
+  for (const modelName of models) {
+    try {
+      try {
+        return await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config: {
+            temperature: 0.1,
+            maxOutputTokens,
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+          },
+        });
+      } catch (cfgErr) {
+        const msg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+        if (msg.includes("400") || msg.includes("INVALID_ARGUMENT")) {
+          return await ai.models.generateContent({
+            model: modelName,
+            contents,
+            config: {
+              temperature: 0.1,
+              maxOutputTokens,
+              responseMimeType: "application/json",
+            },
+          });
+        }
+        throw cfgErr;
+      }
+    } catch (modelErr) {
+      const msg = modelErr instanceof Error ? modelErr.message.slice(0, 120) : String(modelErr);
+      errors.push(`${modelName}: ${msg}`);
     }
-    throw err;
   }
+
+  throw new Error(errors.join(" | ") || "All Gemini models failed");
 }
 
 async function tryExtractPdfReceipt(arrayBuffer: ArrayBuffer, taxYear: TaxYear) {
