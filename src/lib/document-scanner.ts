@@ -478,7 +478,11 @@ function applyDocumentBwFilter(canvas: HTMLCanvasElement): HTMLCanvasElement {
     }
   }
 
-  const radius = Math.max(8, Math.min(22, Math.round(w / 32)));
+  const radius = Math.max(18, Math.min(48, Math.round(w / 18)));
+  const blackPoint = 130;
+  const whitePoint = 205;
+  const span = whitePoint - blackPoint;
+
   for (let y = 0; y < h; y++) {
     const y1 = Math.max(0, y - radius);
     const y2 = Math.min(h - 1, y + radius);
@@ -491,9 +495,23 @@ function applyDocumentBwFilter(canvas: HTMLCanvasElement): HTMLCanvasElement {
         integral[y1 * (w + 1) + (x2 + 1)] -
         integral[(y2 + 1) * (w + 1) + x1] +
         integral[y1 * (w + 1) + x1];
-      const localMean = sum / count;
+      const localMean = Math.max(45, sum / count);
       const g = gray[y * w + x];
-      const v = g < localMean * 0.88 && g < 185 ? 12 : 255;
+
+      // Illumination normalization: flattens shadows/uneven lighting to white paper
+      const normalized = Math.min(255, (g / localMean) * 230);
+
+      // Smooth document levels stretch (preserves anti-aliased thin receipt text)
+      let v: number;
+      if (normalized >= whitePoint) {
+        v = 255;
+      } else if (normalized <= blackPoint) {
+        v = 0;
+      } else {
+        const t = (normalized - blackPoint) / span;
+        v = Math.round(Math.pow(t, 1.15) * 255);
+      }
+
       const idx = (y * w + x) * 4;
       data[idx] = v;
       data[idx + 1] = v;
@@ -516,7 +534,7 @@ export async function processScannedReceiptCanvas(
   applyDocumentBwFilter(flatCanvas);
 
   const blob = await new Promise<Blob | null>((resolve) =>
-    flatCanvas.toBlob((b) => resolve(b), "image/jpeg", 0.9)
+    flatCanvas.toBlob((b) => resolve(b), "image/jpeg", 0.93)
   );
   if (!blob) {
     throw new Error("Could not encode scanned receipt image.");
