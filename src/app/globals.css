@@ -122,9 +122,19 @@ html.dark .bg-emerald-100\/90 {
 }
 
 html.dark .bg-amber-50,
+html.dark .bg-amber-50\/60,
+html.dark .bg-amber-50\/70,
 html.dark .bg-amber-50\/80,
+html.dark .bg-amber-50\/90,
 html.dark .bg-amber-100 {
   background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+html.dark .bg-gradient-to-br.from-emerald-50\/80,
+html.dark .bg-gradient-to-r.from-amber-50,
+html.dark .bg-gradient-to-br.from-amber-50 {
+  background-image: none !important;
+  background-color: var(--bg-card) !important;
 }
 
 html.dark .bg-rose-50,
