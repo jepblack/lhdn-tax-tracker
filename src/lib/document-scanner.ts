@@ -1,8 +1,10 @@
 /**
- * Fast, zero-hang pure-TypeScript Document Scanner:
- * 1. 5x5 Gaussian Blur + Sobel/Canny Edge Detection + 3x3 Dilation (<10ms per frame)
- * 2. Extracts the 4-corner document quadrilateral (TL, TR, BR, BL)
- * 3. Homography perspective warp + integral-image adaptive B&W document filter
+ * Fast, rock-steady pure-TypeScript Document Scanner:
+ * 1. Learns background (outer border) vs receipt paper (center bright pixels)
+ * 2. Morphologically closes & fills internal text/barcodes so the whole receipt is one solid sheet
+ * 3. Extracts the 4 outer corners (TL, TR, BR, BL) of the largest paper component
+ * 4. Applies temporal EMA + deadzone smoothing so the live overlay never jitters or jumps
+ * 5. Homography perspective warp + integral-image adaptive B&W document filter
  */
 
 export interface Point2D {
@@ -17,48 +19,137 @@ function dist(a: Point2D, b: Point2D): number {
 }
 
 /**
- * Fast 5x5 Gaussian blur on grayscale buffer.
+ * Smooths live quad detections across frames using a deadzone + Exponential Moving Average
+ * so the green document boundary locks smoothly instead of jumping around.
  */
-function gaussianBlur5x5(
-  src: Uint8Array,
-  w: number,
-  h: number
-): Uint8Array {
-  const dst = new Uint8Array(w * h);
-  const kernel = [
-    1, 4, 6, 4, 1,
-    4, 16, 24, 16, 4,
-    6, 24, 36, 24, 6,
-    4, 16, 24, 16, 4,
-    1, 4, 6, 4, 1,
-  ];
-  for (let y = 2; y < h - 2; y++) {
-    for (let x = 2; x < w - 2; x++) {
-      let sum = 0;
-      let k = 0;
-      for (let ky = -2; ky <= 2; ky++) {
-        const row = (y + ky) * w;
-        for (let kx = -2; kx <= 2; kx++) {
-          sum += src[row + x + kx] * kernel[k++];
-        }
-      }
-      dst[y * w + x] = sum >> 8;
-    }
+export function smoothReceiptQuad(
+  prev: Quad | null,
+  next: Quad | null
+): Quad | null {
+  if (!next) return null;
+  if (!prev) return next;
+
+  let maxDelta = 0;
+  for (let i = 0; i < 4; i++) {
+    const d = dist(prev[i], next[i]);
+    if (d > maxDelta) maxDelta = d;
   }
-  return dst;
+
+  // Deadzone: if all corners moved less than 1.6% of frame, stay locked
+  if (maxDelta < 0.016) {
+    return prev;
+  }
+
+  // Smooth EMA blend
+  const alpha = maxDelta > 0.18 ? 0.45 : 0.26;
+  return [
+    {
+      x: prev[0].x * (1 - alpha) + next[0].x * alpha,
+      y: prev[0].y * (1 - alpha) + next[0].y * alpha,
+    },
+    {
+      x: prev[1].x * (1 - alpha) + next[1].x * alpha,
+      y: prev[1].y * (1 - alpha) + next[1].y * alpha,
+    },
+    {
+      x: prev[2].x * (1 - alpha) + next[2].x * alpha,
+      y: prev[2].y * (1 - alpha) + next[2].y * alpha,
+    },
+    {
+      x: prev[3].x * (1 - alpha) + next[3].x * alpha,
+      y: prev[3].y * (1 - alpha) + next[3].y * alpha,
+    },
+  ];
 }
 
 /**
- * Detects a receipt quadrilateral in normalized [0..1] coordinates using
- * Gaussian Blur -> Sobel Gradient Edges -> 3x3 Dilation -> Largest Edge Component Quad.
- * Runs in <10ms on 260px frame with zero external WASM dependencies.
+ * 5x5 morphological dilation + erosion (closing) on a binary mask
+ * so dark printed text and logos inside a white receipt are filled into one solid sheet.
+ */
+function closePaperMask(mask: Uint8Array, w: number, h: number): Uint8Array {
+  const n = w * h;
+  const dilated = new Uint8Array(n);
+  const closed = new Uint8Array(n);
+  const r = 3; // 7x7 window bridges text lines inside the paper
+
+  // Horizontal pass dilation
+  const temp = new Uint8Array(n);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let hit = 0;
+      const x1 = Math.max(0, x - r);
+      const x2 = Math.min(w - 1, x + r);
+      for (let xx = x1; xx <= x2; xx++) {
+        if (mask[row + xx]) {
+          hit = 1;
+          break;
+        }
+      }
+      temp[row + x] = hit;
+    }
+  }
+  // Vertical pass dilation
+  for (let y = 0; y < h; y++) {
+    const y1 = Math.max(0, y - r);
+    const y2 = Math.min(h - 1, y + r);
+    for (let x = 0; x < w; x++) {
+      let hit = 0;
+      for (let yy = y1; yy <= y2; yy++) {
+        if (temp[yy * w + x]) {
+          hit = 1;
+          break;
+        }
+      }
+      dilated[y * w + x] = hit;
+    }
+  }
+
+  // Horizontal pass erosion
+  const temp2 = new Uint8Array(n);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let all = 1;
+      const x1 = Math.max(0, x - r);
+      const x2 = Math.min(w - 1, x + r);
+      for (let xx = x1; xx <= x2; xx++) {
+        if (!dilated[row + xx]) {
+          all = 0;
+          break;
+        }
+      }
+      temp2[row + x] = all;
+    }
+  }
+  // Vertical pass erosion
+  for (let y = 0; y < h; y++) {
+    const y1 = Math.max(0, y - r);
+    const y2 = Math.min(h - 1, y + r);
+    for (let x = 0; x < w; x++) {
+      let all = 1;
+      for (let yy = y1; yy <= y2; yy++) {
+        if (!temp2[yy * w + x]) {
+          all = 0;
+          break;
+        }
+      }
+      closed[y * w + x] = all;
+    }
+  }
+
+  return closed;
+}
+
+/**
+ * Detects the full receipt paper quadrilateral in normalized [0..1] coordinates.
  */
 export function detectReceiptQuad(sourceCanvas: HTMLCanvasElement): Quad | null {
   const sw = sourceCanvas.width;
   const sh = sourceCanvas.height;
   if (sw < 40 || sh < 40) return null;
 
-  const w = 240;
+  const w = 200;
   const h = Math.max(40, Math.round((sh * w) / sw));
   const work = document.createElement("canvas");
   work.width = w;
@@ -69,109 +160,143 @@ export function detectReceiptQuad(sourceCanvas: HTMLCanvasElement): Quad | null 
 
   const data = wctx.getImageData(0, 0, w, h).data;
   const n = w * h;
-  const rawGray = new Uint8Array(n);
+  const lum = new Uint8Array(n);
+
   for (let i = 0; i < n; i++) {
     const idx = i * 4;
-    rawGray[i] = Math.round(
+    lum[i] = Math.round(
       0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]
     );
   }
 
-  const gray = gaussianBlur5x5(rawGray, w, h);
+  // 1. Sample outer border ring (6% margin) to learn background color & luminance
+  const marginX = Math.max(2, Math.round(w * 0.06));
+  const marginY = Math.max(2, Math.round(h * 0.06));
+  let bgR = 0;
+  let bgG = 0;
+  let bgB = 0;
+  let bgLumSum = 0;
+  let bgCount = 0;
 
-  // Sobel gradient magnitude
-  const grad = new Uint8Array(n);
-  let gradSum = 0;
-  for (let y = 3; y < h - 3; y++) {
-    for (let x = 3; x < w - 3; x++) {
-      const i = y * w + x;
-      const gx =
-        -gray[i - w - 1] + gray[i - w + 1] -
-        2 * gray[i - 1] + 2 * gray[i + 1] -
-        gray[i + w - 1] + gray[i + w + 1];
-      const gy =
-        -gray[i - w - 1] - 2 * gray[i - w] - gray[i - w + 1] +
-        gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1];
-      const mag = Math.min(255, Math.abs(gx) + Math.abs(gy));
-      grad[i] = mag;
-      gradSum += mag;
-    }
-  }
-
-  const meanGrad = gradSum / n;
-  const edgeThresh = Math.max(42, Math.min(110, Math.round(meanGrad * 2.1)));
-
-  // Binary edge map + 3x3 dilation to bridge small gaps
-  const edges = new Uint8Array(n);
-  for (let y = 3; y < h - 3; y++) {
-    for (let x = 3; x < w - 3; x++) {
-      const i = y * w + x;
-      if (grad[i] >= edgeThresh) {
-        edges[i] = 1;
-        edges[i - 1] = 1;
-        edges[i + 1] = 1;
-        edges[i - w] = 1;
-        edges[i + w] = 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (
+        x < marginX ||
+        x >= w - marginX ||
+        y < marginY ||
+        y >= h - marginY
+      ) {
+        const i = y * w + x;
+        const idx = i * 4;
+        bgR += data[idx];
+        bgG += data[idx + 1];
+        bgB += data[idx + 2];
+        bgLumSum += lum[i];
+        bgCount++;
       }
     }
   }
+  bgR /= Math.max(1, bgCount);
+  bgG /= Math.max(1, bgCount);
+  bgB /= Math.max(1, bgCount);
+  const bgLum = bgLumSum / Math.max(1, bgCount);
 
-  // Find connected edge components and pick the one with largest bounding-box area
+  // 2. Sample center region (25%..75%) bright pixels (70th percentile) to learn receipt paper tone
+  const centerLums: number[] = [];
+  const cx1 = Math.floor(w * 0.25);
+  const cx2 = Math.ceil(w * 0.75);
+  const cy1 = Math.floor(h * 0.2);
+  const cy2 = Math.ceil(h * 0.8);
+  for (let y = cy1; y < cy2; y++) {
+    for (let x = cx1; x < cx2; x++) {
+      centerLums.push(lum[y * w + x]);
+    }
+  }
+  centerLums.sort((a, b) => a - b);
+  const paperLum =
+    centerLums[Math.floor(centerLums.length * 0.72)] ?? 200;
+
+  // Require minimum contrast between paper and background
+  const lumGap = paperLum - bgLum;
+  const lumThresh =
+    lumGap >= 18
+      ? bgLum + lumGap * 0.45
+      : Math.max(115, Math.min(200, paperLum * 0.82));
+
+  // 3. Classify paper pixels (bright paper + low saturation vs background color distance)
+  const rawMask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const idx = i * 4;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    const l = lum[i];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const sat = maxC - minC;
+    const distFromBg = Math.hypot(r - bgR, g - bgG, b - bgB);
+
+    if (
+      (l >= lumThresh && sat < 75) ||
+      (distFromBg >= 38 && l > bgLum + 12 && sat < 65)
+    ) {
+      rawMask[i] = 1;
+    }
+  }
+
+  // 4. Close internal text/lines so the whole receipt is a single connected component
+  const closedMask = closePaperMask(rawMask, w, h);
+
+  // 5. Find the largest 4-connected paper component that overlaps the center region
   const visited = new Uint8Array(n);
   const queue = new Int32Array(n);
-  let bestPixels: number[] = [];
-  let bestBoxArea = 0;
+  let bestComp: number[] = [];
 
   for (let i = 0; i < n; i++) {
-    if (edges[i] !== 1 || visited[i]) continue;
+    if (closedMask[i] !== 1 || visited[i]) continue;
     let head = 0;
     let tail = 0;
     queue[tail++] = i;
     visited[i] = 1;
     const comp: number[] = [];
-    let minX = w;
-    let maxX = 0;
-    let minY = h;
-    let maxY = 0;
+    let touchesCenter = false;
 
     while (head < tail) {
       const curr = queue[head++];
       comp.push(curr);
       const x = curr % w;
       const y = (curr - x) / w;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
+      if (x >= cx1 && x <= cx2 && y >= cy1 && y <= cy2) {
+        touchesCenter = true;
+      }
 
-      if (x > 0 && edges[curr - 1] === 1 && !visited[curr - 1]) {
+      if (x > 0 && closedMask[curr - 1] === 1 && !visited[curr - 1]) {
         visited[curr - 1] = 1;
         queue[tail++] = curr - 1;
       }
-      if (x + 1 < w && edges[curr + 1] === 1 && !visited[curr + 1]) {
+      if (x + 1 < w && closedMask[curr + 1] === 1 && !visited[curr + 1]) {
         visited[curr + 1] = 1;
         queue[tail++] = curr + 1;
       }
-      if (y > 0 && edges[curr - w] === 1 && !visited[curr - w]) {
+      if (y > 0 && closedMask[curr - w] === 1 && !visited[curr - w]) {
         visited[curr - w] = 1;
         queue[tail++] = curr - w;
       }
-      if (y + 1 < h && edges[curr + w] === 1 && !visited[curr + w]) {
+      if (y + 1 < h && closedMask[curr + w] === 1 && !visited[curr + w]) {
         visited[curr + w] = 1;
         queue[tail++] = curr + w;
       }
     }
 
-    const boxArea = (maxX - minX) * (maxY - minY);
-    if (comp.length >= 40 && boxArea > bestBoxArea && boxArea < n * 0.96) {
-      bestBoxArea = boxArea;
-      bestPixels = comp;
+    if (touchesCenter && comp.length > bestComp.length) {
+      bestComp = comp;
     }
   }
 
-  if (bestBoxArea < n * 0.12 || bestPixels.length < 40) return null;
+  const areaRatio = bestComp.length / n;
+  if (areaRatio < 0.08 || areaRatio > 0.94) return null;
 
-  // Extract 4 extreme corners: TL (min x+y), TR (max x-y), BR (max x+y), BL (min x-y)
+  // 6. Extract the 4 outer corners of the solid paper sheet using aspect-normalized projections
   let tl: Point2D = { x: w, y: h };
   let tr: Point2D = { x: 0, y: h };
   let br: Point2D = { x: 0, y: 0 };
@@ -181,42 +306,38 @@ export function detectReceiptQuad(sourceCanvas: HTMLCanvasElement): Quad | null 
   let minDiff = Infinity;
   let maxDiff = -Infinity;
 
-  for (let i = 0; i < bestPixels.length; i++) {
-    const idx = bestPixels[i];
+  for (let i = 0; i < bestComp.length; i++) {
+    const idx = bestComp[i];
     const x = idx % w;
     const y = (idx - x) / w;
-    const s = x + y;
-    const d = x - y;
+    const nx = x / w;
+    const ny = y / h;
+    const s = nx + ny;
+    const d = nx - ny;
     if (s < minSum) {
       minSum = s;
-      tl = { x, y };
+      tl = { x: nx, y: ny };
     }
     if (s > maxSum) {
       maxSum = s;
-      br = { x, y };
+      br = { x: nx, y: ny };
     }
     if (d > maxDiff) {
       maxDiff = d;
-      tr = { x, y };
+      tr = { x: nx, y: ny };
     }
     if (d < minDiff) {
       minDiff = d;
-      bl = { x, y };
+      bl = { x: nx, y: ny };
     }
   }
 
-  const quad: Quad = [
-    { x: tl.x / w, y: tl.y / h },
-    { x: tr.x / w, y: tr.y / h },
-    { x: br.x / w, y: br.y / h },
-    { x: bl.x / w, y: bl.y / h },
-  ];
-
+  const quad: Quad = [tl, tr, br, bl];
   const topW = dist(quad[0], quad[1]);
   const botW = dist(quad[3], quad[2]);
   const leftH = dist(quad[0], quad[3]);
   const rightH = dist(quad[1], quad[2]);
-  if (Math.min(topW, botW) < 0.2 || Math.min(leftH, rightH) < 0.2) {
+  if (Math.min(topW, botW) < 0.18 || Math.min(leftH, rightH) < 0.18) {
     return null;
   }
 

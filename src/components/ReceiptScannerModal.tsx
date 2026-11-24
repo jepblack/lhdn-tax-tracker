@@ -33,6 +33,7 @@ import {
   detectReceiptQuad,
   processScannedReceiptCanvas,
   Quad,
+  smoothReceiptQuad,
 } from "@/lib/document-scanner";
 import { getPackageResourceLimits } from "@/lib/monetization";
 import { useLanguage } from "@/lib/language-context";
@@ -432,9 +433,12 @@ export function ReceiptScannerModal({
         const wctx = workCanvas.getContext("2d", { willReadFrequently: true });
         if (wctx) {
           wctx.drawImage(video, 0, 0, w, h);
-          const quad = detectReceiptQuad(workCanvas);
+          const rawQuad = detectReceiptQuad(workCanvas);
+          const quad = rawQuad
+            ? smoothReceiptQuad(docQuadRef.current, rawQuad)
+            : docQuadRef.current;
           docQuadRef.current = quad;
-          setDocEdgesFound(Boolean(quad));
+          setDocEdgesFound(Boolean(rawQuad));
 
           overlay.width = overlay.clientWidth || w;
           overlay.height = overlay.clientHeight || h;
@@ -1128,8 +1132,12 @@ export function ReceiptScannerModal({
 
       {/* Draggable Post-Scan Bottom Sheet */}
       <div
-        className={`flex w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl transition-all duration-300 sm:max-h-[90vh] sm:rounded-3xl ${
-          sheetExpanded ? "max-h-[82dvh]" : "max-h-[46dvh]"
+        className={`flex w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl transition-all duration-300 sm:rounded-3xl ${
+          docCamActive || cropPreviewUrl || liveQrActive
+            ? "max-w-2xl max-h-[94dvh] sm:max-h-[94vh]"
+            : sheetExpanded
+            ? "max-w-lg max-h-[82dvh] sm:max-h-[90vh]"
+            : "max-w-lg max-h-[46dvh] sm:max-h-[90vh]"
         }`}
       >
         {/* Drag Handle for Mobile Bottom Sheet */}
@@ -1256,39 +1264,41 @@ export function ReceiptScannerModal({
           {/* Camera & Upload Buttons */}
           {scannerMode === "ocr" && docCamActive && (
             <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500 bg-black">
-              <video
-                ref={docVideoRef}
-                playsInline
-                muted
-                autoPlay
-                className="h-64 w-full object-cover"
-              />
-              <canvas
-                ref={docOverlayRef}
-                className="pointer-events-none absolute inset-0 h-full w-full"
-              />
-              <div className="flex items-center justify-between gap-2 bg-slate-900/90 px-3 py-2 text-[11px] text-white">
+              <div className="relative mx-auto w-full">
+                <video
+                  ref={docVideoRef}
+                  playsInline
+                  muted
+                  autoPlay
+                  className="block h-[58dvh] min-h-[380px] w-full bg-black object-fill sm:h-[62vh]"
+                />
+                <canvas
+                  ref={docOverlayRef}
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 bg-slate-900/95 px-4 py-2.5 text-xs text-white">
                 <span className="font-medium text-emerald-300">
                   {docEdgesFound
                     ? lang === "bm"
-                      ? "Tepi resit dikesan — ketik Tangkap"
-                      : "Edges locked — tap Capture"
+                      ? "Tepi resit dikunci — ketik Tangkap"
+                      : "Receipt edges locked — tap Capture"
                     : lang === "bm"
-                    ? "Halakan kamera ke atas resit…"
-                    : "Point camera at receipt…"}
+                    ? "Letakkan resit di permukaan gelap & ketik Tangkap…"
+                    : "Place receipt on contrasting surface & tap Capture…"}
                 </span>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
                     onClick={captureDocFrameForCrop}
-                    className="rounded-lg bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-500"
+                    className="rounded-xl bg-emerald-600 px-4 py-1.5 font-bold text-white hover:bg-emerald-500"
                   >
                     {lang === "bm" ? "Tangkap" : "Capture"}
                   </button>
                   <button
                     type="button"
                     onClick={stopDocCamera}
-                    className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold hover:bg-white/25"
+                    className="rounded-xl bg-white/15 px-3 py-1.5 font-semibold hover:bg-white/25"
                   >
                     {lang === "bm" ? "Henti" : "Stop"}
                   </button>
@@ -1298,11 +1308,11 @@ export function ReceiptScannerModal({
           )}
 
           {scannerMode === "ocr" && cropPreviewUrl && (
-            <div className="space-y-2 rounded-2xl border-2 border-emerald-500 bg-slate-950 p-2.5">
-              <p className="text-center text-[11px] font-semibold text-emerald-300">
+            <div className="space-y-2.5 rounded-2xl border-2 border-emerald-500 bg-slate-950 p-3">
+              <p className="text-center text-xs font-semibold text-emerald-300">
                 {lang === "bm"
-                  ? "Seret 4 sudut jika perlu, kemudian ketik Tukar B&W"
-                  : "Drag any of the 4 corners to fine-tune, then tap Convert B&W"}
+                  ? "Seret 4 sudut hijau ke bucu resit, kemudian ketik Potong & Tukar B&W"
+                  : "Drag the 4 green handles to the receipt corners, then tap Crop & Convert B&W"}
               </p>
               <div
                 ref={cropBoxRef}
@@ -1331,7 +1341,7 @@ export function ReceiptScannerModal({
                 <img
                   src={cropPreviewUrl}
                   alt="Adjust receipt corners"
-                  className="block max-h-72 w-full object-contain pointer-events-none"
+                  className="block h-[58dvh] min-h-[380px] w-full object-fill pointer-events-none sm:h-[62vh]"
                 />
                 <svg
                   viewBox="0 0 100 100"
@@ -1342,7 +1352,7 @@ export function ReceiptScannerModal({
                     points={editQuad
                       .map((p) => `${p.x * 100},${p.y * 100}`)
                       .join(" ")}
-                    fill="rgba(16, 185, 129, 0.18)"
+                    fill="rgba(16, 185, 129, 0.2)"
                     stroke="#10B981"
                     strokeWidth="0.9"
                   />
@@ -1358,11 +1368,11 @@ export function ReceiptScannerModal({
                       left: `${pt.x * 100}%`,
                       top: `${pt.y * 100}%`,
                     }}
-                    className="absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-emerald-500 shadow-md active:cursor-grabbing"
+                    className="absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-emerald-500 shadow-lg active:cursor-grabbing"
                   />
                 ))}
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1370,7 +1380,7 @@ export function ReceiptScannerModal({
                     capturedCanvasRef.current = null;
                     startLiveDocCamera();
                   }}
-                  className="rounded-xl bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                  className="rounded-xl bg-white/15 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/25"
                 >
                   {lang === "bm" ? "Ambil Semula" : "Retake"}
                 </button>
@@ -1378,7 +1388,7 @@ export function ReceiptScannerModal({
                   type="button"
                   disabled={docProcessing}
                   onClick={confirmCropAndConvertBw}
-                  className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
                   {docProcessing
                     ? lang === "bm"
