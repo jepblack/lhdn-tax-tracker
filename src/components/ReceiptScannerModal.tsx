@@ -31,6 +31,8 @@ import { formatRM } from "@/lib/calculator";
 import { checkCategoryAgeEligibility } from "@/lib/children-profiles";
 import {
   detectReceiptQuad,
+  isOpenCvReady,
+  loadOpenCv,
   processScannedReceiptCanvas,
   Quad,
 } from "@/lib/document-scanner";
@@ -371,9 +373,20 @@ export function ReceiptScannerModal({
   const docOverlayRef = useRef<HTMLCanvasElement>(null);
   const docStreamRef = useRef<MediaStream | null>(null);
   const docQuadRef = useRef<Quad | null>(null);
+  const capturedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cropBoxRef = useRef<HTMLDivElement>(null);
+  const draggingCornerRef = useRef<number | null>(null);
   const [docCamActive, setDocCamActive] = useState(false);
   const [docEdgesFound, setDocEdgesFound] = useState(false);
   const [docProcessing, setDocProcessing] = useState(false);
+  const [cvReady, setCvReady] = useState(() => isOpenCvReady());
+  const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null);
+  const [editQuad, setEditQuad] = useState<Quad>([
+    { x: 0.08, y: 0.08 },
+    { x: 0.92, y: 0.08 },
+    { x: 0.92, y: 0.92 },
+    { x: 0.08, y: 0.92 },
+  ]);
 
   const stopDocCamera = useCallback(() => {
     if (docStreamRef.current) {
@@ -391,6 +404,8 @@ export function ReceiptScannerModal({
   useEffect(() => {
     if (!isOpen || scannerMode !== "ocr") {
       stopDocCamera();
+      setCropPreviewUrl(null);
+      capturedCanvasRef.current = null;
     }
     return () => stopDocCamera();
   }, [isOpen, scannerMode, stopDocCamera]);
@@ -467,6 +482,15 @@ export function ReceiptScannerModal({
 
   async function startLiveDocCamera() {
     setScanNotice(null);
+    setCropPreviewUrl(null);
+    capturedCanvasRef.current = null;
+    if (!isOpenCvReady()) {
+      loadOpenCv().then((cv) => {
+        if (cv) setCvReady(true);
+      });
+    } else {
+      setCvReady(true);
+    }
     if (
       typeof navigator === "undefined" ||
       !navigator.mediaDevices?.getUserMedia
@@ -506,24 +530,42 @@ export function ReceiptScannerModal({
     }
   }
 
-  async function captureAndProcessDocScan() {
+  function captureDocFrameForCrop() {
     const video = docVideoRef.current;
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
+    const fullCanvas = document.createElement("canvas");
+    fullCanvas.width = video.videoWidth;
+    fullCanvas.height = video.videoHeight;
+    const ctx = fullCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+
+    const detected = detectReceiptQuad(fullCanvas) || docQuadRef.current;
+    capturedCanvasRef.current = fullCanvas;
+    setEditQuad(
+      detected || [
+        { x: 0.08, y: 0.08 },
+        { x: 0.92, y: 0.08 },
+        { x: 0.92, y: 0.92 },
+        { x: 0.08, y: 0.92 },
+      ]
+    );
+    setCropPreviewUrl(fullCanvas.toDataURL("image/jpeg", 0.85));
+    stopDocCamera();
+  }
+
+  async function confirmCropAndConvertBw() {
+    const fullCanvas = capturedCanvasRef.current;
+    if (!fullCanvas) return;
     setDocProcessing(true);
     try {
-      const fullCanvas = document.createElement("canvas");
-      fullCanvas.width = video.videoWidth;
-      fullCanvas.height = video.videoHeight;
-      const ctx = fullCanvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
-
       const { file: bwFile } = await processScannedReceiptCanvas(
         fullCanvas,
         `receipt-bw-${Date.now()}.jpg`,
-        docQuadRef.current
+        editQuad
       );
-      stopDocCamera();
+      setCropPreviewUrl(null);
+      capturedCanvasRef.current = null;
       await handleFileSelected(bwFile);
     } catch {
       setScanNotice(
@@ -1228,28 +1270,25 @@ export function ReceiptScannerModal({
               />
               <div className="flex items-center justify-between gap-2 bg-slate-900/90 px-3 py-2 text-[11px] text-white">
                 <span className="font-medium text-emerald-300">
-                  {docEdgesFound
+                  {!cvReady
                     ? lang === "bm"
-                      ? "Tepi resit dikesan — sedia untuk imbas B&W"
-                      : "Receipt edges locked — ready for B&W scan"
+                      ? "Memuatkan pengesan tepi OpenCV…"
+                      : "Loading OpenCV edge detector…"
+                    : docEdgesFound
+                    ? lang === "bm"
+                      ? "Tepi resit dikesan — ketik Tangkap"
+                      : "Edges locked — tap Capture"
                     : lang === "bm"
-                    ? "Halakan kamera ke atas resit di permukaan gelap…"
-                    : "Hold camera over receipt on contrasting surface…"}
+                    ? "Halakan kamera ke atas resit…"
+                    : "Point camera at receipt…"}
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button
                     type="button"
-                    disabled={docProcessing}
-                    onClick={captureAndProcessDocScan}
-                    className="rounded-lg bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                    onClick={captureDocFrameForCrop}
+                    className="rounded-lg bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-500"
                   >
-                    {docProcessing
-                      ? lang === "bm"
-                        ? "Memproses…"
-                        : "Processing…"
-                      : lang === "bm"
-                      ? "Imbas B&W"
-                      : "Capture B&W"}
+                    {lang === "bm" ? "Tangkap" : "Capture"}
                   </button>
                   <button
                     type="button"
@@ -1259,6 +1298,101 @@ export function ReceiptScannerModal({
                     {lang === "bm" ? "Henti" : "Stop"}
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {scannerMode === "ocr" && cropPreviewUrl && (
+            <div className="space-y-2 rounded-2xl border-2 border-emerald-500 bg-slate-950 p-2.5">
+              <p className="text-center text-[11px] font-semibold text-emerald-300">
+                {lang === "bm"
+                  ? "Seret 4 sudut jika perlu, kemudian ketik Tukar B&W"
+                  : "Drag any of the 4 corners to fine-tune, then tap Convert B&W"}
+              </p>
+              <div
+                ref={cropBoxRef}
+                className="relative mx-auto w-full touch-none select-none overflow-hidden rounded-xl bg-black"
+                onPointerMove={(e) => {
+                  const idx = draggingCornerRef.current;
+                  const box = cropBoxRef.current;
+                  if (idx === null || !box) return;
+                  const rect = box.getBoundingClientRect();
+                  const nx = Math.max(0.01, Math.min(0.99, (e.clientX - rect.left) / rect.width));
+                  const ny = Math.max(0.01, Math.min(0.99, (e.clientY - rect.top) / rect.height));
+                  setEditQuad((prev) => {
+                    const next = [...prev] as Quad;
+                    next[idx] = { x: nx, y: ny };
+                    return next;
+                  });
+                }}
+                onPointerUp={() => {
+                  draggingCornerRef.current = null;
+                }}
+                onPointerCancel={() => {
+                  draggingCornerRef.current = null;
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={cropPreviewUrl}
+                  alt="Adjust receipt corners"
+                  className="block max-h-72 w-full object-contain pointer-events-none"
+                />
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                >
+                  <polygon
+                    points={editQuad
+                      .map((p) => `${p.x * 100},${p.y * 100}`)
+                      .join(" ")}
+                    fill="rgba(16, 185, 129, 0.18)"
+                    stroke="#10B981"
+                    strokeWidth="0.9"
+                  />
+                </svg>
+                {editQuad.map((pt, idx) => (
+                  <div
+                    key={idx}
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      draggingCornerRef.current = idx;
+                    }}
+                    style={{
+                      left: `${pt.x * 100}%`,
+                      top: `${pt.y * 100}%`,
+                    }}
+                    className="absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-emerald-500 shadow-md active:cursor-grabbing"
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCropPreviewUrl(null);
+                    capturedCanvasRef.current = null;
+                    startLiveDocCamera();
+                  }}
+                  className="rounded-xl bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                >
+                  {lang === "bm" ? "Ambil Semula" : "Retake"}
+                </button>
+                <button
+                  type="button"
+                  disabled={docProcessing}
+                  onClick={confirmCropAndConvertBw}
+                  className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {docProcessing
+                    ? lang === "bm"
+                      ? "Memproses…"
+                      : "Processing…"
+                    : lang === "bm"
+                    ? "Potong & Tukar B&W"
+                    : "Crop & Convert B&W"}
+                </button>
               </div>
             </div>
           )}
