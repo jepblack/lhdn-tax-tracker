@@ -1266,21 +1266,40 @@ export function SettingsTab({
               <span>{payslipError}</span>
             </div>
             {(failedPayslipFiles.length > 0 || payslipFile) && !payslipScanning && (
-              <button
-                type="button"
-                onClick={() =>
-                  handlePayslipFiles(
-                    failedPayslipFiles.length > 0
-                      ? failedPayslipFiles
-                      : payslipFile
-                      ? [payslipFile]
-                      : []
-                  )
-                }
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-[0.98]"
-              >
-                {personalization.language === "bm" ? "Cuba Lagi" : "Retry"}
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target =
+                      failedPayslipFiles.length > 0
+                        ? failedPayslipFiles[0]
+                        : payslipFile;
+                    if (!target) return;
+                    const url = URL.createObjectURL(target);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-semibold text-amber-900 border border-amber-300 hover:bg-amber-100"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {personalization.language === "bm" ? "Lihat Fail" : "View File"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handlePayslipFiles(
+                      failedPayslipFiles.length > 0
+                        ? failedPayslipFiles
+                        : payslipFile
+                        ? [payslipFile]
+                        : []
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-[0.98]"
+                >
+                  {personalization.language === "bm" ? "Cuba Lagi" : "Retry"}
+                </button>
+              </div>
             )}
           </div>
         )}

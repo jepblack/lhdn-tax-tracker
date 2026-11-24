@@ -1589,27 +1589,53 @@ export function ReceiptScannerModal({
           {/* Attached File Preview */}
           {receiptFile && (
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-              {previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={previewUrl}
-                  alt="Receipt preview"
-                  onError={() => setPreviewUrl(null)}
-                  className="h-14 w-14 rounded-lg border border-slate-200 object-cover"
-                />
-              ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                  <FileText className="h-6 w-6" />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = URL.createObjectURL(receiptFile);
+                  window.open(url, "_blank", "noopener,noreferrer");
+                  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+                }}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left group"
+                title={lang === "bm" ? "Buka fail untuk rujukan" : "Open file for reference"}
+              >
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt="Receipt preview"
+                    onError={() => setPreviewUrl(null)}
+                    className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 object-cover transition group-hover:opacity-90"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 transition group-hover:bg-emerald-200">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-slate-800 group-hover:text-emerald-700 group-hover:underline">
+                    {receiptFile.name}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {(receiptFile.size / 1024).toFixed(0)} KB •{" "}
+                    <span className="font-semibold text-emerald-700">
+                      {lang === "bm" ? "Ketik untuk lihat" : "Tap to view"}
+                    </span>
+                  </p>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-slate-800">
-                  {receiptFile.name}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {(receiptFile.size / 1024).toFixed(0)} KB
-                </p>
-              </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = URL.createObjectURL(receiptFile);
+                  window.open(url, "_blank", "noopener,noreferrer");
+                  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+                }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+              >
+                <ExternalLink className="h-3 w-3" />
+                {lang === "bm" ? "Lihat" : "View"}
+              </button>
               <button
                 type="button"
                 onClick={resetScan}
