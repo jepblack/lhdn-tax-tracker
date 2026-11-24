@@ -31,8 +31,6 @@ import { formatRM } from "@/lib/calculator";
 import { checkCategoryAgeEligibility } from "@/lib/children-profiles";
 import {
   detectReceiptQuad,
-  isOpenCvReady,
-  loadOpenCv,
   processScannedReceiptCanvas,
   Quad,
 } from "@/lib/document-scanner";
@@ -377,9 +375,9 @@ export function ReceiptScannerModal({
   const cropBoxRef = useRef<HTMLDivElement>(null);
   const draggingCornerRef = useRef<number | null>(null);
   const [docCamActive, setDocCamActive] = useState(false);
+  const [docStarting, setDocStarting] = useState(false);
   const [docEdgesFound, setDocEdgesFound] = useState(false);
   const [docProcessing, setDocProcessing] = useState(false);
-  const [cvReady, setCvReady] = useState(() => isOpenCvReady());
   const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null);
   const [editQuad, setEditQuad] = useState<Quad>([
     { x: 0.08, y: 0.08 },
@@ -484,13 +482,6 @@ export function ReceiptScannerModal({
     setScanNotice(null);
     setCropPreviewUrl(null);
     capturedCanvasRef.current = null;
-    if (!isOpenCvReady()) {
-      loadOpenCv().then((cv) => {
-        if (cv) setCvReady(true);
-      });
-    } else {
-      setCvReady(true);
-    }
     if (
       typeof navigator === "undefined" ||
       !navigator.mediaDevices?.getUserMedia
@@ -502,15 +493,21 @@ export function ReceiptScannerModal({
       );
       return;
     }
+    setDocStarting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
+      const stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("CAMERA_TIMEOUT")), 10000)
+        ),
+      ]);
       docStreamRef.current = stream;
       setDocCamActive(true);
       setSheetExpanded(true);
@@ -523,10 +520,12 @@ export function ReceiptScannerModal({
     } catch {
       setScanNotice(
         lang === "bm"
-          ? "Akses kamera disekat atau tiada kamera dikesan. Sila guna Muat Naik Foto."
-          : "Camera access was blocked or unavailable. Use Upload Photo instead."
+          ? "Akses kamera disekat, tamat masa, atau tiada kamera dikesan. Sila guna Muat Naik Foto."
+          : "Camera access was blocked, timed out, or unavailable. Use Snap / Upload Photo instead."
       );
       stopDocCamera();
+    } finally {
+      setDocStarting(false);
     }
   }
 
@@ -1270,11 +1269,7 @@ export function ReceiptScannerModal({
               />
               <div className="flex items-center justify-between gap-2 bg-slate-900/90 px-3 py-2 text-[11px] text-white">
                 <span className="font-medium text-emerald-300">
-                  {!cvReady
-                    ? lang === "bm"
-                      ? "Memuatkan pengesan tepi OpenCV…"
-                      : "Loading OpenCV edge detector…"
-                    : docEdgesFound
+                  {docEdgesFound
                     ? lang === "bm"
                       ? "Tepi resit dikesan — ketik Tangkap"
                       : "Edges locked — tap Capture"
@@ -1405,6 +1400,7 @@ export function ReceiptScannerModal({
             {scannerMode === "ocr" && (
               <button
                 type="button"
+                disabled={docStarting}
                 onClick={() => {
                   if (docCamActive) {
                     stopDocCamera();
@@ -1412,15 +1408,21 @@ export function ReceiptScannerModal({
                     startLiveDocCamera();
                   }
                 }}
-                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-emerald-500 bg-emerald-600 p-3 text-white transition hover:bg-emerald-700 active:scale-[0.98]"
+                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-emerald-500 bg-emerald-600 p-3 text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60"
               >
-                {docCamActive ? (
+                {docStarting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : docCamActive ? (
                   <X className="h-5 w-5" />
                 ) : (
                   <Video className="h-5 w-5" />
                 )}
                 <span className="text-[11px] font-bold leading-tight text-center">
-                  {docCamActive
+                  {docStarting
+                    ? lang === "bm"
+                      ? "Membuka…"
+                      : "Opening…"
+                    : docCamActive
                     ? lang === "bm"
                       ? "Tutup Pengimbas"
                       : "Close Scanner"
