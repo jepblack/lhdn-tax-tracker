@@ -1270,7 +1270,7 @@ export function ReceiptScannerModal({
                   playsInline
                   muted
                   autoPlay
-                  className="block h-[58dvh] min-h-[380px] w-full bg-black object-fill sm:h-[62vh]"
+                  className="block h-[46dvh] min-h-[280px] w-full bg-black object-fill sm:h-[52vh]"
                 />
                 <canvas
                   ref={docOverlayRef}
@@ -1341,7 +1341,7 @@ export function ReceiptScannerModal({
                 <img
                   src={cropPreviewUrl}
                   alt="Adjust receipt corners"
-                  className="block h-[58dvh] min-h-[380px] w-full object-fill pointer-events-none sm:h-[62vh]"
+                  className="block h-[46dvh] min-h-[280px] w-full object-fill pointer-events-none sm:h-[52vh]"
                 />
                 <svg
                   viewBox="0 0 100 100"
@@ -1372,7 +1372,7 @@ export function ReceiptScannerModal({
                   />
                 ))}
               </div>
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1 pb-1">
                 <button
                   type="button"
                   onClick={() => {
