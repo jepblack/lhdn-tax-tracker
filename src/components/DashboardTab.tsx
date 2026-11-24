@@ -114,6 +114,38 @@ export function DashboardTab({
   const { copy, tCategory } = useLanguage();
   const currentMonth = getCurrentYearMonth();
   const nearPayday = isNearPayday(personalization.paydayDay);
+  const nowDate = new Date();
+  const hasCurrentMonthPayslipOrEa = (() => {
+    const hasPayslipExpenseThisMonth = yearExpenses.some(
+      (e) =>
+        e.invoiceNumber?.startsWith("PAYSLIP-") &&
+        e.expenseDate.startsWith(currentMonth)
+    );
+    if (hasPayslipExpenseThisMonth) return true;
+    if (typeof window !== "undefined") {
+      try {
+        const eaRaw = window.localStorage.getItem(
+          `cukaiku_ea_employers_${summary.taxYear}`
+        );
+        const eaList = eaRaw ? JSON.parse(eaRaw) : [];
+        if (Array.isArray(eaList) && eaList.length > 0) return true;
+        const srcRaw = window.localStorage.getItem(
+          `cukaiku_payslip_source_${summary.taxYear}`
+        );
+        const src = srcRaw ? JSON.parse(srcRaw) : null;
+        if (src?.appliedMonth === currentMonth) return true;
+      } catch {
+        // ignore
+      }
+    }
+    return false;
+  })();
+  const paydayPassedNoPayslip = Boolean(
+    personalization.paydayDay &&
+      summary.taxYear === nowDate.getFullYear() &&
+      nowDate.getDate() >= personalization.paydayDay &&
+      !hasCurrentMonthPayslipOrEa
+  );
 
   const activeCategories = summary.categorySummaries
     .filter((c) => c.spent > 0)
@@ -188,15 +220,21 @@ export function DashboardTab({
         onOpenGuideModal={onOpenGuideModal}
       />
 
-      {/* Payday Reminder Banner (if within ±2 days of user's configured Payday) */}
-      {nearPayday && (
+      {/* Payday Reminder Banner (if within ±2 days or payday has passed without current-month payslip) */}
+      {(nearPayday || paydayPassedNoPayslip) && (
         <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-3 text-xs text-emerald-950 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
               <CalendarClock className="h-4 w-4" />
             </div>
             <div>
-              <p className="font-bold">{copy.paydayBanner}</p>
+              <p className="font-bold">
+                {paydayPassedNoPayslip && !nearPayday
+                  ? personalization.language === "bm"
+                    ? `Hari gaji (${personalization.paydayDay}hb) telah lepas — slip gaji bulan ini belum dimuat naik`
+                    : `Payday (day ${personalization.paydayDay}) has passed — this month's payslip isn't uploaded yet`
+                  : copy.paydayBanner}
+              </p>
               <p className="text-[11px] text-emerald-800">
                 {copy.paydaySub.replace(
                   "{day}",
@@ -1018,7 +1056,10 @@ export function DashboardTab({
 
           <div className="space-y-2">
             {recurringBills.map((bill) => {
-              const isLoggedThisMonth = bill.lastLoggedMonth === currentMonth;
+              const expectedInvoice = `RECUR-${bill.id}-${currentMonth}`;
+              const isLoggedThisMonth = yearExpenses.some(
+                (e) => e.invoiceNumber === expectedInvoice
+              );
               const isBusy = loggingBillId === bill.id;
               const billBm = RECURRING_BILL_BM[bill.id];
               return (

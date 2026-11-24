@@ -42,6 +42,12 @@ import {
   UserPersonalization,
 } from "@/lib/personalization";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import {
+  ChildProfile,
+  getChildAgeInYear,
+  loadChildrenProfiles,
+  saveChildrenProfiles,
+} from "@/lib/children-profiles";
 import { TaxExpense, TaxProfile, UserSubscription } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 
@@ -130,6 +136,16 @@ export function SettingsTab({
       fileName: string;
     }>
   >([]);
+  const [payslipSourceInfo, setPayslipSourceInfo] = useState<{
+    monthLabel: string;
+    appliedMonth: string;
+    fileName: string;
+  } | null>(null);
+  const [childrenProfiles, setChildrenProfiles] = useState<ChildProfile[]>(() =>
+    loadChildrenProfiles()
+  );
+  const [newChildName, setNewChildName] = useState("");
+  const [newChildBirth, setNewChildBirth] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -140,6 +156,14 @@ export function SettingsTab({
       setEaEmployers(raw ? JSON.parse(raw) : []);
     } catch {
       setEaEmployers([]);
+    }
+    try {
+      const srcRaw = window.localStorage.getItem(
+        `cukaiku_payslip_source_${profile.taxYear}`
+      );
+      setPayslipSourceInfo(srcRaw ? JSON.parse(srcRaw) : null);
+    } catch {
+      setPayslipSourceInfo(null);
     }
   }, [profile.taxYear]);
 
@@ -465,6 +489,28 @@ export function SettingsTab({
         if (pcbVal > 0) finalPcb = pcbVal;
         if (zakatVal > 0) finalZakat = zakatVal;
         if (derivedChildren) finalChildren = derivedChildren;
+        const monthLabel =
+          p.monthDetected ||
+          new Date().toLocaleDateString(
+            personalization.language === "bm" ? "ms-MY" : "en-MY",
+            { month: "long", year: "numeric" }
+          );
+        const srcInfo = {
+          monthLabel,
+          appliedMonth: new Date().toISOString().slice(0, 7),
+          fileName: item.file.name || "Payslip",
+        };
+        setPayslipSourceInfo(srcInfo);
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(
+              `cukaiku_payslip_source_${profile.taxYear}`,
+              JSON.stringify(srcInfo)
+            );
+          } catch {
+            // ignore
+          }
+        }
       }
 
       if (includeReliefs && (epf > 0 || socsoTotal > 0)) {
@@ -1163,6 +1209,14 @@ export function SettingsTab({
             <p className="mt-0.5 text-xs text-slate-500">
               {copy.incomeEstimateSub}
             </p>
+            {eaEmployers.length === 0 && payslipSourceInfo && (
+              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <FileText className="h-3 w-3" />
+                {personalization.language === "bm"
+                  ? `Angka berdasarkan slip gaji: ${payslipSourceInfo.monthLabel} (${payslipSourceInfo.fileName})`
+                  : `Figures as per payslip: ${payslipSourceInfo.monthLabel} (${payslipSourceInfo.fileName})`}
+              </p>
+            )}
           </div>
           <input
             ref={payslipInputRef}
@@ -1812,8 +1866,10 @@ export function SettingsTab({
           <ToggleRow
             label={copy.statusIndividual}
             amount={amounts.individual}
-            checked={profile.statusReliefs.individual}
-            onChange={(v) => updateStatus("individual", v)}
+            checked={true}
+            locked={true}
+            lockedLabel={lang === "bm" ? "Wajib" : "Mandatory"}
+            onChange={() => {}}
           />
           <ToggleRow
             label={copy.statusDisabledIndividual}
@@ -1854,6 +1910,112 @@ export function SettingsTab({
             value={profile.statusReliefs.disabledChildren}
             onChange={(v) => updateStatus("disabledChildren", v)}
           />
+        </div>
+
+        {/* Children Details (Age / DOB / MyKad) for Age-Prerequisite Checks */}
+        <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-bold text-slate-800">
+              {lang === "bm"
+                ? `Butiran Anak (Umur / Tarikh Lahir / MyKad)`
+                : `Children Details (Age / DOB / MyKad)`}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              {childrenProfiles.length}{" "}
+              {lang === "bm" ? "anak direkod" : "recorded"}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            {lang === "bm"
+              ? "Digunakan untuk menyemak kelayakan umur bagi Taska/Tadika (≤6 thn), Penyusuan (≤2 thn), dan kategori anak."
+              : "Used to validate age prerequisites for Childcare (≤6 yrs), Breastfeeding (≤2 yrs), and child reliefs."}
+          </p>
+          {childrenProfiles.length > 0 && (
+            <div className="space-y-1.5">
+              {childrenProfiles.map((child) => {
+                const ageInYear = getChildAgeInYear(
+                  child.birthOrMyKad,
+                  profile.taxYear
+                );
+                return (
+                  <div
+                    key={child.id}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-[11px]"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-semibold text-slate-900">
+                        {child.name}
+                      </span>{" "}
+                      <span className="text-slate-500">
+                        ({child.birthOrMyKad})
+                      </span>
+                      {ageInYear !== null && (
+                        <span className="ml-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          {lang === "bm"
+                            ? `Umur ${ageInYear} (TT ${profile.taxYear})`
+                            : `Age ${ageInYear} (YA ${profile.taxYear})`}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = childrenProfiles.filter(
+                          (c) => c.id !== child.id
+                        );
+                        setChildrenProfiles(next);
+                        saveChildrenProfiles(next);
+                      }}
+                      className="shrink-0 font-semibold text-rose-600 hover:underline"
+                    >
+                      {lang === "bm" ? "Buang" : "Remove"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+            <input
+              type="text"
+              placeholder={lang === "bm" ? "Nama anak" : "Child name"}
+              value={newChildName}
+              onChange={(e) => setNewChildName(e.target.value)}
+              className="sm:col-span-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+            />
+            <input
+              type="text"
+              placeholder={
+                lang === "bm"
+                  ? "MyKad / YYYY-MM-DD / Umur"
+                  : "MyKad / YYYY-MM-DD / Age"
+              }
+              value={newChildBirth}
+              onChange={(e) => setNewChildBirth(e.target.value)}
+              className="sm:col-span-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!newChildName.trim() || !newChildBirth.trim()) return;
+                const next: ChildProfile[] = [
+                  ...childrenProfiles,
+                  {
+                    id: `child_${Date.now()}`,
+                    name: newChildName.trim(),
+                    birthOrMyKad: newChildBirth.trim(),
+                  },
+                ];
+                setChildrenProfiles(next);
+                saveChildrenProfiles(next);
+                setNewChildName("");
+                setNewChildBirth("");
+              }}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+            >
+              {lang === "bm" ? "+ Tambah" : "+ Add"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -2217,17 +2379,32 @@ function ToggleRow({
   label,
   amount,
   checked,
+  locked = false,
+  lockedLabel = "Mandatory",
   onChange,
 }: {
   label: string;
   amount: number;
   checked: boolean;
+  locked?: boolean;
+  lockedLabel?: string;
   onChange: (val: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between py-2.5">
+    <label
+      className={`flex items-center justify-between py-2.5 ${
+        locked ? "cursor-default" : "cursor-pointer"
+      }`}
+    >
       <div>
-        <p className="text-xs font-medium text-slate-800">{label}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs font-medium text-slate-800">{label}</p>
+          {locked && (
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+              {lockedLabel}
+            </span>
+          )}
+        </div>
         <p className="text-[11px] text-emerald-700 font-semibold">
           {formatRM(amount)}
         </p>
@@ -2235,8 +2412,11 @@ function ToggleRow({
       <input
         type="checkbox"
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-emerald-600"
+        disabled={locked}
+        onChange={(e) => {
+          if (!locked) onChange(e.target.checked);
+        }}
+        className="h-4 w-4 accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-80"
       />
     </label>
   );

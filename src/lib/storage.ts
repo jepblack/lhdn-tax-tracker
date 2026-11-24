@@ -112,6 +112,8 @@ export async function fetchProfile(
   taxYear: TaxYear,
   userId?: string | null
 ): Promise<TaxProfile> {
+  const local = loadLocalProfile(taxYear);
+  let resolved: TaxProfile = local;
   const supabase = getSupabaseClient();
   if (supabase && userId) {
     const { data, error } = await supabase
@@ -128,7 +130,7 @@ export async function fetchProfile(
       delete rawStatus._annualDocs;
       delete rawStatus._formBeBaseline;
       delete rawStatus._taxpayerMode;
-      return {
+      resolved = {
         taxYear,
         annualIncome: Number(data.annual_income),
         zakatPaid: Number(data.zakat_paid),
@@ -137,11 +139,53 @@ export async function fetchProfile(
         statusReliefs: {
           ...DEFAULT_STATUS_RELIEFS,
           ...rawStatus,
+          individual: true,
         },
       };
     }
   }
-  return loadLocalProfile(taxYear);
+
+  // Carry over permanent OKU status from any earlier year if not yet set for this year
+  let carriedDisabledSelf = Boolean(resolved.statusReliefs.disabledIndividual);
+  let carriedDisabledSpouse = Boolean(resolved.statusReliefs.disabledSpouse);
+
+  if (!carriedDisabledSelf || !carriedDisabledSpouse) {
+    for (const prevYr of SUPPORTED_TAX_YEARS) {
+      if (prevYr >= taxYear) continue;
+      const prevLocal = loadLocalProfile(prevYr);
+      if (prevLocal.statusReliefs.disabledIndividual) carriedDisabledSelf = true;
+      if (prevLocal.statusReliefs.disabledSpouse) carriedDisabledSpouse = true;
+    }
+
+    if (supabase && userId && (!carriedDisabledSelf || !carriedDisabledSpouse)) {
+      try {
+        const { data: prevRows } = await supabase
+          .from("tax_profiles")
+          .select("tax_year, status_reliefs")
+          .eq("user_id", userId)
+          .lt("tax_year", taxYear);
+        if (Array.isArray(prevRows)) {
+          for (const row of prevRows) {
+            const sr = (row.status_reliefs || {}) as Record<string, unknown>;
+            if (sr.disabledIndividual) carriedDisabledSelf = true;
+            if (sr.disabledSpouse) carriedDisabledSpouse = true;
+          }
+        }
+      } catch {
+        // ignore carryover query error
+      }
+    }
+  }
+
+  return {
+    ...resolved,
+    statusReliefs: {
+      ...resolved.statusReliefs,
+      individual: true,
+      disabledIndividual: carriedDisabledSelf,
+      disabledSpouse: carriedDisabledSpouse,
+    },
+  };
 }
 
 export async function persistProfile(

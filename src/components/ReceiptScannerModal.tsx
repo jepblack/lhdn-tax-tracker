@@ -28,6 +28,8 @@ import {
   parseMyInvoisQrText as parseMyInvoisQrShared,
 } from "@/lib/myinvois-qr";
 import { formatRM } from "@/lib/calculator";
+import { checkCategoryAgeEligibility } from "@/lib/children-profiles";
+import { getPackageResourceLimits } from "@/lib/monetization";
 import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { runLocalReceiptOcr } from "@/lib/local-ocr";
@@ -133,6 +135,7 @@ export function ReceiptScannerModal({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [isScanning, setIsScanning] = useState(false);
+  const [scanRetryable, setScanRetryable] = useState(false);
   const [scanProgress, setScanProgress] = useState<number>(0);
   const [scanStatusText, setScanStatusText] = useState<string>(
     "Scanning receipt..."
@@ -475,8 +478,23 @@ export function ReceiptScannerModal({
 
   async function handleFileSelected(file: File | undefined) {
     if (!file) return;
+    const limits = getPackageResourceLimits(subscription.planTier);
+    const maxBytes = limits.maxFileSizeMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setReceiptFile(null);
+      setPreviewUrl(null);
+      setScanRetryable(false);
+      setScanNotice(
+        lang === "bm"
+          ? `Saiz fail (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi had pelan ${subscription.planTier.toUpperCase()} (${limits.maxFileSizeMb} MB). Sila kecilkan fail atau naik taraf pelan.`
+          : `File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds your ${subscription.planTier.toUpperCase()} plan limit (${limits.maxFileSizeMb} MB). Please compress the file or upgrade.`
+      );
+      return;
+    }
+
     setReceiptFile(file);
     setScanNotice(null);
+    setScanRetryable(false);
     setScanResult(null);
     setShowRawText(false);
     setOverrideRejection(false);
@@ -591,19 +609,44 @@ export function ReceiptScannerModal({
 
       // Step 2: Seamless On-Device Free OCR + Malaysian LHDN Rule Engine
       if (!usedCloudAi) {
-        const localResult = await runLocalReceiptOcr(
-          fileForOcr,
-          targetTaxYear,
-          (pct, text) => {
-            setScanProgress(pct);
-            setScanStatusText(text);
+        const isOcrPdf =
+          fileForOcr.type === "application/pdf" ||
+          fileForOcr.name.toLowerCase().endsWith(".pdf");
+        if (isOcrPdf) {
+          setScanRetryable(true);
+          setScanNotice((prev) =>
+            prev ||
+            (lang === "bm"
+              ? "AI & pembaca PDF tidak dapat membaca fail ini. Klik Cuba Lagi atau masukkan butiran resit secara manual di bawah."
+              : "AI & PDF reader could not read this file. Click Retry or enter the receipt details manually below.")
+          );
+        } else {
+          const localResult = await runLocalReceiptOcr(
+            fileForOcr,
+            targetTaxYear,
+            (pct, text) => {
+              setScanProgress(pct);
+              setScanStatusText(text);
+            }
+          );
+          applyScanResult(localResult);
+          if (!localResult.merchant && localResult.totalAmount <= 0) {
+            setScanRetryable(true);
+            setScanNotice((prev) =>
+              prev ||
+              (lang === "bm"
+                ? "AI & OCR tidak dapat mengesan butiran resit. Klik Cuba Lagi atau masukkan maklumat secara manual di bawah."
+                : "AI & OCR could not detect receipt figures. Click Retry or enter the details manually below.")
+            );
           }
-        );
-        applyScanResult(localResult);
+        }
       }
     } catch {
+      setScanRetryable(true);
       setScanNotice(
-        "Could not read text from this file — receipt is attached! Please fill in the details below."
+        lang === "bm"
+          ? "Gagal membaca fail ini — resit telah dilampirkan! Klik Cuba Lagi atau isi butiran secara manual di bawah."
+          : "Could not read text from this file — receipt is attached! Click Retry or fill in the details manually below."
       );
     } finally {
       setIsScanning(false);
@@ -1141,6 +1184,7 @@ export function ReceiptScannerModal({
                 <img
                   src={previewUrl}
                   alt="Receipt preview"
+                  onError={() => setPreviewUrl(null)}
                   className="h-14 w-14 rounded-lg border border-slate-200 object-cover"
                 />
               ) : (
@@ -1385,21 +1429,33 @@ export function ReceiptScannerModal({
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <span>{scanNotice}</span>
               </div>
-              {subscription.planTier === "free" &&
-                subscription.aiScansUsed >= subscription.aiScansLimit && (
+              <div className="flex shrink-0 items-center gap-1.5">
+                {receiptFile && !isScanning && scanRetryable && (
                   <button
                     type="button"
-                    onClick={() =>
-                      onOpenUpgrade(
-                        "You've used all 5 free AI Vision receipt scans. Upgrade to CukaiKu Pro for 300 AI Vision scans + 7-Year LHDN Audit Pack!"
-                      )
-                    }
-                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs active:scale-95"
+                    onClick={() => handleFileSelected(receiptFile)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-95"
                   >
-                    <Crown className="h-3 w-3" />
-                    Upgrade
+                    <RotateCcw className="h-3 w-3" />
+                    {lang === "bm" ? "Cuba Lagi" : "Retry"}
                   </button>
                 )}
+                {subscription.planTier === "free" &&
+                  subscription.aiScansUsed >= subscription.aiScansLimit && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenUpgrade(
+                          "You've used all 5 free AI Vision receipt scans. Upgrade to CukaiKu Pro for 300 AI Vision scans + 7-Year LHDN Audit Pack!"
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs active:scale-95"
+                    >
+                      <Crown className="h-3 w-3" />
+                      Upgrade
+                    </button>
+                  )}
+              </div>
             </div>
           )}
 
@@ -1570,6 +1626,22 @@ export function ReceiptScannerModal({
                           </select>
                         </div>
                       )}
+
+                    {(() => {
+                      const ageWarn = checkCategoryAgeEligibility(
+                        categoryId,
+                        subCategoryId,
+                        targetTaxYear,
+                        lang
+                      );
+                      if (!ageWarn) return null;
+                      return (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-950">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <span>{ageWarn}</span>
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950">

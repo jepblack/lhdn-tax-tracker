@@ -249,6 +249,7 @@ export function TaxApp() {
     if (typeof window === "undefined") return;
     const handleOnline = () => {
       flushOfflineQueue(userId);
+      fetchSubscription(userId).then(setSubscription).catch(() => {});
     };
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
@@ -891,11 +892,34 @@ export function TaxApp() {
   async function handleDeleteExpense(expense: TaxExpense) {
     await removeExpense(expense, userId);
     setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
+    if (expense.invoiceNumber?.startsWith("RECUR-")) {
+      const prefix = `RECUR-`;
+      const suffixMatch = expense.invoiceNumber.match(/-(\d{4}-\d{2})$/);
+      if (suffixMatch) {
+        const billId = expense.invoiceNumber.slice(
+          prefix.length,
+          expense.invoiceNumber.length - suffixMatch[0].length
+        );
+        const updatedBills = recurringBills.map((b) =>
+          b.id === billId && b.lastLoggedMonth === suffixMatch[1]
+            ? { ...b, lastLoggedMonth: undefined }
+            : b
+        );
+        handleSaveRecurringBills(updatedBills);
+      }
+    }
   }
 
   async function handleUpdateProfile(next: TaxProfile) {
-    setProfile(next);
-    await persistProfile(next, userId);
+    const normalized: TaxProfile = {
+      ...next,
+      statusReliefs: {
+        ...next.statusReliefs,
+        individual: true,
+      },
+    };
+    setProfile(normalized);
+    await persistProfile(normalized, userId);
   }
 
   function findExistingStatutoryRelief(
@@ -1073,7 +1097,14 @@ export function TaxApp() {
 
   async function handleLogRecurringBill(bill: RecurringBillTemplate) {
     const currentMonth = getCurrentYearMonth();
-    if (bill.lastLoggedMonth === currentMonth) return;
+    const expectedInvoice = `RECUR-${bill.id}-${currentMonth}`;
+    if (
+      expenses.some(
+        (e) => e.taxYear === taxYear && e.invoiceNumber === expectedInvoice
+      )
+    ) {
+      return;
+    }
     const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
     await handleSaveExpense(
       {

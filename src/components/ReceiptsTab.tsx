@@ -143,7 +143,11 @@ export function ReceiptsTab({
   const [filterMode, setFilterMode] = useState<"all" | "missing" | "review">(
     "all"
   );
+  const [sortBy, setSortBy] = useState<
+    "date_desc" | "date_asc" | "category" | "amount_desc" | "amount_asc" | "merchant"
+  >("date_desc");
   const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
+  const [previewImgFailed, setPreviewImgFailed] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TaxExpense | null>(null);
   const [exportingZip, setExportingZip] = useState(false);
   const [uploadingDocType, setUploadingDocType] = useState<AnnualDocType | null>(null);
@@ -165,20 +169,44 @@ export function ReceiptsTab({
     e.metadata?.review_reason !== "Missing: payment method";
 
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
-  const filtered = yearExpenses.filter((e) => {
-    if (filterMode === "missing" && (e.receiptPath || e.receiptUrl)) return false;
-    if (filterMode === "review" && !isReviewRequired(e)) return false;
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    const catName = catMap.get(e.categoryId)?.name.toLowerCase() || "";
-    return (
-      e.merchant.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      (e.invoiceNumber || "").toLowerCase().includes(q) ||
-      (e.receiptFileName || "").toLowerCase().includes(q) ||
-      catName.includes(q)
-    );
-  });
+  const filtered = yearExpenses
+    .filter((e) => {
+      if (filterMode === "missing" && (e.receiptPath || e.receiptUrl)) return false;
+      if (filterMode === "review" && !isReviewRequired(e)) return false;
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      const catName = catMap.get(e.categoryId)?.name.toLowerCase() || "";
+      return (
+        e.merchant.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q) ||
+        (e.invoiceNumber || "").toLowerCase().includes(q) ||
+        (e.receiptFileName || "").toLowerCase().includes(q) ||
+        catName.includes(q)
+      );
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "date_asc":
+          return a.expenseDate.localeCompare(b.expenseDate);
+        case "category": {
+          const catA = catMap.get(a.categoryId)?.shortName || a.categoryId;
+          const catB = catMap.get(b.categoryId)?.shortName || b.categoryId;
+          return (
+            catA.localeCompare(catB) ||
+            b.expenseDate.localeCompare(a.expenseDate)
+          );
+        }
+        case "amount_desc":
+          return b.amount - a.amount;
+        case "amount_asc":
+          return a.amount - b.amount;
+        case "merchant":
+          return a.merchant.localeCompare(b.merchant);
+        case "date_desc":
+        default:
+          return b.expenseDate.localeCompare(a.expenseDate);
+      }
+    });
 
   const missingCount = yearExpenses.filter(
     (e) => !e.receiptPath && !e.receiptUrl
@@ -759,7 +787,7 @@ export function ReceiptsTab({
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setFilterMode("all")}
@@ -797,6 +825,41 @@ export function ReceiptsTab({
           >
             {copy.missingBadge} ({missingCount})
           </button>
+          <select
+            aria-label={lang === "bm" ? "Susun rekod" : "Sort entries"}
+            value={sortBy}
+            onChange={(e) =>
+              setSortBy(
+                e.target.value as
+                  | "date_desc"
+                  | "date_asc"
+                  | "category"
+                  | "amount_desc"
+                  | "amount_asc"
+                  | "merchant"
+              )
+            }
+            className="ml-auto rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:border-emerald-500 focus:outline-none"
+          >
+            <option value="date_desc">
+              {lang === "bm" ? "Tarikh: Terbaru" : "Sort: Newest"}
+            </option>
+            <option value="date_asc">
+              {lang === "bm" ? "Tarikh: Terlama" : "Sort: Oldest"}
+            </option>
+            <option value="category">
+              {lang === "bm" ? "Kategori (A–Z)" : "Sort: Category"}
+            </option>
+            <option value="amount_desc">
+              {lang === "bm" ? "Amaun: Tinggi → Rendah" : "Amount: High → Low"}
+            </option>
+            <option value="amount_asc">
+              {lang === "bm" ? "Amaun: Rendah → Tinggi" : "Amount: Low → High"}
+            </option>
+            <option value="merchant">
+              {lang === "bm" ? "Peniaga (A–Z)" : "Sort: Merchant"}
+            </option>
+          </select>
         </div>
       </div>
 
@@ -919,7 +982,10 @@ export function ReceiptsTab({
                         isRealPreviewable ? (
                           <button
                             type="button"
-                            onClick={() => setPreviewExpense(exp)}
+                            onClick={() => {
+                              setPreviewImgFailed(false);
+                              setPreviewExpense(exp);
+                            }}
                             className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
                           >
                             <Eye className="h-3 w-3" /> PDF
@@ -1032,12 +1098,16 @@ export function ReceiptsTab({
               </button>
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 p-4 text-center">
-              {previewExpense.receiptMimeType === "application/pdf" ||
+              {previewImgFailed ||
+              previewExpense.receiptMimeType === "application/pdf" ||
+              previewExpense.receiptFileName?.toLowerCase().endsWith(".pdf") ||
+              previewExpense.receiptUrl.toLowerCase().includes(".pdf") ||
+              previewExpense.receiptUrl.startsWith("data:application/pdf") ||
               previewExpense.receiptUrl.includes("drive.google.com") ? (
                 <div className="space-y-3 py-8">
                   <FileText className="mx-auto h-12 w-12 text-emerald-600" />
                   <p className="text-sm font-semibold text-slate-800">
-                    {previewExpense.receiptFileName || "Receipt PDF"}
+                    {previewExpense.receiptFileName || "Receipt File"}
                   </p>
                   <button
                     type="button"
@@ -1051,7 +1121,7 @@ export function ReceiptsTab({
                   >
                     {previewExpense.receiptUrl.includes("drive.google.com")
                       ? "Open in Google Drive"
-                      : "Open PDF in New Tab"}
+                      : "Open File in New Tab"}
                   </button>
                 </div>
               ) : (
@@ -1059,6 +1129,7 @@ export function ReceiptsTab({
                 <img
                   src={previewExpense.receiptUrl}
                   alt={previewExpense.merchant}
+                  onError={() => setPreviewImgFailed(true)}
                   className="mx-auto max-h-[68vh] rounded-xl object-contain shadow-sm"
                 />
               )}

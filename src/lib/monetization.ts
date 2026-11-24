@@ -13,6 +13,42 @@ export const FREE_AI_SCAN_LIMIT = 5;
 export const PRO_AI_SCAN_LIMIT = 300;
 export const FAMILY_AI_SCAN_LIMIT = 600;
 
+export interface PackageResourceLimits {
+  maxAiScans: number;
+  maxFileSizeMb: number;
+  maxBatchFiles: number;
+  cloudVault: boolean;
+  auditZipExport: boolean;
+}
+
+export function getPackageResourceLimits(tier: PlanTier): PackageResourceLimits {
+  if (tier === "family") {
+    return {
+      maxAiScans: FAMILY_AI_SCAN_LIMIT,
+      maxFileSizeMb: 15,
+      maxBatchFiles: 50,
+      cloudVault: true,
+      auditZipExport: true,
+    };
+  }
+  if (tier === "pro") {
+    return {
+      maxAiScans: PRO_AI_SCAN_LIMIT,
+      maxFileSizeMb: 10,
+      maxBatchFiles: 20,
+      cloudVault: true,
+      auditZipExport: true,
+    };
+  }
+  return {
+    maxAiScans: FREE_AI_SCAN_LIMIT,
+    maxFileSizeMb: 5,
+    maxBatchFiles: 3,
+    cloudVault: false,
+    auditZipExport: false,
+  };
+}
+
 export interface PricingPlanInfo {
   id: PlanTier;
   name: string;
@@ -227,20 +263,41 @@ export async function fetchSubscription(
         .maybeSingle();
 
       if (!error && data) {
-        const tier: PlanTier =
+        const cloudTier: PlanTier =
           data.plan_tier === "pro" || data.plan_tier === "family"
             ? data.plan_tier
             : "free";
+        const localNewer =
+          new Date(local.updatedAt).getTime() >
+          new Date(data.updated_at || 0).getTime();
+
+        // If user upgraded offline (local has paid tier & newer timestamp while cloud is still free), push local up
+        if (local.planTier !== "free" && cloudTier === "free" && localNewer) {
+          return await persistSubscription(
+            {
+              ...local,
+              aiScansUsed: Math.max(
+                local.aiScansUsed,
+                Number(data.ai_scans_used) || 0
+              ),
+            },
+            userId
+          );
+        }
+
         const merged: UserSubscription = {
-          planTier: tier,
+          planTier: cloudTier,
           aiScansUsed: Math.max(local.aiScansUsed, Number(data.ai_scans_used) || 0),
-          aiScansLimit: Number(data.ai_scans_limit) || getLimitForPlan(tier),
+          aiScansLimit: Number(data.ai_scans_limit) || getLimitForPlan(cloudTier),
           expiresAt: data.expires_at || null,
           gateway: (data.gateway as PaymentGatewayId) || null,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
         saveLocalSubscription(merged);
         return merged;
+      } else if (!error && !data && (local.planTier !== "free" || local.aiScansUsed > 0)) {
+        // Cloud row doesn't exist yet for this user — sync local package & usage up
+        return await persistSubscription(local, userId);
       }
     } catch {
       // Table may not be migrated yet; fall back cleanly to local state
