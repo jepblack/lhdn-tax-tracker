@@ -609,16 +609,19 @@ export function ReceiptScannerModal({
 
       // Step 2: Seamless On-Device Free OCR + Malaysian LHDN Rule Engine
       if (!usedCloudAi) {
+        const hasAiQuota =
+          subscription.planTier !== "free" ||
+          subscription.aiScansUsed < subscription.aiScansLimit;
         const isOcrPdf =
           fileForOcr.type === "application/pdf" ||
           fileForOcr.name.toLowerCase().endsWith(".pdf");
         if (isOcrPdf) {
-          setScanRetryable(true);
+          setScanRetryable(hasAiQuota);
           setScanNotice((prev) =>
             prev ||
             (lang === "bm"
-              ? "AI & pembaca PDF tidak dapat membaca fail ini. Klik Cuba Lagi atau masukkan butiran resit secara manual di bawah."
-              : "AI & PDF reader could not read this file. Click Retry or enter the receipt details manually below.")
+              ? "AI & pembaca PDF tidak dapat membaca fail ini. Klik Cuba Lagi AI atau masukkan butiran resit secara manual di bawah."
+              : "AI & PDF reader could not read this file. Click Retry AI or enter the receipt details manually below.")
           );
         } else {
           const localResult = await runLocalReceiptOcr(
@@ -630,13 +633,20 @@ export function ReceiptScannerModal({
             }
           );
           applyScanResult(localResult);
-          if (!localResult.merchant && localResult.totalAmount <= 0) {
+          if (hasAiQuota) {
             setScanRetryable(true);
             setScanNotice((prev) =>
               prev ||
               (lang === "bm"
-                ? "AI & OCR tidak dapat mengesan butiran resit. Klik Cuba Lagi atau masukkan maklumat secara manual di bawah."
-                : "AI & OCR could not detect receipt figures. Click Retry or enter the details manually below.")
+                ? "AI awan tidak tersedia buat sementara — menggunakan OCR pada peranti. Klik Cuba Lagi AI atau semak butiran di bawah."
+                : "Cloud AI was unavailable — used on-device OCR instead. Click Retry AI or review the details below.")
+            );
+          } else if (!localResult.merchant && localResult.totalAmount <= 0) {
+            setScanNotice((prev) =>
+              prev ||
+              (lang === "bm"
+                ? "OCR tidak dapat mengesan butiran resit. Sila masukkan maklumat secara manual di bawah."
+                : "OCR could not detect receipt figures. Please enter the details manually below.")
             );
           }
         }
@@ -1437,7 +1447,7 @@ export function ReceiptScannerModal({
                     className="inline-flex items-center gap-1 rounded-lg bg-amber-900 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-800 active:scale-95"
                   >
                     <RotateCcw className="h-3 w-3" />
-                    {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                    {lang === "bm" ? "Cuba Lagi AI" : "Retry AI"}
                   </button>
                 )}
                 {subscription.planTier === "free" &&
