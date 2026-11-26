@@ -336,7 +336,15 @@ export function ReceiptsTab({
           }
         />
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onAddNew}
+            className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {lang === "bm" ? "Muat Naik" : "Upload"}
+          </button>
           <button
             type="button"
             onClick={onOpenMyInvoisQr}
