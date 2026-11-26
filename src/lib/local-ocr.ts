@@ -943,7 +943,7 @@ const KNOWN_MY_MERCHANTS: Array<{ pattern: RegExp; name: string }> = [
   { pattern: /\b(tt\s*dotcom|time\s*dotcom|time\s*fibre|197901008085|52371-A|B16-1808-31031789)\b/i, name: "TIME Fibre" },
   { pattern: /\b(maxis\s*fibre|maxis\s*broadband|maxis|199201002549|234053-D|W10-1808-32000489)\b/i, name: "Maxis" },
   { pattern: /\b(celcomdigi|celcom\s*mobile|digi\s*telecommunications|199701009694|425190-X)\b/i, name: "CelcomDigi" },
-  { pattern: /\b(u\s*mobile|umobile|199101013657|223969-U)\b/i, name: "U Mobile" },
+  { pattern: /\b(u\s*mobile|umobile|199101013657|223969-U|W10-1808-32000028)\b/i, name: "U Mobile" },
   { pattern: /\b(ytl\s*communications|yes\s*5g|200701035605|793634-V|W10-1808-32000311)\b/i, name: "Yes 5G" },
   { pattern: /\b(astro\s*fibre|measat\s*broadcast)\b/i, name: "Astro Fibre" },
   { pattern: /\bdecathlon\b/i, name: "Decathlon Malaysia" },

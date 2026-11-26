@@ -88,7 +88,14 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "u-mobile",
     vendor_name: "U Mobile",
-    vendor_keywords: ["U MOBILE", "UMOBILE", "199101013657", "223969-U"],
+    vendor_keywords: [
+      "U MOBILE SDN BHD",
+      "U MOBILE",
+      "UMOBILE",
+      "199101013657",
+      "223969-U",
+      "W10-1808-32000028",
+    ],
     amount_anchor: "Current Charges",
     date_anchor: "Bill Date",
     invoice_anchor: "Bill No",
@@ -316,21 +323,34 @@ export async function matchPublicVendorTemplate(
 ): Promise<(ReceiptScanResult & { learnedTemplateVendor?: string }) | null> {
   if (!pdfText || pdfText.length < 40) return null;
   const flat = pdfText.replace(/\s+/g, " ");
-  // Phase 1: Inspect the top header first to identify the vendor/document quickly
+  // Phase 1: Inspect Page 1 (first 2,500 chars) to identify the bill issuer,
+  // avoiding false matches from itemized call logs on later pages (e.g. "To: Maxis / Digi / Celcom").
   const headerUpper = flat.slice(0, 1200).toUpperCase();
-  const upper = flat.toUpperCase();
+  const page1Upper = flat.slice(0, 2500).toUpperCase();
   const templates = await loadPublicVendorTemplates();
 
-  // Prioritize templates whose keywords appear in the top header
-  const sortedTemplates = [...templates].sort((a, b) => {
-    const aHeaderHits = a.vendor_keywords.filter((kw) =>
-      headerUpper.includes(kw.toUpperCase())
-    ).length;
-    const bHeaderHits = b.vendor_keywords.filter((kw) =>
-      headerUpper.includes(kw.toUpperCase())
-    ).length;
-    return bHeaderHits - aHeaderHits;
-  });
+  const scoreTemplate = (tpl: VendorReceiptTemplate): number => {
+    let score = 0;
+    for (const kw of tpl.vendor_keywords) {
+      const k = kw.toUpperCase();
+      const inHeader = headerUpper.includes(k);
+      const inPage1 = page1Upper.includes(k);
+      if (!inPage1) continue;
+      const isStrongId =
+        /^\d{12}$/.test(k) ||
+        /^\d{5,7}-[A-Z]$/.test(k) ||
+        /^[A-Z]\d{2}-\d{4}-\d{8}$/.test(k) ||
+        /\b(SDN\s*BHD|BERHAD|TELEKOM|DOTCOM|COMMUNICATIONS|BROADBAND)\b/.test(k);
+      score += isStrongId ? 10 : inHeader ? 4 : 2;
+    }
+    return score;
+  };
+
+  const sortedTemplates = [...templates]
+    .map((tpl) => ({ tpl, score: scoreTemplate(tpl) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.tpl);
 
   for (const tpl of sortedTemplates) {
     if (!tpl.vendor_keywords.length) continue;
@@ -343,14 +363,15 @@ export async function matchPublicVendorTemplate(
       "yes-5g",
       "astro-fibre",
     ].includes(tpl.vendor_key);
-    const matchedKwCount = tpl.vendor_keywords.filter(
-      (kw) => headerUpper.includes(kw.toUpperCase()) || upper.includes(kw.toUpperCase())
+    const matchedKwCount = tpl.vendor_keywords.filter((kw) =>
+      page1Upper.includes(kw.toUpperCase())
     ).length;
     const requiredMatches = isBuiltinTelco
       ? 1
       : Math.min(2, tpl.vendor_keywords.length);
     if (matchedKwCount < requiredMatches) continue;
 
+    const upper = flat.toUpperCase();
     // If an internet bill is bundled with TV/entertainment/device packs (e.g. Unifi TV),
     // try extracting the eligible internet line item directly before falling back to AI.
     const isBundledInternet =
