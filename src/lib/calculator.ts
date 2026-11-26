@@ -79,11 +79,12 @@ export function calculateMaxTaxSavingGoal(profile: TaxProfile): number {
       : 0;
   const taxBeforeExpenses = Math.max(0, baseTaxObj.tax - baseRebate);
 
+  const donationsRate = profile.taxYear <= 2019 ? 0.07 : 0.1;
   const totalMaxCategoryCaps = getReliefCategories(profile.taxYear).reduce(
     (sum, cat) =>
       sum +
       (cat.id === "approved_donations"
-        ? Math.max(0, Math.round(annualIncome * 0.1))
+        ? Math.max(0, Math.round(annualIncome * donationsRate))
         : cat.maxLimit),
     0
   );
@@ -111,11 +112,12 @@ export function calculateTaxSummary(
       e.claimType !== "business_deductible" &&
       e.categoryId !== "business_expense"
   );
+  const donationsRateForYear = profile.taxYear <= 2019 ? 0.07 : 0.1;
   const categories = getReliefCategories(profile.taxYear).map((cat) =>
     cat.id === "approved_donations"
       ? {
           ...cat,
-          maxLimit: Math.max(0, Math.round((profile.annualIncome || 0) * 0.1)),
+          maxLimit: Math.max(0, Math.round((profile.annualIncome || 0) * donationsRateForYear)),
         }
       : cat
   );

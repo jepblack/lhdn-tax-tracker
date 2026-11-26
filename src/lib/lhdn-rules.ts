@@ -99,11 +99,15 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
   const isYa2023Plus = year >= 2023;
   const isYa2022Plus = year >= 2022;
   const isYa2021Plus = year >= 2021;
+  const isYa2020Plus = year >= 2020;
 
   const medicalSelfLimit = isYa2023Plus ? 10000 : isYa2021Plus ? 8000 : 6000;
+  const medicalCheckupLimit = isYa2021Plus ? 1000 : 500;
   const parentsMedicalLimit = isYa2021Plus ? 8000 : 5000;
   const sportsLimit = isYa2024Plus ? 1000 : isYa2021Plus ? 500 : 0;
   const socsoLimit = isYa2022Plus ? 350 : 250;
+  const childcareLimit = isYa2020Plus ? 3000 : 1000;
+  const donationsPct = isYa2020Plus ? 10 : 7;
 
   const categories: ReliefCategory[] = [
     {
@@ -218,34 +222,48 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
           description: "Hospitalization/treatment for serious diseases or fertility treatment for self/spouse.",
           examples: ["Hospital specialist bill", "Fertility clinic", "Cancer / heart treatment"],
         },
-        {
-          id: "med_dental",
-          name: "Dental Examination & Treatment",
-          maxLimit: 1000,
-          description: "Sub-limit RM1,000 — scaling, filling, extraction, dental check-up (registered dentist).",
-          examples: ["Dental scaling & polishing", "Tooth filling", "Dental clinic receipt"],
-        },
-        {
-          id: "med_vaccination",
-          name: "Vaccination",
-          maxLimit: 1000,
-          description: "Sub-limit RM1,000 — Pneumococcal, HPV, Influenza, Rotavirus, Varicella, etc.",
-          examples: ["Flu jab", "HPV vaccine", "Influenza vaccination"],
-        },
+        ...(isYa2024Plus
+          ? [
+              {
+                id: "med_dental",
+                name: "Dental Examination & Treatment",
+                maxLimit: 1000,
+                description: "Sub-limit RM1,000 — scaling, filling, extraction, dental check-up (registered dentist).",
+                examples: ["Dental scaling & polishing", "Tooth filling", "Dental clinic receipt"],
+              },
+            ]
+          : []),
+        ...(isYa2021Plus
+          ? [
+              {
+                id: "med_vaccination",
+                name: "Vaccination",
+                maxLimit: 1000,
+                description: "Sub-limit RM1,000 — Pneumococcal, HPV, Influenza, Rotavirus, Varicella, etc.",
+                examples: ["Flu jab", "HPV vaccine", "Influenza vaccination"],
+              },
+            ]
+          : []),
         {
           id: "med_checkup",
-          name: "Full Check-Up, Mental Health & Self-Test",
-          maxLimit: 1000,
-          description: "Sub-limit RM1,000 — Complete medical exam, mental health consultation, self-test kits, glucometer/oximeter/BP monitor.",
-          examples: ["Annual health screening", "Blood test package", "BP monitor", "Psychologist visit"],
+          name: isYa2021Plus
+            ? "Full Check-Up, Mental Health & Self-Test"
+            : "Complete Medical Examination",
+          maxLimit: medicalCheckupLimit,
+          description: `Sub-limit RM${medicalCheckupLimit.toLocaleString("en-MY")} — Complete medical exam${isYa2021Plus ? ", mental health consultation, self-test kits, glucometer/oximeter/BP monitor" : " for self, spouse, or child"}.`,
+          examples: ["Annual health screening", "Blood test package", "BP monitor"],
         },
-        {
-          id: "med_child_disability",
-          name: "Child Learning Disability Assessment & Rehab",
-          maxLimit: isYa2025Plus ? 6000 : 4000,
-          description: `Sub-limit RM${isYa2025Plus ? "6,000" : "4,000"} — Diagnosis, early intervention, and rehabilitation for children under 18 (Autism, ADHD, Dyslexia, etc.).`,
-          examples: ["Speech therapy", "Occupational therapy", "Developmental assessment"],
-        },
+        ...(isYa2023Plus
+          ? [
+              {
+                id: "med_child_disability",
+                name: "Child Learning Disability Assessment & Rehab",
+                maxLimit: isYa2025Plus ? 6000 : 4000,
+                description: `Sub-limit RM${isYa2025Plus ? "6,000" : "4,000"} — Diagnosis, early intervention, and rehabilitation for children under 18 (Autism, ADHD, Dyslexia, etc.).`,
+                examples: ["Speech therapy", "Occupational therapy", "Developmental assessment"],
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -267,13 +285,17 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
           description: "Hospital/clinic treatment, dental care, nursing home, or certified carer.",
           examples: ["Parents hospital bill", "Physiotherapy", "Certified carer"],
         },
-        {
-          id: "parents_checkup",
-          name: "Parents Complete Medical Check-Up",
-          maxLimit: 1000,
-          description: "Sub-limit RM1,000 — Full medical examination and vaccinations for parents/grandparents.",
-          examples: ["Senior health screening", "Parents flu vaccine"],
-        },
+        ...(isYa2024Plus
+          ? [
+              {
+                id: "parents_checkup",
+                name: "Parents Complete Medical Check-Up",
+                maxLimit: 1000,
+                description: "Sub-limit RM1,000 — Full medical examination and vaccinations for parents/grandparents.",
+                examples: ["Senior health screening", "Parents flu vaccine"],
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -358,13 +380,17 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
           description: "Approved institutions in Malaysia (or any field for Master's/PhD).",
           examples: ["University tuition", "ACCA / CPA", "Master's program"],
         },
-        {
-          id: "edu_upskilling",
-          name: "Approved Upskilling Courses",
-          maxLimit: 2000,
-          description: "Sub-limit RM2,000 — Skills enhancement courses recognized by JPK.",
-          examples: ["Certified data/tech course", "HRD/JPK approved training"],
-        },
+        ...(isYa2021Plus
+          ? [
+              {
+                id: "edu_upskilling",
+                name: "Approved Upskilling Courses",
+                maxLimit: 2000,
+                description: "Sub-limit RM2,000 — Skills enhancement courses recognized by JPK.",
+                examples: ["Certified data/tech course", "HRD/JPK approved training"],
+              },
+            ]
+          : []),
       ],
     },
     ...(isYa2025Plus && year <= 2027
@@ -431,11 +457,11 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
       name: "Childcare Fees (TASKA / TADIKA)",
       shortName: "Childcare",
       group: "family",
-      maxLimit: 3000,
+      maxLimit: childcareLimit,
       formBeRef: "F12",
       icon: "Baby",
       description:
-        "Fees paid to a registered childcare centre (TASKA) or kindergarten (TADIKA) for children aged 6 years and below.",
+        `Fees paid to a registered childcare centre (TASKA) or kindergarten (TADIKA) for children aged 6 years and below (capped at RM${childcareLimit.toLocaleString("en-MY")} for YA ${year}).`,
       tips: "Claimable by either husband or wife (not both for the same child). Verify the centre's JKM/MOE registration.",
     },
     {
@@ -450,18 +476,22 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
         "Purchase of breastfeeding equipment for female taxpayers with a child aged 2 years and below (claimable once every 2 years).",
       tips: "Includes breast pump kit, cooler bag, milk storage containers/bags.",
     },
-    {
-      id: "ev_charging",
-      name: "EV Charging & Food Waste Composting",
-      shortName: "EV / Green",
-      group: "housing",
-      maxLimit: 2500,
-      formBeRef: "F20",
-      icon: "Zap",
-      description:
-        "Installation, rental, purchase, or subscription of EV charging facilities, or domestic food waste composting machine (non-business use).",
-      tips: "Keep official installation invoices or EV charging subscription receipts (e.g., Gentari, JomCharge, ChargEV).",
-    },
+    ...(isYa2022Plus
+      ? [
+          {
+            id: "ev_charging",
+            name: "EV Charging & Food Waste Composting",
+            shortName: "EV / Green",
+            group: "housing" as const,
+            maxLimit: 2500,
+            formBeRef: "F20",
+            icon: "Zap",
+            description:
+              "Installation, rental, purchase, or subscription of EV charging facilities, or domestic food waste composting machine (non-business use).",
+            tips: "Keep official installation invoices or EV charging subscription receipts (e.g., Gentari, JomCharge, ChargEV).",
+          },
+        ]
+      : []),
     {
       id: "supporting_equipment",
       name: "Basic Supporting Equipment (Disability)",
@@ -476,14 +506,14 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
     },
     {
       id: "approved_donations",
-      name: "Approved Donations — Sec. 44(6) (10% Cap)",
+      name: `Approved Donations — Sec. 44(6) (${donationsPct}% Cap)`,
       shortName: "Donations",
       group: "savings",
-      maxLimit: 10000, // Dynamically overridden to 10% of Annual Income in calculator.ts
+      maxLimit: 10000, // Dynamically overridden to 7% (YA 2019) / 10% (YA 2020+) of Annual Income in calculator.ts
       formBeRef: "D1",
       icon: "HeartHandshake",
       description:
-        "Cash donations to LHDN-approved charitable institutions/NGOs/Wakaf under Section 44(6), deductible up to 10% of your aggregate income.",
+        `Cash donations to LHDN-approved charitable institutions/NGOs/Wakaf under Section 44(6), deductible up to ${donationsPct}% of your aggregate income for YA ${year}.`,
       tips: "Official receipt MUST state 'Tax Exempt under Section 44(6)' with LHDN reference number. Separate from Zakat rebate!",
     },
   ];
