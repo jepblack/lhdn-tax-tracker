@@ -188,6 +188,16 @@ export async function matchPublicVendorTemplate(
       );
 
     if (isBundledInternet) {
+      // If the bundled bill also has discounts/rebates/promos, let AI compute the exact net
+      // internet charge after discounts instead of grabbing the pre-discount gross rate.
+      const hasDiscount =
+        /(DISCOUNT|DISKAUN|REBATE|REBAT|PROMO|CREDIT\s+ADJUSTMENT|-\s*(?:RM|MYR)?\s*\d+\.\d{2})/i.test(
+          upper
+        );
+      if (hasDiscount) {
+        continue;
+      }
+
       const lineMatch = flat.match(
         /(?:Residential\s+High\s+Speed\s+Internet|unifi\s+\d+\s*(?:Mbps|Gbps)|High\s+Speed\s+Broadband)[^\n]{0,80}?(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
       );
