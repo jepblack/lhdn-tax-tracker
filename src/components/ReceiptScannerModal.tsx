@@ -39,9 +39,13 @@ import {
 import { getPackageResourceLimits } from "@/lib/monetization";
 import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
-import { runLocalReceiptOcr } from "@/lib/local-ocr";
+import { parseAndClassifyReceiptText, runLocalReceiptOcr } from "@/lib/local-ocr";
 import { enqueueOfflineReceipt } from "@/lib/offline-queue";
-import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
+import {
+  extractPdfTextInBrowser,
+  renderPdfFirstPageToJpeg,
+} from "@/lib/pdf-to-image";
+import { matchPublicVendorTemplate } from "@/lib/vendor-templates";
 import {
   buildArchiveBaseFilename,
   buildSearchableReceiptPdf,
@@ -945,12 +949,14 @@ export function ReceiptScannerModal({
 
       // Step 1: Try cloud AI vision if configured on server (render PDFs or resize images to crisp JPEG)
       let usedCloudAi = false;
+      let hadAiOutage = false;
       let fileForOcr: File = file;
+      const isPdf =
+        file.type === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
+      const headers: Record<string, string> = {};
       try {
         let uploadFile: File;
-        const isPdf =
-          file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf");
         if (isPdf) {
           setScanStatusText("Reading PDF document...");
           uploadFile = file;
@@ -966,7 +972,6 @@ export function ReceiptScannerModal({
         formData.append("planTier", subscription.planTier);
         formData.append("aiScansUsed", String(subscription.aiScansUsed));
 
-        const headers: Record<string, string> = {};
         const supabase = getSupabaseClient();
         if (supabase) {
           const { data: sessionData } = await supabase.auth.getSession();
@@ -1021,32 +1026,9 @@ export function ReceiptScannerModal({
               applyScanResult(data as ReceiptScanResult);
               usedCloudAi = true;
               await onAiScanCompleted();
-            } else if (isPdf && data.fallbackToLocalOcr) {
-            // Scanned PDF with no selectable text: render Page 1 to JPEG and retry AI/OCR
-            setScanStatusText("Rendering scanned PDF page...");
-            const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
-            if (renderedJpeg) {
-              fileForOcr = renderedJpeg;
-              const retryFd = new FormData();
-              retryFd.append("file", renderedJpeg);
-              retryFd.append("taxYear", String(targetTaxYear));
-              retryFd.append("planTier", subscription.planTier);
-              retryFd.append("aiScansUsed", String(subscription.aiScansUsed));
-              const retryRes = await fetch("/api/scan-receipt", {
-                method: "POST",
-                headers,
-                body: retryFd,
-              });
-              if (retryRes.ok) {
-                const retryData = await retryRes.json();
-                if (!retryData.fallbackToLocalOcr && retryData.eligibility) {
-                  applyScanResult(retryData as ReceiptScanResult);
-                  usedCloudAi = true;
-                  await onAiScanCompleted();
-                }
-              }
+            } else if (data.fallbackToLocalOcr) {
+              hadAiOutage = true;
             }
-          }
           }
         } else {
           const errJson = await res.json().catch(() => null);
@@ -1056,6 +1038,60 @@ export function ReceiptScannerModal({
         }
       } catch {
         // Silently fall back to on-device OCR
+      }
+
+      // Step 1b: Client-side PDF fallback (embedded PDF text first, then Page 1 JPEG render for OCR)
+      if (!usedCloudAi && isPdf) {
+        setScanStatusText("Reading PDF text...");
+        const browserPdfText = await extractPdfTextInBrowser(file, 3);
+        if (browserPdfText.length >= 20) {
+          const templateMatch = await matchPublicVendorTemplate(browserPdfText);
+          const parsedPdf =
+            templateMatch ??
+            parseAndClassifyReceiptText(browserPdfText, targetTaxYear);
+          if (
+            parsedPdf.eligibility !== "rejected" &&
+            (parsedPdf.totalAmount > 0 || parsedPdf.merchant)
+          ) {
+            applyScanResult(parsedPdf);
+            usedCloudAi = true;
+            if (templateMatch) {
+              setScanNotice(null);
+            }
+          }
+        }
+
+        if (!usedCloudAi) {
+          setScanStatusText("Rendering scanned PDF page...");
+          const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
+          if (renderedJpeg) {
+            fileForOcr = renderedJpeg;
+            if (!hadAiOutage) {
+              try {
+                const retryFd = new FormData();
+                retryFd.append("file", renderedJpeg);
+                retryFd.append("taxYear", String(targetTaxYear));
+                retryFd.append("planTier", subscription.planTier);
+                retryFd.append("aiScansUsed", String(subscription.aiScansUsed));
+                const retryRes = await fetch("/api/scan-receipt", {
+                  method: "POST",
+                  headers,
+                  body: retryFd,
+                });
+                if (retryRes.ok) {
+                  const retryData = await retryRes.json();
+                  if (!retryData.fallbackToLocalOcr && retryData.eligibility) {
+                    applyScanResult(retryData as ReceiptScanResult);
+                    usedCloudAi = true;
+                    await onAiScanCompleted();
+                  }
+                }
+              } catch {
+                // Fall through to on-device OCR on renderedJpeg
+              }
+            }
+          }
+        }
       }
 
       // Step 2: Seamless On-Device Free OCR + Malaysian LHDN Rule Engine
