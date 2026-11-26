@@ -200,15 +200,33 @@ export function parseFormBeText(
   );
 
   // Extra reliefs
-  const extraReliefs: Array<{ categoryId: string; label: string; amount: number }> = [];
-  const pushExtra = (categoryId: string, label: string, amount: number) => {
-    if (amount > 0) extraReliefs.push({ categoryId, label, amount });
+  const extraReliefs: Array<{
+    categoryId: string;
+    subCategoryId?: string | null;
+    label: string;
+    amount: number;
+  }> = [];
+  const pushExtra = (
+    categoryId: string,
+    label: string,
+    amount: number,
+    subCategoryId?: string | null
+  ) => {
+    if (amount > 0) {
+      extraReliefs.push({
+        categoryId,
+        ...(subCategoryId ? { subCategoryId } : {}),
+        label,
+        amount,
+      });
+    }
   };
 
   pushExtra(
     "parents_medical",
-    "Parents medical / care",
-    matchLastNumberOnLine(flat, /Amaun\s+boleh\s+dituntut\s+([\d,]+(?:\.\d{1,2})?)/i)
+    "Parents Allowance (MyKad)",
+    matchLastNumberOnLine(flat, /Amaun\s+boleh\s+dituntut\s+([\d,]+(?:\.\d{1,2})?)/i),
+    "parents_allowance"
   );
   pushExtra(
     "lifestyle",

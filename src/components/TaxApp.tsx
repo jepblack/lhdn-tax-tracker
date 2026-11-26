@@ -499,7 +499,7 @@ export function TaxApp() {
         declaredByCategory["first_home_interest"] = ext.housingLoanInterest;
       }
       for (const extra of ext.extraReliefs || []) {
-        if (extra.amount > 0) {
+        if (extra.amount > 0 && extra.subCategoryId !== "parents_allowance") {
           declaredByCategory[extra.categoryId] =
             (declaredByCategory[extra.categoryId] || 0) + extra.amount;
         }
@@ -683,16 +683,33 @@ export function TaxApp() {
         if (extraGap > 0.01) {
           existingByCat[extra.categoryId] =
             (existingByCat[extra.categoryId] || 0) + extraGap;
+          const isMyKadParentAllowance =
+            extra.subCategoryId === "parents_allowance";
           await handleSaveExpense(
             {
               taxYear: targetYear,
               categoryId: extra.categoryId,
               subCategoryId: extra.subCategoryId || null,
               merchant: `${provider} — ${extra.label}`,
-              description: descriptionNote,
+              description: isMyKadParentAllowance
+                ? `Declared via parent MyKad on ${doc.label} — no medical receipt required`
+                : descriptionNote,
               amount: extraGap,
               expenseDate: today,
-              ...sharedFileFields,
+              ...(isMyKadParentAllowance
+                ? {
+                    receiptUrl: doc.fileUrl,
+                    receiptPath:
+                      doc.storageProvider === "gdrive"
+                        ? `gdrive:${doc.fileUrl}`
+                        : doc.storageProvider === "supabase"
+                        ? doc.storagePath || null
+                        : null,
+                    receiptFileName: doc.fileName,
+                    receiptMimeType: doc.mimeType,
+                    aiExtracted: true,
+                  }
+                : sharedFileFields),
             },
             null,
             undefined,

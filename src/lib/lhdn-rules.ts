@@ -285,6 +285,18 @@ export function getReliefCategories(year: TaxYear): ReliefCategory[] {
           description: "Hospital/clinic treatment, dental care, nursing home, or certified carer.",
           examples: ["Parents hospital bill", "Physiotherapy", "Certified carer"],
         },
+        ...(!isYa2021Plus
+          ? [
+              {
+                id: "parents_allowance",
+                name: "Parents Allowance (MyKad — No Receipt)",
+                maxLimit: 3000,
+                description:
+                  "Sub-limit RM3,000 (RM1,500 per parent, split among siblings) — No medical receipts required; declared via parent MyKad in Form BE (YA 2018–2020).",
+                examples: ["Form e-BE parent MyKad declaration"],
+              },
+            ]
+          : []),
         ...(isYa2024Plus
           ? [
               {
