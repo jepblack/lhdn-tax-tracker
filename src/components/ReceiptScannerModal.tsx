@@ -225,7 +225,12 @@ export function ReceiptScannerModal({
       if (editingExpense) {
         setTargetTaxYear(editingExpense.taxYear);
         setCategoryId(editingExpense.categoryId);
-        setSubCategoryId(editingExpense.subCategoryId || "");
+        const editCat = getReliefCategories(editingExpense.taxYear).find(
+          (c) => c.id === editingExpense.categoryId
+        );
+        setSubCategoryId(
+          editingExpense.subCategoryId || editCat?.subCategories?.[0]?.id || ""
+        );
         setClaimType(
           editingExpense.claimType ||
             (editingExpense.categoryId === "business_expense"
@@ -1234,7 +1239,7 @@ export function ReceiptScannerModal({
         subCategoryId:
           claimType === "business_deductible"
             ? "business_deductible"
-            : subCategoryId || null,
+            : subCategoryId || selectedCategory?.subCategories?.[0]?.id || null,
         claimType,
         myInvoisUuid: myInvoisUuid.trim() || null,
         offlineQueued: isOffline,
@@ -2072,7 +2077,14 @@ export function ReceiptScannerModal({
                             type="button"
                             onClick={() => {
                               setCategoryId(opt.categoryId);
-                              setSubCategoryId(opt.subCategoryId || "");
+                              const optCat = categories.find(
+                                (c) => c.id === opt.categoryId
+                              );
+                              setSubCategoryId(
+                                opt.subCategoryId ||
+                                  optCat?.subCategories?.[0]?.id ||
+                                  ""
+                              );
                             }}
                             className={`flex w-full items-start justify-between gap-2 rounded-xl border p-2.5 text-left transition ${
                               isSelected
@@ -2333,7 +2345,11 @@ export function ReceiptScannerModal({
                               : "Sub-Category (Sub-Limit)"}
                           </label>
                           <select
-                            value={subCategoryId}
+                            value={
+                              subCategoryId ||
+                              selectedCategory.subCategories[0]?.id ||
+                              ""
+                            }
                             onChange={(e) => setSubCategoryId(e.target.value)}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
                           >
