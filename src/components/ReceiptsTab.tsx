@@ -788,6 +788,82 @@ export function ReceiptsTab({
                     ok: ext.pcbPaid >= 0,
                     detail: formatRM(ext.pcbPaid, true),
                   },
+                  {
+                    label: lang === "bm" ? "Jenis Taksiran" : "Assessment Type",
+                    ok: Boolean(ext.assessmentType),
+                    detail:
+                      ext.assessmentType === "separate"
+                        ? lang === "bm"
+                          ? "Berasingan"
+                          : "Separate"
+                        : ext.assessmentType === "joint_self" ||
+                          ext.assessmentType === "joint_spouse"
+                        ? lang === "bm"
+                          ? "Bersama"
+                          : "Joint"
+                        : lang === "bm"
+                        ? "Tiada"
+                        : "Missing",
+                  },
+                  {
+                    label: lang === "bm" ? "Pecahan Pendapatan" : "Income Sources",
+                    ok: Boolean(
+                      (ext.employmentIncome && ext.employmentIncome > 0) ||
+                        (ext.rentalIncome && ext.rentalIncome > 0) ||
+                        (ext.otherIncome && ext.otherIncome > 0)
+                    ),
+                    detail:
+                      (ext.rentalIncome || 0) > 0 || (ext.otherIncome || 0) > 0
+                        ? `${lang === "bm" ? "Gaji" : "Emp"} + ${
+                            (ext.rentalIncome || 0) > 0
+                              ? lang === "bm"
+                                ? "Sewa"
+                                : "Rental"
+                              : lang === "bm"
+                              ? "Lain"
+                              : "Other"
+                          }`
+                        : (ext.employmentIncome || 0) > 0
+                        ? lang === "bm"
+                          ? "Penggajian"
+                          : "Employment"
+                        : lang === "bm"
+                        ? "Tiada"
+                        : "Not split",
+                  },
+                  {
+                    label: lang === "bm" ? "Rebat & Zakat" : "Rebates & Zakat",
+                    ok: Boolean(
+                      (ext.declaredTaxRebate && ext.declaredTaxRebate > 0) ||
+                        ext.zakatPaid > 0
+                    ),
+                    detail: formatRM(
+                      Math.max(ext.declaredTaxRebate || 0, ext.zakatPaid || 0),
+                      true
+                    ),
+                  },
+                  {
+                    label: lang === "bm" ? "CP500 / Kredit Cukai" : "CP500 / Tax Credits",
+                    ok: Boolean(
+                      (ext.cp500Paid && ext.cp500Paid > 0) ||
+                        (ext.otherTaxCredits && ext.otherTaxCredits > 0)
+                    ),
+                    detail: formatRM(
+                      (ext.cp500Paid || 0) + (ext.otherTaxCredits || 0),
+                      true
+                    ),
+                  },
+                  {
+                    label: lang === "bm" ? "Rujukan e-BE" : "e-BE Filing Ref",
+                    ok: Boolean(ext.filingReferenceNo || ext.filingDate),
+                    detail: ext.filingReferenceNo
+                      ? ext.filingReferenceNo
+                      : ext.filingDate
+                      ? ext.filingDate
+                      : lang === "bm"
+                      ? "Tiada"
+                      : "Not printed",
+                  },
                 ];
                 const passedCount = checks.filter((c) => c.ok).length;
                 const allCoreOk = passedCount === checks.length;

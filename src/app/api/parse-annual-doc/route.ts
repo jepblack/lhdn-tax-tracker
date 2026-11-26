@@ -98,9 +98,15 @@ export async function POST(request: Request) {
     const formBeExtraPrompt =
       docType === "form_be_proof"
         ? `
-Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract:
+PRIVACY RULE (PDPA): Do NOT extract or return any personal identifiers (no taxpayer name, NRIC/MyKad, TIN, bank account, address, phone, email, or spouse name/TIN).
+Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract these non-PII tax fields:
 1. "detectedTaxYear": 4-digit Year of Assessment (Tahun Taksiran / YA, e.g. 2024) printed on the form, or null if not visible.
-2. "statusReliefs": {
+2. "assessmentType": "separate" | "joint_self" | "joint_spouse" | null (from Part A Jenis Taksiran: Berasingan vs Bersama).
+3. Part B Income Breakdown (0 if absent):
+   - "employmentIncome": number (Pendapatan Berkanun Penggajian)
+   - "rentalIncome": number (Pendapatan Berkanun Sewa)
+   - "otherIncome": number (Dividen / Faedah / Royalti / Pencen / Lain-lain)
+4. "statusReliefs": {
    "individual": boolean (true if Individual & Dependent F1 RM9,000/12,000 is claimed),
    "disabledIndividual": boolean (true if F1a Disabled Individual claimed),
    "spouse": boolean (true if F6 Spouse/Alimony claimed),
@@ -110,13 +116,17 @@ Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract:
    "disabledChildren": number (count of disabled children in F8c),
    "disabledChildrenHigherEd": number (count of disabled children in higher ed in F8c)
 }
-3. Tax computation totals printed in Part F / Part G / Summary:
+5. Part F / Part G Tax Computation, Credits & Filing Proof:
    - "declaredTotalReliefs": number (Jumlah Pelepasan / Total Relief)
    - "declaredChargeableIncome": number (Pendapatan Bercukai / Chargeable Income)
    - "declaredTaxCharged": number (Cukai Pendapatan Dikenakan / Income Tax Charged before rebates)
    - "declaredTaxRebate": number (Jumlah Rebat / Total Rebate including Zakat & RM400/RM800 rebate)
    - "declaredTaxPayable": number (Net Tax Charged / Cukai Kena Dibayar after rebates, BEFORE deducting PCB/MTD)
-4. "extraReliefs": array of other claimed relief boxes using ONLY these valid categoryId values:
+   - "cp500Paid": number (Ansuran CP500 / Bayaran Sendiri)
+   - "otherTaxCredits": number (Tolakan Seksyen 110 / Pelepasan Seksyen 132 & 133)
+   - "filingReferenceNo": string | null (e-BE acknowledgement / submission reference number, if printed)
+   - "filingDate": string | null (YYYY-MM-DD submission date, if printed)
+6. "extraReliefs": array of other claimed relief boxes using ONLY these valid categoryId values:
 - "lifestyle" (F9 Lifestyle)
 - "sports" (F10 Sports equipment/activities)
 - "medical_self" (F4 Medical expenses self/spouse/child)
@@ -351,6 +361,14 @@ function normalizeAnnualExtraction(
       }
     : undefined;
 
+  const rawAssess = String(parsed.assessmentType || "").toLowerCase();
+  const assessmentType: AnnualDocExtraction["assessmentType"] =
+    rawAssess === "separate" ||
+    rawAssess === "joint_self" ||
+    rawAssess === "joint_spouse"
+      ? rawAssess
+      : null;
+
   return {
     docType,
     providerName: String(parsed.providerName || ""),
@@ -369,6 +387,16 @@ function normalizeAnnualExtraction(
     declaredTaxCharged: Number(parsed.declaredTaxCharged) || 0,
     declaredTaxRebate: Number(parsed.declaredTaxRebate) || 0,
     declaredTaxPayable: Number(parsed.declaredTaxPayable) || 0,
+    assessmentType,
+    employmentIncome: Number(parsed.employmentIncome) || 0,
+    rentalIncome: Number(parsed.rentalIncome) || 0,
+    otherIncome: Number(parsed.otherIncome) || 0,
+    cp500Paid: Number(parsed.cp500Paid) || 0,
+    otherTaxCredits: Number(parsed.otherTaxCredits) || 0,
+    filingReferenceNo: parsed.filingReferenceNo
+      ? String(parsed.filingReferenceNo).slice(0, 64)
+      : null,
+    filingDate: parsed.filingDate ? String(parsed.filingDate).slice(0, 32) : null,
     extraReliefs,
     summaryNote:
       String(parsed.summaryNote || "") ||

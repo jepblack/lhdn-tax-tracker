@@ -278,6 +278,14 @@ export interface AnnualDocExtraction {
   declaredTaxCharged?: number;
   declaredTaxRebate?: number;
   declaredTaxPayable?: number;
+  assessmentType?: "separate" | "joint_self" | "joint_spouse" | null;
+  employmentIncome?: number;
+  rentalIncome?: number;
+  otherIncome?: number;
+  cp500Paid?: number;
+  otherTaxCredits?: number;
+  filingReferenceNo?: string | null;
+  filingDate?: string | null;
   extraReliefs?: Array<{
     categoryId: string;
     subCategoryId?: string | null;
@@ -302,4 +310,12 @@ export interface FormBeBaseline {
   declaredTaxCharged?: number;
   declaredTaxRebate?: number;
   declaredTaxPayable?: number;
+  assessmentType?: "separate" | "joint_self" | "joint_spouse" | null;
+  employmentIncome?: number;
+  rentalIncome?: number;
+  otherIncome?: number;
+  cp500Paid?: number;
+  otherTaxCredits?: number;
+  filingReferenceNo?: string | null;
+  filingDate?: string | null;
 }
