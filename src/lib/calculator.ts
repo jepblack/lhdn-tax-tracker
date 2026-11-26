@@ -125,7 +125,10 @@ export function calculateTaxSummary(
   const categorySummaries: CategorySummary[] = categories.map((category) => {
     const catExpenses = yearExpenses.filter((e) => e.categoryId === category.id);
     const missingReceiptCount = catExpenses.filter(
-      (e) => !e.receiptPath && !e.receiptUrl
+      (e) =>
+        !e.receiptPath &&
+        !e.receiptUrl &&
+        e.subCategoryId !== "parents_allowance"
     ).length;
 
     const subSummaries: SubCategorySummary[] = [];

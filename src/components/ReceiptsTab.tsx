@@ -186,7 +186,12 @@ export function ReceiptsTab({
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
   const filtered = yearExpenses
     .filter((e) => {
-      if (filterMode === "missing" && (e.receiptPath || e.receiptUrl)) return false;
+      if (
+        filterMode === "missing" &&
+        (e.receiptPath || e.receiptUrl || e.subCategoryId === "parents_allowance")
+      ) {
+        return false;
+      }
       if (filterMode === "review" && !isReviewRequired(e)) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
@@ -224,7 +229,10 @@ export function ReceiptsTab({
     });
 
   const missingCount = yearExpenses.filter(
-    (e) => !e.receiptPath && !e.receiptUrl
+    (e) =>
+      !e.receiptPath &&
+      !e.receiptUrl &&
+      e.subCategoryId !== "parents_allowance"
   ).length;
   const reviewCount = yearExpenses.filter((e) => isReviewRequired(e)).length;
 

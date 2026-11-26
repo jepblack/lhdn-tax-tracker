@@ -992,7 +992,13 @@ export function TaxApp() {
   }, [expenses, annualDocs, taxYear]);
 
   const missingReceiptsTotal = useMemo(
-    () => yearExpenses.filter((e) => !e.receiptPath && !e.receiptUrl).length,
+    () =>
+      yearExpenses.filter(
+        (e) =>
+          !e.receiptPath &&
+          !e.receiptUrl &&
+          e.subCategoryId !== "parents_allowance"
+      ).length,
     [yearExpenses]
   );
 
