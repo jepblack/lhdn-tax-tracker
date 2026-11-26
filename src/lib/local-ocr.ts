@@ -31,24 +31,6 @@ const REJECTION_RULES: RejectionRule[] = [
       "Smartwatches and fitness trackers are explicitly excluded by LHDN from both Sports and Lifestyle tax reliefs.",
   },
   {
-    label: "Mobile Phone Plan",
-    keywords: [
-      "hotlink",
-      "xpax",
-      "postpaid",
-      "prepaid",
-      "mobile plan",
-      "u mobile",
-      "umobile",
-      "yes 5g",
-      "digi postpaid",
-      "maxis postpaid",
-      "celcom postpaid",
-    ],
-    reason:
-      "Mobile postpaid/prepaid phone bills are not claimable. LHDN Lifestyle relief only covers home broadband/fibre internet subscriptions.",
-  },
-  {
     label: "Petrol / Transport / Travel",
     keywords: [
       "petronas",
@@ -739,11 +721,11 @@ export function parseAndClassifyReceiptText(
     };
   }
 
-  // 1. Check explicit LHDN relief matches first (with smartwatch/mobile plan rejection priority!)
-  const hardRejectFirst = REJECTION_RULES.slice(0, 2); // smartwatch & mobile plan
+  // 1. Check explicit LHDN hard-rejection rules first (smartwatch/fitness tracker)
+  const hardRejectFirst = REJECTION_RULES.slice(0, 1);
   for (const rule of hardRejectFirst) {
     const matchedKw = rule.keywords.find((kw) => lower.includes(kw));
-    if (matchedKw && !lower.includes("fibre") && !lower.includes("broadband")) {
+    if (matchedKw) {
       return {
         eligibility: "rejected",
         merchant: merchant || rule.label,
@@ -761,6 +743,80 @@ export function parseAndClassifyReceiptText(
         rawText,
       };
     }
+  }
+
+  // 1b. Mobile/telco bills without clear voice vs. data breakdown:
+  // Extract recurring/monthly charges excluding SST, mark uncertain, and warn user.
+  const telcoKw = [
+    "u mobile",
+    "umobile",
+    "hotlink",
+    "xpax",
+    "postpaid",
+    "prepaid",
+    "mobile plan",
+    "yes 5g",
+    "digi postpaid",
+    "maxis postpaid",
+    "celcom postpaid",
+  ].find((kw) => lower.includes(kw));
+  if (
+    telcoKw &&
+    !lower.includes("fibre") &&
+    !lower.includes("broadband") &&
+    !lower.includes("u home") &&
+    !lower.includes("home 5g")
+  ) {
+    const recurringMatch = rawText.match(
+      /(?:Monthly\s+(?:Recurring\s+)?Charges?|Recurring\s+Charges?|Current\s+Charges?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+    );
+    const recurringAmt = recurringMatch
+      ? Number(recurringMatch[1].replace(/,/g, "")) || 0
+      : 0;
+    const baseAmt = recurringAmt > 0 ? recurringAmt : totalAmount;
+    const sstRx =
+      /(?:Total\s+Service\s+Tax|Service\s+Tax(?:\s*\(\d+%\))?|Cukai\s+Perkhidmatan|\bST\s*\(\d+%\)|\bST\b)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/gi;
+    let sstAmt = 0;
+    let sm: RegExpExecArray | null;
+    while ((sm = sstRx.exec(rawText)) !== null) {
+      const v = Number(sm[1].replace(/,/g, "")) || 0;
+      if (v > 0 && (baseAmt <= 0 || v < baseAmt * 0.2)) sstAmt = v;
+    }
+    const netAmt =
+      baseAmt > sstAmt && sstAmt > 0
+        ? Math.round((baseAmt - sstAmt) * 100) / 100
+        : baseAmt;
+    const warnMsg =
+      "No clear voice vs. data breakdown detected on this telco bill. Extracted recurring monthly charges (excluding SST) under Lifestyle — Internet. Warning: under LHDN rules, only home broadband or dedicated data plans qualify (personal mobile voice plans are not claimable); verify before claiming.";
+    return {
+      eligibility: "uncertain",
+      merchant: merchant || "Telco / Mobile Bill",
+      date,
+      amount: netAmt,
+      totalAmount: baseAmt > netAmt ? baseAmt : netAmt,
+      sstOrTaxAmount: sstAmt,
+      taxInclusive: true,
+      currency: "MYR",
+      invoiceNumber,
+      description: "Telco monthly recurring charges (excl. SST — verify LHDN eligibility)",
+      suggestedCategoryId: "lifestyle",
+      suggestedSubCategoryId: "lifestyle_internet",
+      suggestedOptions: [
+        {
+          categoryId: "lifestyle",
+          subCategoryId: "lifestyle_internet",
+          label: "Lifestyle — Internet Broadband",
+          reason:
+            "Recurring telco charges (excl. SST). Only claim if this is a qualifying broadband/data subscription.",
+        },
+      ],
+      confidence: "medium",
+      needsReview: true,
+      reviewReason: warnMsg,
+      reasoning: warnMsg,
+      scanEngine: "local-ocr",
+      rawText,
+    };
   }
 
   // 2. Check LHDN relief category rules
