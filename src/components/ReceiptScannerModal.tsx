@@ -2657,7 +2657,7 @@ export function ReceiptScannerModal({
               </div>
 
               {annualExtraction && (
-                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/90 p-3 text-xs text-indigo-950 space-y-1.5">
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-950 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold">
                       {annualDocType === "form_be_proof"
@@ -2727,6 +2727,10 @@ export function ReceiptScannerModal({
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {lang === "bm" ? "Menyimpan..." : "Saving..."}
                   </>
+                ) : annualExtraction ? (
+                  lang === "bm"
+                    ? "Simpan & Segerak Penyata Tahunan"
+                    : "Save & Sync Annual Statement"
                 ) : editingExpense ? (
                   copy.scannerUpdateBtn
                 ) : (
