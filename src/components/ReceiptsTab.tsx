@@ -1024,7 +1024,9 @@ export function ReceiptsTab({
             const sub = cat?.subCategories?.find(
               (s) => s.id === exp.subCategoryId
             );
-            const hasReceipt = Boolean(exp.receiptPath || exp.receiptUrl);
+            const isNoReceiptAllowance = exp.subCategoryId === "parents_allowance";
+            const hasReceipt =
+              Boolean(exp.receiptPath || exp.receiptUrl) || isNoReceiptAllowance;
             const isRealPreviewable =
               Boolean(exp.receiptUrl) && exp.receiptUrl !== "sample://attached";
 
@@ -1114,7 +1116,12 @@ export function ReceiptsTab({
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
-                            <FileCheck2 className="h-3 w-3" /> Proof OK
+                            <FileCheck2 className="h-3 w-3" />{" "}
+                            {isNoReceiptAllowance
+                              ? lang === "bm"
+                                ? "Diisytihar e-BE"
+                                : "e-BE Declared"
+                              : "Proof OK"}
                           </span>
                         )
                       ) : (

@@ -650,7 +650,11 @@ export function DashboardTab({
                 {formBeBaseline && (() => {
                   const verifiedByCat: Record<string, number> = {};
                   for (const exp of yearExpenses) {
-                    if (exp.receiptUrl || exp.receiptPath) {
+                    if (
+                      exp.receiptUrl ||
+                      exp.receiptPath ||
+                      exp.subCategoryId === "parents_allowance"
+                    ) {
                       verifiedByCat[exp.categoryId] =
                         (verifiedByCat[exp.categoryId] || 0) + exp.amount;
                     }
@@ -734,7 +738,11 @@ export function DashboardTab({
           {formBeBaseline && beQueue.length === 0 && (() => {
             const verifiedByCat: Record<string, number> = {};
             for (const exp of yearExpenses) {
-              if (exp.receiptUrl || exp.receiptPath) {
+              if (
+                exp.receiptUrl ||
+                exp.receiptPath ||
+                exp.subCategoryId === "parents_allowance"
+              ) {
                 verifiedByCat[exp.categoryId] =
                   (verifiedByCat[exp.categoryId] || 0) + exp.amount;
               }

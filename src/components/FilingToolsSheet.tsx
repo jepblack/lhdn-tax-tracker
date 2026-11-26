@@ -418,7 +418,11 @@ export function FilingToolsSheet({
                 // Sum ONLY verified receipts (expenses that actually have a receipt file attached)
                 const verifiedByCat: Record<string, number> = {};
                 for (const exp of yearExpenses) {
-                  if (exp.receiptUrl || exp.receiptPath) {
+                  if (
+                    exp.receiptUrl ||
+                    exp.receiptPath ||
+                    exp.subCategoryId === "parents_allowance"
+                  ) {
                     verifiedByCat[exp.categoryId] =
                       (verifiedByCat[exp.categoryId] || 0) + exp.amount;
                   }
