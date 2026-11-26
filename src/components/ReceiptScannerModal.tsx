@@ -22,6 +22,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { parseAnnualDocFile } from "@/lib/annual-doc-parser";
 import {
   decodeQrFromCanvas,
   decodeQrFromFile,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/receipt-archiver";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
+  AnnualDocType,
   ArchiveCategory,
   CategorySummary,
   ExpenseClaimType,
@@ -163,6 +165,17 @@ export function ReceiptScannerModal({
   const [sheetExpanded, setSheetExpanded] = useState<boolean>(true);
   const dragStartYRef = useRef<number | null>(null);
 
+  const ANNUAL_DOC_CATS = new Set([
+    "epf_life_insurance",
+    "socso",
+    "edu_med_insurance",
+    "first_home_interest",
+  ]);
+  const [proofMode, setProofMode] = useState<"receipt" | "annual_doc">(
+    initialCategoryId && ANNUAL_DOC_CATS.has(initialCategoryId)
+      ? "annual_doc"
+      : "receipt"
+  );
   const isGeneralScanMode = !initialCategoryId;
 
   useEffect(() => {
@@ -181,6 +194,11 @@ export function ReceiptScannerModal({
   useEffect(() => {
     if (isOpen) {
       setScannerMode(initialScannerMode || "ocr");
+      setProofMode(
+        initialCategoryId && ANNUAL_DOC_CATS.has(initialCategoryId)
+          ? "annual_doc"
+          : "receipt"
+      );
       setSheetExpanded(true);
       setManualQrUrl("");
       setQrDetectedUrl(null);
@@ -623,10 +641,19 @@ export function ReceiptScannerModal({
   }
 
   const selectedCategory = categories.find((c) => c.id === categoryId);
+  const selectedSubCategory = selectedCategory?.subCategories?.find(
+    (s) => s.id === subCategoryId
+  );
   const selectedCatSummary = categorySummaries.find(
     (s) => s.category.id === categoryId
   );
   const numericAmount = parseFloat(amount) || 0;
+  const effectiveCap =
+    claimType === "personal_relief"
+      ? selectedSubCategory?.maxLimit ?? selectedCategory?.maxLimit ?? null
+      : null;
+  const exceedsEffectiveCap =
+    effectiveCap !== null && numericAmount > effectiveCap + 0.001;
   const isRejectedBlocked =
     scanResult?.eligibility === "rejected" && !overrideRejection;
 
@@ -678,7 +705,11 @@ export function ReceiptScannerModal({
       setAmount(result.totalAmount > 0 ? String(result.totalAmount) : "");
     } else {
       const bestAmount = result.amount > 0 ? result.amount : result.totalAmount;
-      if (bestAmount > 0) setAmount(String(bestAmount));
+      if (bestAmount > 0) {
+        const capped =
+          effectiveCap !== null ? Math.min(bestAmount, effectiveCap) : bestAmount;
+        setAmount(String(capped));
+      }
       const hasUsefulRead = Boolean(result.merchant?.trim()) || bestAmount > 0;
       if (isGeneralScanMode && hasUsefulRead && result.suggestedCategoryId) {
         setCategoryId(result.suggestedCategoryId);
@@ -763,6 +794,74 @@ export function ReceiptScannerModal({
 
     setIsScanning(true);
     try {
+      if (proofMode === "annual_doc") {
+        setScanStatusText(
+          lang === "bm"
+            ? "Membaca penyata tahunan..."
+            : "Reading annual statement..."
+        );
+        const mappedDocType: AnnualDocType =
+          categoryId === "epf_life_insurance"
+            ? "kwsp_statement"
+            : categoryId === "edu_med_insurance"
+            ? "insurance_statement"
+            : categoryId === "first_home_interest"
+            ? "loan_interest_statement"
+            : "ea_form";
+        const { extraction, skipReason } = await parseAnnualDocFile(
+          file,
+          mappedDocType,
+          selectedCategory?.shortName || "Annual Statement",
+          targetTaxYear
+        );
+        if (extraction) {
+          if (extraction.providerName) setMerchant(extraction.providerName);
+          if (extraction.detectedTaxYear && SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)) {
+            setTargetTaxYear(extraction.detectedTaxYear);
+            setExpenseDate(`${extraction.detectedTaxYear}-12-31`);
+          }
+          let extractedAmt = 0;
+          if (categoryId === "epf_life_insurance") {
+            extractedAmt = (extraction.epfEmployee || 0) + (extraction.lifeInsuranceAmount || 0);
+          } else if (categoryId === "socso") {
+            extractedAmt = extraction.socsoEisEmployee || 0;
+          } else if (categoryId === "edu_med_insurance") {
+            extractedAmt = extraction.medicalInsuranceAmount || 0;
+          } else if (categoryId === "first_home_interest") {
+            extractedAmt = extraction.housingLoanInterest || 0;
+          } else {
+            const matchedExtra = extraction.extraReliefs?.find(
+              (r) => r.categoryId === categoryId
+            );
+            extractedAmt = matchedExtra?.amount || 0;
+          }
+          if (extractedAmt > 0) {
+            const capped =
+              effectiveCap !== null ? Math.min(extractedAmt, effectiveCap) : extractedAmt;
+            setAmount(String(capped));
+          }
+          if (extraction.summaryNote) {
+            setDescription(extraction.summaryNote);
+          }
+          if (extractedAmt <= 0) {
+            setScanNotice(
+              lang === "bm"
+                ? "Penyata dilampirkan! Masukkan jumlah tuntutan daripada penyata anda di bawah."
+                : "Statement attached! Enter the claimable amount from your statement below."
+            );
+          }
+        } else {
+          setScanRetryable(true);
+          setScanNotice(
+            skipReason ||
+              (lang === "bm"
+                ? "Penyata dilampirkan! Sila masukkan butiran secara manual di bawah."
+                : "Statement attached! Please enter the details manually below.")
+          );
+        }
+        return;
+      }
+
       // Step 1: Try cloud AI vision if configured on server (render PDFs or resize images to crisp JPEG)
       let usedCloudAi = false;
       let fileForOcr: File = file;
@@ -912,7 +1011,7 @@ export function ReceiptScannerModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isRejectedBlocked) return;
-    if (!merchant.trim() || numericAmount <= 0) return;
+    if (!merchant.trim() || numericAmount <= 0 || exceedsEffectiveCap) return;
 
     // Duplicate check before saving (skip comparing against self when editing)
     const otherExpenses = editingExpense
@@ -1197,6 +1296,10 @@ export function ReceiptScannerModal({
                   ? lang === "bm"
                     ? "Sunting Resit / Lampirkan Bukti"
                     : "Edit Receipt / Attach Proof"
+                  : proofMode === "annual_doc"
+                  ? lang === "bm"
+                    ? "Lampirkan Penyata Tahunan"
+                    : "Attach Annual Statement Proof"
                   : scannerMode === "qr"
                   ? lang === "bm"
                     ? "Pengimbas QR MyInvois & Resit"
@@ -1206,8 +1309,8 @@ export function ReceiptScannerModal({
                     ? "Pengimbas Resit Pintar LHDN"
                     : "Smart LHDN Receipt Scanner"
                   : lang === "bm"
-                  ? "Imbas atau Rekod Resit"
-                  : "Scan or Log Receipt"}
+                  ? "Lampirkan Bukti Resit"
+                  : "Attach Receipt Proof"}
               </h2>
               {isOffline && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
@@ -1261,6 +1364,39 @@ export function ReceiptScannerModal({
             </button>
           </div>
         </div>
+
+        {/* Proof Type Switcher (Receipt vs Annual Statement) */}
+        {!editingExpense && scannerMode !== "qr" && (
+          <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50/70 px-5 py-2">
+            <span className="text-[11px] font-semibold text-slate-500 mr-1">
+              {lang === "bm" ? "Jenis Bukti:" : "Proof Type:"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setProofMode("receipt")}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                proofMode === "receipt"
+                  ? "bg-white text-emerald-700 shadow-2xs ring-1 ring-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              {lang === "bm" ? "Resit / Invois" : "Receipt / Invoice"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setProofMode("annual_doc")}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                proofMode === "annual_doc"
+                  ? "bg-white text-indigo-700 shadow-2xs ring-1 ring-indigo-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              {lang === "bm"
+                ? "Penyata Tahunan (KWSP / EA / Insurans)"
+                : "Annual Statement (KWSP / EA / Insurance)"}
+            </button>
+          </div>
+        )}
 
         {/* Scrollable Body */}
         <form
@@ -2125,7 +2261,11 @@ export function ReceiptScannerModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    {lang === "bm"
+                    {proofMode === "annual_doc"
+                      ? lang === "bm"
+                        ? "Majikan / Penanggung Insurans / KWSP / Bank *"
+                        : "Employer / Insurer / KWSP / Bank *"
+                      : lang === "bm"
                       ? "Peniaga / Klinik / Pembekal *"
                       : "Merchant / Clinic / Provider *"}
                   </label>
@@ -2133,7 +2273,11 @@ export function ReceiptScannerModal({
                     type="text"
                     required
                     placeholder={
-                      lang === "bm"
+                      proofMode === "annual_doc"
+                        ? lang === "bm"
+                          ? "cth., KWSP, Majikan (Borang EA), AIA / Prudential"
+                          : "e.g., KWSP, Employer (EA Form), AIA / Prudential"
+                        : lang === "bm"
                         ? "cth., TM Unifi, Klinik Pergigian, Decathlon"
                         : "e.g., TM Unifi, Klinik Pergigian, Decathlon"
                     }
@@ -2145,25 +2289,43 @@ export function ReceiptScannerModal({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      {lang === "bm"
-                        ? "Jumlah Boleh Dituntut (RM) *"
-                        : "Claimable Amount (RM) *"}
-                    </label>
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        {lang === "bm"
+                          ? "Jumlah Boleh Dituntut (RM) *"
+                          : "Claimable Amount (RM) *"}
+                      </label>
+                      {effectiveCap !== null && (
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          {lang === "bm" ? "Had" : "Cap"} {formatRM(effectiveCap)}
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       step="0.01"
                       min="0.01"
+                      max={effectiveCap ?? undefined}
                       required
                       placeholder="0.00"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-900 focus:border-emerald-500 focus:outline-none"
+                      className={`w-full rounded-xl border px-3 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none ${
+                        exceedsEffectiveCap
+                          ? "border-rose-400 bg-rose-50/40 focus:border-rose-500"
+                          : "border-slate-200 focus:border-emerald-500"
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      {lang === "bm" ? "Tarikh Resit *" : "Receipt Date *"}
+                      {proofMode === "annual_doc"
+                        ? lang === "bm"
+                          ? "Tarikh Penyata *"
+                          : "Statement Date *"
+                        : lang === "bm"
+                        ? "Tarikh Resit *"
+                        : "Receipt Date *"}
                     </label>
                     <input
                       type="date"
@@ -2174,6 +2336,28 @@ export function ReceiptScannerModal({
                     />
                   </div>
                 </div>
+
+                {exceedsEffectiveCap && effectiveCap !== null && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                      <span>
+                        {lang === "bm"
+                          ? `Jumlah boleh dituntut tidak boleh melebihi had ${formatRM(effectiveCap)}.`
+                          : `Claimable amount cannot exceed the ${formatRM(effectiveCap)} cap.`}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAmount(String(effectiveCap))}
+                      className="shrink-0 rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-rose-700"
+                    >
+                      {lang === "bm"
+                        ? `Hadkan ${formatRM(effectiveCap)}`
+                        : `Cap at ${formatRM(effectiveCap)}`}
+                    </button>
+                  </div>
+                )}
 
                 {selectedCatSummary && numericAmount > 0 && (
                   <div
@@ -2362,7 +2546,7 @@ export function ReceiptScannerModal({
 
               <button
                 type="submit"
-                disabled={isSaving || isScanning}
+                disabled={isSaving || isScanning || exceedsEffectiveCap}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3.5 text-sm font-bold text-white shadow-md shadow-emerald-600/20 transition active:scale-[0.99] disabled:opacity-60"
               >
                 {isSaving ? (
