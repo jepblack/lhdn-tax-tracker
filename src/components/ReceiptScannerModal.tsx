@@ -1988,7 +1988,10 @@ export function ReceiptScannerModal({
                     <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       Not Claimable
                     </span>
-                    <EngineBadge engine={scanResult.scanEngine} />
+                    <EngineBadge
+                      engine={scanResult.scanEngine}
+                      templateVendor={scanResult.learnedTemplateVendor}
+                    />
                   </div>
                   <p className="mt-1.5 text-xs font-semibold text-rose-950">
                     {scanResult.merchant || "Unrecognized receipt"}
@@ -2033,7 +2036,10 @@ export function ReceiptScannerModal({
                     <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                       Partially Claimable
                     </span>
-                    <EngineBadge engine={scanResult.scanEngine} />
+                    <EngineBadge
+                      engine={scanResult.scanEngine}
+                      templateVendor={scanResult.learnedTemplateVendor}
+                    />
                     <span className="text-[11px] text-amber-800">
                       {formatRM(scanResult.amount, true)} of{" "}
                       {formatRM(scanResult.totalAmount, true)}
@@ -2070,7 +2076,10 @@ export function ReceiptScannerModal({
                     <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       Confirm Category
                     </span>
-                    <EngineBadge engine={scanResult.scanEngine} />
+                    <EngineBadge
+                      engine={scanResult.scanEngine}
+                      templateVendor={scanResult.learnedTemplateVendor}
+                    />
                   </div>
                   <p className="mt-1.5 font-semibold text-indigo-950">
                     Unable to confirm the exact purpose of this receipt
@@ -2151,7 +2160,10 @@ export function ReceiptScannerModal({
                   <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                     Eligible Relief
                   </span>
-                  <EngineBadge engine={scanResult.scanEngine} />
+                  <EngineBadge
+                    engine={scanResult.scanEngine}
+                    templateVendor={scanResult.learnedTemplateVendor}
+                  />
                 </div>
                 <p className="mt-1 text-[11px] text-emerald-900">
                   {scanResult.reasoning}
@@ -2824,7 +2836,23 @@ export function ReceiptScannerModal({
   );
 }
 
-function EngineBadge({ engine }: { engine?: "ai" | "local-ocr" }) {
+function EngineBadge({
+  engine,
+  templateVendor,
+}: {
+  engine?: "ai" | "local-ocr";
+  templateVendor?: string;
+}) {
+  if (templateVendor) {
+    return (
+      <span
+        title={`Matched shared layout template (${templateVendor})`}
+        className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800"
+      >
+        ⚡ Template
+      </span>
+    );
+  }
   if (engine === "ai") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-700">

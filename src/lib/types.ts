@@ -222,6 +222,7 @@ export interface ReceiptScanResult {
   rejectionReason?: string;
   excludedItems?: string[];
   scanEngine?: "ai" | "local-ocr";
+  learnedTemplateVendor?: string;
   rawText?: string;
   // Extended LHDN Archiving fields
   archiveCategory?: ArchiveCategory;

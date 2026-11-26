@@ -427,6 +427,14 @@ export function BatchImportModal({
                             <CheckCircle2 className="h-3 w-3" /> Archived
                           </span>
                         )}
+                        {item.status === "ready" && item.result?.learnedTemplateVendor && (
+                          <span
+                            title={`Matched shared template: ${item.result.learnedTemplateVendor}`}
+                            className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800"
+                          >
+                            ⚡ Template
+                          </span>
+                        )}
                         {item.status === "ready" && elig === "eligible" && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
                             <Sparkles className="h-2.5 w-2.5" /> Eligible
