@@ -157,6 +157,7 @@ export function ReceiptScannerModal({
   const [keepColorPdf, setKeepColorPdf] = useState(false);
   const [originalFileHash, setOriginalFileHash] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [duplicateMatch, setDuplicateMatch] = useState<TaxExpense | null>(null);
   const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
   const [showArchiveDetails, setShowArchiveDetails] = useState(false);
 
@@ -837,6 +838,7 @@ export function ReceiptScannerModal({
     setShowRawText(false);
     setOverrideRejection(false);
     setDuplicateWarning(null);
+    setDuplicateMatch(null);
     setDuplicateConfirmed(false);
     setScanProgress(5);
     setScanStatusText("Checking receipt...");
@@ -849,7 +851,10 @@ export function ReceiptScannerModal({
           { merchant: "", amount: 0, expenseDate: "", fileHash: hash },
           existingExpenses
         );
-        if (dup) setDuplicateWarning(dup.reason);
+        if (dup) {
+          setDuplicateWarning(dup.reason);
+          setDuplicateMatch(dup.match);
+        }
       }
     });
 
@@ -1101,16 +1106,17 @@ export function ReceiptScannerModal({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent, overrideEditId?: string) {
     e.preventDefault();
     if (isRejectedBlocked) return;
     if (!merchant.trim() || numericAmount <= 0 || exceedsEffectiveCap) return;
 
     // Duplicate check before saving (skip comparing against self when editing)
-    const otherExpenses = editingExpense
-      ? existingExpenses.filter((ex) => ex.id !== editingExpense.id)
+    const effectiveEditId = overrideEditId || editingExpense?.id;
+    const otherExpenses = effectiveEditId
+      ? existingExpenses.filter((ex) => ex.id !== effectiveEditId)
       : existingExpenses;
-    if (!duplicateConfirmed) {
+    if (!duplicateConfirmed && !overrideEditId) {
       const dup = findDuplicateExpense(
         {
           merchant: merchant.trim(),
@@ -1123,6 +1129,7 @@ export function ReceiptScannerModal({
       );
       if (dup) {
         setDuplicateWarning(dup.reason);
+        setDuplicateMatch(dup.match);
         return;
       }
     }
@@ -1287,7 +1294,7 @@ export function ReceiptScannerModal({
         onOfflineQueued?.();
       }
 
-      await onSave(expensePayload, archivedPdfFile, editingExpense?.id);
+      await onSave(expensePayload, archivedPdfFile, effectiveEditId);
       onClose();
     } finally {
       setIsSaving(false);
@@ -2239,20 +2246,33 @@ export function ReceiptScannerModal({
                   <p className="mt-0.5 text-[11px]">{duplicateWarning}</p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={resetScan}
                   className="flex-1 rounded-lg border border-amber-300 bg-white py-1.5 text-[11px] font-semibold text-amber-900"
                 >
-                  Cancel
+                  {lang === "bm" ? "Batal" : "Cancel"}
                 </button>
+                {duplicateMatch && !editingExpense && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={(e) => {
+                      setDuplicateConfirmed(true);
+                      handleSubmit(e as unknown as React.FormEvent, duplicateMatch.id);
+                    }}
+                    className="flex-1 rounded-lg bg-emerald-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {lang === "bm" ? "Kemas Kini Sedia Ada" : "Update Existing"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setDuplicateConfirmed(true)}
                   className="flex-1 rounded-lg bg-amber-600 py-1.5 text-[11px] font-semibold text-white"
                 >
-                  Save Anyway
+                  {lang === "bm" ? "Simpan Sebagai Baru" : "Save as New"}
                 </button>
               </div>
             </div>
