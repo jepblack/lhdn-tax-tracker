@@ -2451,7 +2451,14 @@ export function ReceiptScannerModal({
                       type="date"
                       required
                       value={expenseDate}
-                      onChange={(e) => setExpenseDate(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setExpenseDate(val);
+                        const yr = Number(val.slice(0, 4));
+                        if (SUPPORTED_TAX_YEARS.includes(yr as TaxYear)) {
+                          setTargetTaxYear(yr as TaxYear);
+                        }
+                      }}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
                     />
                   </div>

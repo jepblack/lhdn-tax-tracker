@@ -993,37 +993,23 @@ export function TaxApp() {
     setScannerOpen(true);
   }
 
-  async function handleSaveExpense(
-    expenseData: Omit<TaxExpense, "id" | "createdAt">,
+  async function reconcileAndApplySavedExpense(
+    saved: TaxExpense,
     receiptFile: File | null,
-    editingId?: string,
+    isEdit: boolean,
     skipYearSwitch?: boolean
   ): Promise<TaxExpense> {
-    if (editingId) {
-      const updated = await updateExpense(
-        editingId,
-        expenseData,
-        receiptFile,
-        userId
-      );
-      setExpenses((prev) =>
-        prev.map((e) => (e.id === editingId ? updated : e))
-      );
-      return updated;
-    }
-    const created = await createExpense(expenseData, receiptFile, userId);
-
-    // Auto-reconcile unreceipted Form BE placeholders when a real receipted expense is added
     const hasReceiptProof = Boolean(
-      receiptFile || created.receiptUrl || created.receiptPath
+      receiptFile || saved.receiptUrl || saved.receiptPath
     );
     const deletedIds = new Set<string>();
     const updatedMap = new Map<string, TaxExpense>();
 
-    if (hasReceiptProof && created.amount > 0) {
+    if (hasReceiptProof && saved.amount > 0) {
       const isFormBePlaceholder = (e: TaxExpense) =>
-        e.taxYear === created.taxYear &&
-        e.categoryId === created.categoryId &&
+        e.id !== saved.id &&
+        e.taxYear === saved.taxYear &&
+        e.categoryId === saved.categoryId &&
         !e.receiptUrl &&
         !e.receiptPath &&
         Boolean(e.description?.includes("attach supporting receipts for LHDN 7-year audit"));
@@ -1031,12 +1017,12 @@ export function TaxApp() {
       const matching = expensesRef.current
         .filter(isFormBePlaceholder)
         .sort((a, b) => {
-          const aExact = created.subCategoryId && a.subCategoryId === created.subCategoryId ? 0 : 1;
-          const bExact = created.subCategoryId && b.subCategoryId === created.subCategoryId ? 0 : 1;
+          const aExact = saved.subCategoryId && a.subCategoryId === saved.subCategoryId ? 0 : 1;
+          const bExact = saved.subCategoryId && b.subCategoryId === saved.subCategoryId ? 0 : 1;
           return aExact - bExact;
         });
 
-      let remaining = created.amount;
+      let remaining = saved.amount;
       for (const placeholder of matching) {
         if (remaining <= 0.01) break;
         if (placeholder.amount <= remaining + 0.01) {
@@ -1058,27 +1044,49 @@ export function TaxApp() {
       }
     }
 
-    const applyReconcile = (list: TaxExpense[]) => [
-      created,
-      ...list
+    const applyReconcile = (list: TaxExpense[]) => {
+      const base = isEdit
+        ? list.map((e) => (e.id === saved.id ? saved : e))
+        : [saved, ...list];
+      return base
         .filter((e) => !deletedIds.has(e.id))
-        .map((e) => updatedMap.get(e.id) || e),
-    ];
+        .map((e) => updatedMap.get(e.id) || e);
+    };
     expensesRef.current = applyReconcile(expensesRef.current);
     setExpenses((prev) => applyReconcile(prev));
 
     if (
       !skipYearSwitch &&
-      created.taxYear !== taxYear &&
-      SUPPORTED_TAX_YEARS.includes(created.taxYear)
+      saved.taxYear !== taxYear &&
+      SUPPORTED_TAX_YEARS.includes(saved.taxYear)
     ) {
-      setTaxYear(created.taxYear);
+      setTaxYear(saved.taxYear);
     }
-    return created;
+    return saved;
+  }
+
+  async function handleSaveExpense(
+    expenseData: Omit<TaxExpense, "id" | "createdAt">,
+    receiptFile: File | null,
+    editingId?: string,
+    skipYearSwitch?: boolean
+  ): Promise<TaxExpense> {
+    if (editingId) {
+      const updated = await updateExpense(
+        editingId,
+        expenseData,
+        receiptFile,
+        userId
+      );
+      return reconcileAndApplySavedExpense(updated, receiptFile, true, skipYearSwitch);
+    }
+    const created = await createExpense(expenseData, receiptFile, userId);
+    return reconcileAndApplySavedExpense(created, receiptFile, false, skipYearSwitch);
   }
 
   async function handleDeleteExpense(expense: TaxExpense) {
     await removeExpense(expense, userId);
+    expensesRef.current = expensesRef.current.filter((e) => e.id !== expense.id);
     setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
     if (expense.invoiceNumber?.startsWith("RECUR-")) {
       const prefix = `RECUR-`;
