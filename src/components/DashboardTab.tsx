@@ -61,6 +61,7 @@ import {
 import { FilingToolTab } from "./FilingToolsSheet";
 import { InfoHint } from "./InfoHint";
 import { QuickStartChecklist } from "./QuickStartGuide";
+import { FormBeChecklist } from "./FormBeChecklist";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface DashboardTabProps {
@@ -833,40 +834,48 @@ export function DashboardTab({
               {beQueue.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white p-2.5 text-xs"
+                  className="space-y-2.5 rounded-xl bg-white p-3 text-xs"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-slate-900">
-                      {item.fileName}
-                    </p>
-                    {item.extraction ? (
-                      <p className="text-[11px] text-slate-500">
-                        Income {formatRM(item.extraction.annualIncome)} • Reliefs{" "}
-                        {formatRM(item.extraction.declaredTotalReliefs || 0)} • PCB{" "}
-                        {formatRM(item.extraction.pcbPaid)}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-900">
+                        {item.fileName}
                       </p>
-                    ) : (
-                      <p className="text-[11px] text-amber-700">
-                        {item.note || "Archived only — no numeric figures detected"}
-                      </p>
-                    )}
+                      {item.extraction ? (
+                        <p className="text-[11px] text-slate-500">
+                          Income {formatRM(item.extraction.annualIncome)} • Reliefs{" "}
+                          {formatRM(item.extraction.declaredTotalReliefs || 0)} • PCB{" "}
+                          {formatRM(item.extraction.pcbPaid)}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-amber-700">
+                          {item.note || "Archived only — no numeric figures detected"}
+                        </p>
+                      )}
+                    </div>
+                    <select
+                      value={item.targetYear}
+                      onChange={(e) => {
+                        const yr = Number(e.target.value) as TaxYear;
+                        setBeQueue((prev) =>
+                          prev.map((q) => (q.id === item.id ? { ...q, targetYear: yr } : q))
+                        );
+                      }}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-800"
+                    >
+                      {SUPPORTED_TAX_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>
+                          YA {yr}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    value={item.targetYear}
-                    onChange={(e) => {
-                      const yr = Number(e.target.value) as TaxYear;
-                      setBeQueue((prev) =>
-                        prev.map((q) => (q.id === item.id ? { ...q, targetYear: yr } : q))
-                      );
-                    }}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-800"
-                  >
-                    {SUPPORTED_TAX_YEARS.map((yr) => (
-                      <option key={yr} value={yr}>
-                        YA {yr}
-                      </option>
-                    ))}
-                  </select>
+                  {item.extraction && (
+                    <FormBeChecklist
+                      extraction={item.extraction}
+                      lang={personalization.language}
+                    />
+                  )}
                 </div>
               ))}
               <div className="flex gap-2">
