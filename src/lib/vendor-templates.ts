@@ -46,10 +46,62 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "maxis-fibre",
     vendor_name: "Maxis",
-    vendor_keywords: ["MAXIS BROADBAND", "MAXIS FIBRE"],
+    vendor_keywords: ["MAXIS"],
     amount_anchor: "Current Charges",
     date_anchor: "Statement Date",
     invoice_anchor: "Bill No",
+    sst_anchor: "Service Tax",
+    category_id: "lifestyle",
+    sub_category_id: "lifestyle_internet",
+    exclude_sst: true,
+    hit_count: 10,
+  },
+  {
+    vendor_key: "celcomdigi",
+    vendor_name: "CelcomDigi",
+    vendor_keywords: ["CELCOMDIGI", "CELCOM", "DIGI"],
+    amount_anchor: "Current Charges",
+    date_anchor: "Bill Date",
+    invoice_anchor: "Bill No",
+    sst_anchor: "Service Tax",
+    category_id: "lifestyle",
+    sub_category_id: "lifestyle_internet",
+    exclude_sst: true,
+    hit_count: 10,
+  },
+  {
+    vendor_key: "u-mobile",
+    vendor_name: "U Mobile",
+    vendor_keywords: ["U MOBILE", "UMOBILE"],
+    amount_anchor: "Current Charges",
+    date_anchor: "Bill Date",
+    invoice_anchor: "Bill No",
+    sst_anchor: "Service Tax",
+    category_id: "lifestyle",
+    sub_category_id: "lifestyle_internet",
+    exclude_sst: true,
+    hit_count: 10,
+  },
+  {
+    vendor_key: "yes-5g",
+    vendor_name: "Yes 5G",
+    vendor_keywords: ["YTL COMMUNICATIONS", "YES 5G", "YES.MY"],
+    amount_anchor: "Current Charges",
+    date_anchor: "Statement Date",
+    invoice_anchor: "Invoice No",
+    sst_anchor: "Service Tax",
+    category_id: "lifestyle",
+    sub_category_id: "lifestyle_internet",
+    exclude_sst: true,
+    hit_count: 10,
+  },
+  {
+    vendor_key: "astro-fibre",
+    vendor_name: "Astro Fibre",
+    vendor_keywords: ["ASTRO FIBRE", "MEASAT BROADCAST", "ASTRO"],
+    amount_anchor: "Current Charges",
+    date_anchor: "Bill Date",
+    invoice_anchor: "Invoice No",
     sst_anchor: "Service Tax",
     category_id: "lifestyle",
     sub_category_id: "lifestyle_internet",
@@ -189,15 +241,35 @@ export async function matchPublicVendorTemplate(
 ): Promise<(ReceiptScanResult & { learnedTemplateVendor?: string }) | null> {
   if (!pdfText || pdfText.length < 40) return null;
   const flat = pdfText.replace(/\s+/g, " ");
+  // Phase 1: Inspect the top header first to identify the vendor/document quickly
+  const headerUpper = flat.slice(0, 1200).toUpperCase();
   const upper = flat.toUpperCase();
   const templates = await loadPublicVendorTemplates();
 
-  for (const tpl of templates) {
-    if (!tpl.vendor_keywords.length) continue;
-    const matchedKwCount = tpl.vendor_keywords.filter((kw) =>
-      upper.includes(kw.toUpperCase())
+  // Prioritize templates whose keywords appear in the top header
+  const sortedTemplates = [...templates].sort((a, b) => {
+    const aHeaderHits = a.vendor_keywords.filter((kw) =>
+      headerUpper.includes(kw.toUpperCase())
     ).length;
-    if (matchedKwCount < Math.min(2, tpl.vendor_keywords.length)) continue;
+    const bHeaderHits = b.vendor_keywords.filter((kw) =>
+      headerUpper.includes(kw.toUpperCase())
+    ).length;
+    return bHeaderHits - aHeaderHits;
+  });
+
+  for (const tpl of sortedTemplates) {
+    if (!tpl.vendor_keywords.length) continue;
+    const isSingleKwBuiltin =
+      ["maxis-fibre", "celcomdigi", "u-mobile", "yes-5g", "astro-fibre"].includes(
+        tpl.vendor_key
+      );
+    const matchedKwCount = tpl.vendor_keywords.filter(
+      (kw) => headerUpper.includes(kw.toUpperCase()) || upper.includes(kw.toUpperCase())
+    ).length;
+    const requiredMatches = isSingleKwBuiltin
+      ? 1
+      : Math.min(2, tpl.vendor_keywords.length);
+    if (matchedKwCount < requiredMatches) continue;
 
     // If an internet bill is bundled with TV/entertainment/device packs (e.g. Unifi TV),
     // try extracting the eligible internet line item directly before falling back to AI.
@@ -294,7 +366,23 @@ export async function matchPublicVendorTemplate(
       tpl.amount_anchor,
       /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
     );
-    const parsedAmt = amtStr ? Number(amtStr.replace(/,/g, "")) : 0;
+    const parsedAmt =
+      (amtStr ? Number(amtStr.replace(/,/g, "")) : 0) ||
+      Number(
+        (
+          extractValueAfterAnchor(
+            flat,
+            "Monthly Charges",
+            /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+          ) ||
+          extractValueAfterAnchor(
+            flat,
+            "Caj Semasa",
+            /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+          ) ||
+          "0"
+        ).replace(/,/g, "")
+      );
     if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) continue;
 
     const sstAmt = extractSstAmount(flat, tpl.sst_anchor, parsedAmt);
@@ -305,7 +393,9 @@ export async function matchPublicVendorTemplate(
         : parsedAmt;
 
     const dateSeg = tpl.date_anchor
-      ? flat.match(new RegExp(`${escapeRegex(tpl.date_anchor)}[^\\n]{0,45}`, "i"))?.[0] || ""
+      ? flat.match(new RegExp(`${escapeRegex(tpl.date_anchor)}[^\\n]{0,45}`, "i"))?.[0] ||
+        flat.match(/(?:Statement\s+Date|Tarikh\s+Penyata|Bill\s+Date|Invoice\s+Date)[^\n]{0,45}/i)?.[0] ||
+        ""
       : "";
     const parsedDate = parseDateToken(dateSeg);
 
@@ -314,8 +404,17 @@ export async function matchPublicVendorTemplate(
           flat,
           tpl.invoice_anchor,
           /[:#\s]+([A-Z0-9][A-Z0-9\-\/]{4,28})/i
+        ) ||
+        extractValueAfterAnchor(
+          flat,
+          "Invoice No",
+          /[:#\s]+([A-Z0-9][A-Z0-9\-\/]{4,28})/i
         )
       : "";
+
+    const isMobileTelcoWithoutBroadband =
+      ["celcomdigi", "u-mobile", "yes-5g", "maxis-fibre"].includes(tpl.vendor_key) &&
+      !/(FIBRE|BROADBAND|U\s*HOME|HOME\s*5G|HOME\s*FIBRE|UNIFI)/i.test(upper);
 
     // Increment hit count asynchronously
     const admin = getSupabaseAdminClient();
@@ -332,7 +431,7 @@ export async function matchPublicVendorTemplate(
     }
 
     return {
-      eligibility: "eligible",
+      eligibility: isMobileTelcoWithoutBroadband ? "uncertain" : "eligible",
       merchant: tpl.vendor_name,
       date: parsedDate,
       amount: claimable,
@@ -343,11 +442,19 @@ export async function matchPublicVendorTemplate(
       invoiceNumber: invStr,
       archiveCategory:
         tpl.sub_category_id === "lifestyle_internet" ? "personal" : "other",
-      description: `${tpl.vendor_name} (auto-extracted via shared layout template)`,
+      description: isMobileTelcoWithoutBroadband
+        ? `${tpl.vendor_name} — Recurring charges excl. SST (verify LHDN eligibility)`
+        : `${tpl.vendor_name} (auto-extracted via shared layout template)`,
       suggestedCategoryId: tpl.category_id,
       suggestedSubCategoryId: tpl.sub_category_id,
-      confidence: "high",
-      reasoning: `Matched shared CukaiKu layout template for ${tpl.vendor_name} (${tpl.amount_anchor}).`,
+      needsReview: isMobileTelcoWithoutBroadband,
+      reviewReason: isMobileTelcoWithoutBroadband
+        ? "No clear voice vs. data breakdown detected on this telco bill. Extracted recurring charges (excl. SST); verify under LHDN rules (only home broadband/data plans qualify)."
+        : undefined,
+      confidence: isMobileTelcoWithoutBroadband ? "medium" : "high",
+      reasoning: isMobileTelcoWithoutBroadband
+        ? `Matched shared ${tpl.vendor_name} template; extracted recurring charges (RM ${claimable.toFixed(2)}) excluding SST. Note: LHDN Lifestyle relief only covers home broadband/dedicated data plans, not personal mobile voice plans.`
+        : `Matched shared CukaiKu layout template for ${tpl.vendor_name} (${tpl.amount_anchor}).`,
       scanEngine: "local-ocr",
       learnedTemplateVendor: tpl.vendor_key,
     };
