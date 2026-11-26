@@ -102,7 +102,7 @@ const PRICING_PLAN_BM: Record<
       "300 imbasan resit AI Gemini / Llama Vision",
       "Pek Audit 7-Tahun LHDN 1-Klik ZIP (PDF + JSON + Borang BE)",
       "Import Pelbagai Resit Pukal & Pengekstrak Auto Borang EA / Slip Gaji",
-      "Segerak Awan antara Telefon & PC (Supabase + Google Drive)",
+      '"Cloud Sync" antara Telefon & PC (Supabase + Google Drive)',
       "Semakan kelayakan LHDN keutamaan & pengasingan item resit bercampur",
     ],
   },

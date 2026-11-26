@@ -2198,7 +2198,7 @@ export function SettingsTab({
                   ? "Awan + Drive Disegerak"
                   : "Cloud + Drive Synced"
                 : lang === "bm"
-                  ? "Segerak Awan Aktif"
+                  ? '"Cloud Sync" Aktif'
                   : "Cloud Synced Active"
               : isSupabaseConfigured
               ? lang === "bm"

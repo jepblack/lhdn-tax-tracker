@@ -384,7 +384,7 @@ export function getUiCopy(lang: AppLanguage) {
       pcbPaidLabel: "PCB Dibayar YTD (RM)",
       zakatPaidLabel: "Rebat Zakat / Fitrah (RM)",
       statusReliefsTitle: "Pelepasan Status & Keluarga (Tanpa Resit)",
-      cloudVaultTitle: "Segerak Awan & Arkib 7-Tahun LHDN",
+      cloudVaultTitle: '"Cloud Sync" & Arkib 7-Tahun LHDN',
       cloudActiveTitle: "CukaiKu Cloud Sync: Active",
       signOutBtn: "Log Keluar",
       upgradeBtn: "Naik Taraf (RM 29)",

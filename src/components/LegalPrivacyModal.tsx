@@ -178,7 +178,7 @@ export function LegalPrivacyModal({
                     3. Pemproses Pihak Ketiga & Pemindahan Merentas Sempadan
                     (Seksyen 129 PDPA):
                   </strong>{" "}
-                  Apabila anda mengaktifkan Segerak Awan atau Imbasan AI Vision,
+                  Apabila anda mengaktifkan &quot;Cloud Sync&quot; atau Imbasan AI Vision,
                   fail dihantar melalui sambungan TLS tersulit kepada:
                   <br />• <strong>Supabase</strong> (pangkalan data & storan
                   peribadi dengan keselamatan aras baris / RLS mengikut pengguna),
