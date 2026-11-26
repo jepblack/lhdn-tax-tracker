@@ -1280,8 +1280,16 @@ export function ReceiptScannerModal({
     }
   }
 
+  const editingSameCatCredit =
+    editingExpense &&
+    editingExpense.categoryId === categoryId &&
+    editingExpense.taxYear === targetTaxYear
+      ? editingExpense.amount
+      : 0;
   const remainingAfter = selectedCatSummary
-    ? selectedCatSummary.remaining - numericAmount
+    ? selectedCatSummary.category.maxLimit -
+      (Math.max(0, selectedCatSummary.spent - editingSameCatCredit) +
+        numericAmount)
     : 0;
 
   return (
