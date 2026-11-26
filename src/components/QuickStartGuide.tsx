@@ -397,6 +397,41 @@ export function QuickGuideModal({
               )}
             </ul>
           </div>
+
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 text-xs text-indigo-950 space-y-1.5">
+            <p className="font-bold">
+              {language === "bm"
+                ? "🗂️ Isi Semula Tahun Taksiran Lepas (Arkib Audit 7 Tahun):"
+                : "🗂️ Backfill Previous Years' Assessments (7-Year Audit Vault):"}
+            </p>
+            <ol className="list-decimal pl-4 text-[11px] leading-relaxed text-indigo-900 space-y-0.5">
+              {language === "bm" ? (
+                <>
+                  <li>
+                    Buka tab <strong>Resit / Peti</strong> → <strong>Dokumen Tahunan</strong> dan ketik <strong>Pilih PDF</strong> pada kad <strong>Isi Semula Tahun Lepas (Borang e-BE)</strong>.
+                  </li>
+                  <li>
+                    Pilih satu atau beberapa PDF Borang e-BE MyTax lepas — CukaiKu mengesan Tahun Taksiran (TT) secara automatik, mengisi profil &amp; pelepasan tanpa kiraan berganda.
+                  </li>
+                  <li>
+                    Tukar pemilih <strong>TT</strong> di bahagian atas ke tahun tersebut dan buka <strong>Kertas Kerja e-Filing</strong> untuk menyemak <strong>Semakan Pengiraan Cukai</strong> serta muat naik resit sokongan (<strong>+ Bukti</strong>).
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    Go to <strong>Vault / Receipts</strong> → <strong>Annual Docs</strong> and tap <strong>Select PDFs</strong> under <strong>Backfill Past Years (Form e-BE)</strong>.
+                  </li>
+                  <li>
+                    Select one or more past MyTax Form e-BE PDFs — CukaiKu auto-detects each YA, updates that year&apos;s profile &amp; reliefs, and merges without double-counting existing receipts.
+                  </li>
+                  <li>
+                    Switch the top <strong>YA</strong> selector to any past year and open <strong>e-Filing Workpapers</strong> to verify the <strong>Tax Computation Tally</strong> and attach any missing supporting receipts (<strong>+ Proof</strong>).
+                  </li>
+                </>
+              )}
+            </ol>
+          </div>
         </div>
 
         {/* Footer Actions */}
