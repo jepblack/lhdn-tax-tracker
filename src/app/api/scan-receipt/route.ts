@@ -344,6 +344,7 @@ export async function POST(request: Request) {
 
     // Fast-path: if a PDF is actually a Form e-BE, EA Form, or KWSP Statement,
     // tell the client so it can route to the full Annual Document pipeline and update all related records!
+    let cachedPdfText: string | null = null;
     if (isPdf) {
       try {
         const { text } = await extractText(
@@ -353,6 +354,7 @@ export async function POST(request: Request) {
         const joined = (Array.isArray(text) ? text.join("\n") : String(text || ""))
           .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
           .trim();
+        if (joined.length >= 15) cachedPdfText = joined;
         if (joined.length >= 40) {
           const detectedAnnualDocType = detectAnnualDocTypeFromText(joined);
           if (detectedAnnualDocType) {
@@ -361,9 +363,13 @@ export async function POST(request: Request) {
               fallbackToLocalOcr: false,
             });
           }
-          const tplMatch = await matchPublicVendorTemplate(joined);
-          if (tplMatch) {
-            return NextResponse.json(tplMatch);
+          try {
+            const tplMatch = await matchPublicVendorTemplate(joined);
+            if (tplMatch) {
+              return NextResponse.json(tplMatch);
+            }
+          } catch (tplErr) {
+            console.warn("Vendor template match error:", tplErr);
           }
         }
       } catch {
@@ -624,7 +630,9 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
 
     // 3. If PDF, extract text directly on server with unpdf before falling back
     if (isPdf) {
-      const pdfResult = await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
+      const pdfResult = cachedPdfText
+        ? parseAndClassifyReceiptText(cachedPdfText, taxYear)
+        : await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
       if (pdfResult) {
         return NextResponse.json({
           ...pdfResult,

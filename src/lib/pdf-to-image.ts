@@ -21,7 +21,7 @@ export async function renderPdfFirstPageToJpeg(
       const page = await pdf.getPage(1);
 
       const baseViewport = page.getViewport({ scale: 1 });
-      const scale = Math.min(2.0, Math.max(1.1, maxWidth / baseViewport.width));
+      const scale = Math.min(1.5, Math.max(1.0, maxWidth / baseViewport.width));
       const viewport = page.getViewport({ scale });
 
       const canvas = document.createElement("canvas");
@@ -50,7 +50,7 @@ export async function renderPdfFirstPageToJpeg(
   })();
 
   const timeoutPromise = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), 8000)
+    setTimeout(() => resolve(null), 15000)
   );
 
   return Promise.race([renderPromise, timeoutPromise]);
