@@ -45,10 +45,20 @@ export function FormBeChecklist({
       label: lang === "bm" ? "Pendapatan Bercukai" : "Chargeable Income",
       ok:
         ext.declaredChargeableIncome !== undefined &&
-        ext.declaredChargeableIncome !== null,
+        ext.declaredChargeableIncome !== null &&
+        !(
+          ext.declaredChargeableIncome === 0 &&
+          ext.annualIncome > 9000 &&
+          !ext.declaredTotalReliefs
+        ),
       detail:
         ext.declaredChargeableIncome !== undefined &&
-        ext.declaredChargeableIncome !== null
+        ext.declaredChargeableIncome !== null &&
+        !(
+          ext.declaredChargeableIncome === 0 &&
+          ext.annualIncome > 9000 &&
+          !ext.declaredTotalReliefs
+        )
           ? formatRM(ext.declaredChargeableIncome, true)
           : lang === "bm"
           ? "Tiada"
@@ -57,17 +67,31 @@ export function FormBeChecklist({
     {
       label: lang === "bm" ? "Cukai Kena Dibayar" : "Tax Charged / Payable",
       ok:
-        (ext.declaredTaxCharged !== undefined &&
+        ((ext.declaredTaxCharged !== undefined &&
           ext.declaredTaxCharged !== null) ||
-        (ext.declaredTaxPayable !== undefined &&
-          ext.declaredTaxPayable !== null),
+          (ext.declaredTaxPayable !== undefined &&
+            ext.declaredTaxPayable !== null)) &&
+        !(
+          (ext.declaredTaxCharged || 0) === 0 &&
+          (ext.declaredTaxPayable || 0) === 0 &&
+          ext.annualIncome > 9000 &&
+          !ext.declaredTotalReliefs
+        ),
       detail:
-        ext.declaredTaxPayable !== undefined &&
-        ext.declaredTaxPayable !== null
-          ? formatRM(ext.declaredTaxPayable, true)
-          : ext.declaredTaxCharged !== undefined &&
-            ext.declaredTaxCharged !== null
-          ? formatRM(ext.declaredTaxCharged, true)
+        ((ext.declaredTaxPayable !== undefined &&
+          ext.declaredTaxPayable !== null) ||
+          (ext.declaredTaxCharged !== undefined &&
+            ext.declaredTaxCharged !== null)) &&
+        !(
+          (ext.declaredTaxCharged || 0) === 0 &&
+          (ext.declaredTaxPayable || 0) === 0 &&
+          ext.annualIncome > 9000 &&
+          !ext.declaredTotalReliefs
+        )
+          ? formatRM(
+              ext.declaredTaxPayable ?? ext.declaredTaxCharged ?? 0,
+              true
+            )
           : lang === "bm"
           ? "Tiada"
           : "Missing",

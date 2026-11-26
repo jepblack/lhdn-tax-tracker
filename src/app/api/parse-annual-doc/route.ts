@@ -9,6 +9,7 @@ import {
   verifySameOrigin,
 } from "@/lib/api-security";
 import { callGroqJson } from "@/lib/groq-vision";
+import { parseFormBeText } from "@/lib/form-be-text-parser";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { AnnualDocExtraction, AnnualDocType } from "@/lib/types";
 
@@ -142,6 +143,35 @@ Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract these n
 Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": number}] (only include items with amount > 0).`
         : "";
 
+    const formBeSchemaKeys =
+      docType === "form_be_proof"
+        ? `
+  "detectedTaxYear": number | null,
+  "assessmentType": "separate" | "joint_self" | "joint_spouse" | null,
+  "employmentIncome": number,
+  "rentalIncome": number,
+  "otherIncome": number,
+  "statusReliefs": {
+    "individual": boolean,
+    "disabledIndividual": boolean,
+    "spouse": boolean,
+    "disabledSpouse": boolean,
+    "childrenUnder18": number,
+    "childrenHigherEd": number,
+    "disabledChildren": number,
+    "disabledChildrenHigherEd": number
+  },
+  "declaredTotalReliefs": number,
+  "declaredChargeableIncome": number,
+  "declaredTaxCharged": number,
+  "declaredTaxRebate": number,
+  "declaredTaxPayable": number,
+  "cp500Paid": number,
+  "otherTaxCredits": number,
+  "filingReferenceNo": string | null,
+  "filingDate": string | null,`
+        : "";
+
     const prompt = `You are a Malaysian LHDN personal tax document parser for YA ${taxYear}.
 Document type uploaded: "${docType}".
 Extract ONLY visibly printed annual MYR figures from this document. Never guess or fabricate numbers; return 0 for any field not present.
@@ -157,7 +187,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
   "socsoEisEmployee": number (SOCSO / PERKESO relief claimed),
   "lifeInsuranceAmount": number (life insurance / family takaful relief claimed),
   "medicalInsuranceAmount": number (education & medical insurance relief claimed),
-  "housingLoanInterest": number (first-home housing loan interest relief claimed),
+  "housingLoanInterest": number (first-home housing loan interest relief claimed),${formBeSchemaKeys}
   "extraReliefs": [{"categoryId": string, "label": string, "amount": number}],
   "summaryNote": string (short 1-sentence summary of what was extracted),
   "confidence": "high" | "medium" | "low"
@@ -179,7 +209,13 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
           imageMimeType: file.type || "image/jpeg",
           maxTokens,
         });
-        return NextResponse.json(normalizeAnnualExtraction(parsed, docType, "Groq Vision"));
+        return NextResponse.json(
+          mergeFormBeText(
+            normalizeAnnualExtraction(parsed, docType, "Groq Vision"),
+            docType,
+            pdfText
+          )
+        );
       } catch (groqErr) {
         groqFailReason =
           groqErr instanceof Error ? groqErr.message.slice(0, 120) : "Groq error";
@@ -259,12 +295,33 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
           const match = response.text.match(/\{[\s\S]*\}/);
           const parsed = JSON.parse((match ? match[0] : response.text).trim());
           return NextResponse.json(
-            normalizeAnnualExtraction(parsed, docType, "Gemini AI")
+            mergeFormBeText(
+              normalizeAnnualExtraction(parsed, docType, "Gemini AI"),
+              docType,
+              pdfText
+            )
           );
         }
       } catch (err) {
         geminiFailReason = err instanceof Error ? err.message.slice(0, 140) : "AI error";
         console.warn("Annual doc Gemini parse failed, trying fallback:", err);
+      }
+    }
+
+    // Fallback: deterministic local text parser for Form e-BE PDFs
+    if (pdfText.length >= 20 && docType === "form_be_proof") {
+      const be = parseFormBeText(pdfText);
+      if (
+        (be.annualIncome && be.annualIncome > 0) ||
+        (be.declaredTotalReliefs && be.declaredTotalReliefs > 0) ||
+        (be.pcbPaid && be.pcbPaid > 0)
+      ) {
+        const base = normalizeAnnualExtraction(
+          { providerName: "LHDN Form BE", confidence: "high" },
+          docType,
+          "LHDN Form BE Text Parser"
+        );
+        return NextResponse.json(mergeFormBeText(base, docType, pdfText));
       }
     }
 
@@ -306,6 +363,74 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
     console.error("Annual doc parse error:", err);
     return NextResponse.json({ skipped: true });
   }
+}
+
+function mergeFormBeText(
+  ext: AnnualDocExtraction,
+  docType: AnnualDocType,
+  pdfText: string
+): AnnualDocExtraction {
+  if (docType !== "form_be_proof" || pdfText.length < 40) return ext;
+  const be = parseFormBeText(pdfText);
+
+  const mergedExtras = [...(ext.extraReliefs || [])];
+  for (const item of be.extraReliefs || []) {
+    if (!mergedExtras.some((e) => e.categoryId === item.categoryId)) {
+      mergedExtras.push(item);
+    }
+  }
+
+  return {
+    ...ext,
+    detectedTaxYear: ext.detectedTaxYear ?? be.detectedTaxYear ?? null,
+    assessmentType: ext.assessmentType ?? be.assessmentType ?? null,
+    annualIncome: ext.annualIncome > 0 ? ext.annualIncome : be.annualIncome || 0,
+    employmentIncome:
+      (ext.employmentIncome || 0) > 0
+        ? ext.employmentIncome
+        : be.employmentIncome || 0,
+    rentalIncome:
+      (ext.rentalIncome || 0) > 0 ? ext.rentalIncome : be.rentalIncome || 0,
+    declaredTotalReliefs:
+      (ext.declaredTotalReliefs || 0) > 0
+        ? ext.declaredTotalReliefs
+        : be.declaredTotalReliefs || 0,
+    declaredChargeableIncome:
+      (ext.declaredChargeableIncome || 0) > 0
+        ? ext.declaredChargeableIncome
+        : be.declaredChargeableIncome || 0,
+    declaredTaxCharged:
+      (ext.declaredTaxCharged || 0) > 0
+        ? ext.declaredTaxCharged
+        : be.declaredTaxCharged || 0,
+    declaredTaxRebate:
+      (ext.declaredTaxRebate || 0) > 0
+        ? ext.declaredTaxRebate
+        : be.declaredTaxRebate || 0,
+    zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : be.zakatPaid || 0,
+    declaredTaxPayable:
+      (ext.declaredTaxPayable || 0) > 0
+        ? ext.declaredTaxPayable
+        : be.declaredTaxPayable || 0,
+    pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : be.pcbPaid || 0,
+    cp500Paid: (ext.cp500Paid || 0) > 0 ? ext.cp500Paid : be.cp500Paid || 0,
+    statusReliefs: ext.statusReliefs ?? be.statusReliefs,
+    lifeInsuranceAmount:
+      ext.lifeInsuranceAmount > 0
+        ? ext.lifeInsuranceAmount
+        : be.lifeInsuranceAmount || 0,
+    epfEmployee: ext.epfEmployee > 0 ? ext.epfEmployee : be.epfEmployee || 0,
+    medicalInsuranceAmount:
+      ext.medicalInsuranceAmount > 0
+        ? ext.medicalInsuranceAmount
+        : be.medicalInsuranceAmount || 0,
+    socsoEisEmployee:
+      ext.socsoEisEmployee > 0
+        ? ext.socsoEisEmployee
+        : be.socsoEisEmployee || 0,
+    extraReliefs: mergedExtras,
+    filingReferenceNo: ext.filingReferenceNo || be.filingReferenceNo || null,
+  };
 }
 
 function normalizeAnnualExtraction(
