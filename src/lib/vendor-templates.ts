@@ -174,19 +174,66 @@ export async function matchPublicVendorTemplate(
 
   for (const tpl of templates) {
     if (!tpl.vendor_keywords.length) continue;
-    const allMatch = tpl.vendor_keywords.every((kw) =>
+    const matchedKwCount = tpl.vendor_keywords.filter((kw) =>
       upper.includes(kw.toUpperCase())
-    );
-    if (!allMatch) continue;
+    ).length;
+    if (matchedKwCount < Math.min(2, tpl.vendor_keywords.length)) continue;
 
     // If an internet bill is bundled with TV/entertainment/device packs (e.g. Unifi TV),
-    // skip the total-charge template so AI can isolate only the eligible internet line item.
-    if (
+    // try extracting the eligible internet line item directly before falling back to AI.
+    const isBundledInternet =
       tpl.sub_category_id === "lifestyle_internet" &&
       /(UNIFI\s*TV|HYPPTV|ASTRO|ENTERTAINMENT\s*PACK|ULTIMATE\s*PACK|DEVICE\s*INSTALLMENT)/i.test(
         upper
-      )
-    ) {
+      );
+
+    if (isBundledInternet) {
+      const lineMatch = flat.match(
+        /(?:Residential\s+High\s+Speed\s+Internet|unifi\s+\d+\s*(?:Mbps|Gbps)|High\s+Speed\s+Broadband)[^\n]{0,80}?(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+      );
+      const netLineAmt = lineMatch ? Number(lineMatch[1].replace(/,/g, "")) : 0;
+      if (Number.isFinite(netLineAmt) && netLineAmt > 0 && netLineAmt < 1000) {
+        const sstStr = tpl.sst_anchor
+          ? extractValueAfterAnchor(flat, tpl.sst_anchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i)
+          : "";
+        const sstAmt = sstStr ? Number(sstStr.replace(/,/g, "")) : 0;
+        const totalStr = extractValueAfterAnchor(
+          flat,
+          tpl.amount_anchor,
+          /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+        );
+        const totalAmt = totalStr ? Number(totalStr.replace(/,/g, "")) : netLineAmt;
+        const dateSeg = tpl.date_anchor
+          ? flat.match(new RegExp(`${escapeRegex(tpl.date_anchor)}[^\\n]{0,45}`, "i"))?.[0] || ""
+          : "";
+        const parsedDate = parseDateToken(dateSeg);
+        const invStr = tpl.invoice_anchor
+          ? extractValueAfterAnchor(
+              flat,
+              tpl.invoice_anchor,
+              /[:#\s]+([A-Z0-9][A-Z0-9\-\/]{4,28})/i
+            )
+          : "";
+        return {
+          eligibility: "partial",
+          merchant: tpl.vendor_name,
+          date: parsedDate,
+          amount: netLineAmt,
+          totalAmount: totalAmt > netLineAmt ? totalAmt : netLineAmt,
+          sstOrTaxAmount: sstAmt,
+          taxInclusive: true,
+          currency: "MYR",
+          invoiceNumber: invStr,
+          archiveCategory: "personal",
+          description: `${tpl.vendor_name} — Internet portion only (TV/entertainment & SST excluded via shared template)`,
+          suggestedCategoryId: tpl.category_id,
+          suggestedSubCategoryId: tpl.sub_category_id,
+          confidence: "high",
+          reasoning: `Matched shared CukaiKu layout template for ${tpl.vendor_name}; isolated net internet subscription (${netLineAmt.toFixed(2)}) excluding bundled TV/SST.`,
+          scanEngine: "local-ocr",
+          learnedTemplateVendor: tpl.vendor_key,
+        };
+      }
       continue;
     }
 
@@ -287,11 +334,21 @@ export async function learnPublicVendorTemplate(
   if (!vendorKey || vendorKey.length < 3) return;
 
   const flat = pdfText.replace(/\s+/g, " ");
+  const upper = flat.toUpperCase();
   const amtFixed = result.totalAmount.toFixed(2);
-  const amtAnchor = findAnchorBeforeValue(
-    flat,
-    new RegExp(`(?:RM|MYR)?\\s*${escapeRegex(amtFixed)}`)
-  );
+  const amtComma = result.totalAmount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const amtAnchor =
+    findAnchorBeforeValue(
+      flat,
+      new RegExp(`(?:RM|MYR)?\\s*${escapeRegex(amtComma)}`)
+    ) ||
+    findAnchorBeforeValue(
+      flat,
+      new RegExp(`(?:RM|MYR)?\\s*${escapeRegex(amtFixed)}`)
+    );
   if (!amtAnchor || amtAnchor.length < 3) return;
 
   const dateAnchor = result.date
@@ -316,7 +373,7 @@ export async function learnPublicVendorTemplate(
     .toUpperCase()
     .replace(/\b(SDN|BHD|BERHAD|ENTERPRISE|TRADING|PLT)\b/g, "")
     .split(/[^A-Z0-9]+/)
-    .filter((w) => w.length >= 3)
+    .filter((w) => w.length >= 3 && upper.includes(w))
     .slice(0, 3);
   if (keywords.length === 0) return;
 
@@ -334,12 +391,13 @@ export async function learnPublicVendorTemplate(
     hit_count: 1,
   };
 
-  // Update in-memory cache immediately
-  if (cachedTemplates) {
-    const idx = cachedTemplates.findIndex((t) => t.vendor_key === vendorKey);
-    if (idx >= 0) cachedTemplates[idx] = newTpl;
-    else cachedTemplates.unshift(newTpl);
-  }
+  // Ensure in-memory cache is populated and updated immediately
+  const current = await loadPublicVendorTemplates();
+  const idx = current.findIndex((t) => t.vendor_key === vendorKey);
+  if (idx >= 0) current[idx] = newTpl;
+  else current.unshift(newTpl);
+  cachedTemplates = current;
+  cachedAt = Date.now();
 
   try {
     const admin = getSupabaseAdminClient();
