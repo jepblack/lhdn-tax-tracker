@@ -679,7 +679,8 @@ export function ReceiptScannerModal({
     } else {
       const bestAmount = result.amount > 0 ? result.amount : result.totalAmount;
       if (bestAmount > 0) setAmount(String(bestAmount));
-      if (result.suggestedCategoryId) {
+      const hasUsefulRead = Boolean(result.merchant?.trim()) || bestAmount > 0;
+      if (isGeneralScanMode && hasUsefulRead && result.suggestedCategoryId) {
         setCategoryId(result.suggestedCategoryId);
         const matchedCat = getReliefCategories(targetTaxYear).find(
           (c) => c.id === result.suggestedCategoryId
@@ -771,15 +772,13 @@ export function ReceiptScannerModal({
           file.type === "application/pdf" ||
           file.name.toLowerCase().endsWith(".pdf");
         if (isPdf) {
-          setScanStatusText("Rendering PDF page...");
-          const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
-          uploadFile = renderedJpeg || file;
-          if (renderedJpeg) fileForOcr = renderedJpeg;
+          setScanStatusText("Reading PDF document...");
+          uploadFile = file;
         } else {
           setScanStatusText("Optimizing photo...");
           uploadFile = await normalizeImageForAiUpload(file);
         }
-        setScanStatusText("Scanning with Gemini AI Vision...");
+        setScanStatusText("Scanning with Cloud AI...");
         const formData = new FormData();
         formData.append("file", uploadFile);
         formData.append("taxYear", String(targetTaxYear));
@@ -796,7 +795,7 @@ export function ReceiptScannerModal({
         }
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 22000);
+        const timer = setTimeout(() => controller.abort(), 35000);
         let res: Response;
         try {
           res = await fetch("/api/scan-receipt", {
@@ -818,6 +817,36 @@ export function ReceiptScannerModal({
             applyScanResult(data as ReceiptScanResult);
             usedCloudAi = true;
             await onAiScanCompleted();
+          } else if (isPdf && data.fallbackToLocalOcr) {
+            // Scanned PDF with no selectable text: render Page 1 to JPEG and retry AI/OCR
+            setScanStatusText("Rendering scanned PDF page...");
+            const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
+            if (renderedJpeg) {
+              fileForOcr = renderedJpeg;
+              const retryFd = new FormData();
+              retryFd.append("file", renderedJpeg);
+              retryFd.append("taxYear", String(targetTaxYear));
+              retryFd.append("planTier", subscription.planTier);
+              retryFd.append("aiScansUsed", String(subscription.aiScansUsed));
+              const retryRes = await fetch("/api/scan-receipt", {
+                method: "POST",
+                headers,
+                body: retryFd,
+              });
+              if (retryRes.ok) {
+                const retryData = await retryRes.json();
+                if (!retryData.fallbackToLocalOcr && retryData.eligibility) {
+                  applyScanResult(retryData as ReceiptScanResult);
+                  usedCloudAi = true;
+                  await onAiScanCompleted();
+                }
+              }
+            }
+          }
+        } else {
+          const errJson = await res.json().catch(() => null);
+          if (errJson?.message || errJson?.error) {
+            setScanNotice(String(errJson.message || errJson.error));
           }
         }
       } catch {

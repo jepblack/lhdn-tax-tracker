@@ -45,7 +45,7 @@ function pickCandidateModels(allIds: string[], needsVision: boolean): string[] {
         if (rx.test(id) && !picked.includes(id)) picked.push(id);
       }
     }
-    if (picked.length > 0) return picked.slice(0, 4);
+    if (picked.length > 0) return picked.slice(0, 2);
     return [
       "meta-llama/llama-4-maverick-17b-128e-instruct",
       "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -66,7 +66,7 @@ function pickCandidateModels(allIds: string[], needsVision: boolean): string[] {
       if (rx.test(id) && !picked.includes(id)) picked.push(id);
     }
   }
-  if (picked.length > 0) return picked.slice(0, 3);
+  if (picked.length > 0) return picked.slice(0, 2);
   return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
 }
 
@@ -111,7 +111,7 @@ export async function callGroqJson(params: {
 
   for (const model of candidates) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 14000);
+    const timer = setTimeout(() => controller.abort(), 9000);
     try {
       let res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",

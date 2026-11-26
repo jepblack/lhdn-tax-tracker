@@ -375,12 +375,12 @@ function mergeFormBeText(
   if (docType !== "form_be_proof" || pdfText.length < 40) return ext;
   const be = parseFormBeText(pdfText);
 
-  const mergedExtras = [...(ext.extraReliefs || [])];
-  for (const item of be.extraReliefs || []) {
-    if (!mergedExtras.some((e) => e.categoryId === item.categoryId)) {
-      mergedExtras.push(item);
-    }
-  }
+  // When deterministic PDF text parsing is available, prefer its verified extraReliefs
+  // to avoid AI misreading "Terhad 6,000" limit columns as claimed amounts.
+  const mergedExtras =
+    be.extraReliefs && be.extraReliefs.length > 0
+      ? [...be.extraReliefs]
+      : [...(ext.extraReliefs || [])];
 
   return {
     ...ext,
