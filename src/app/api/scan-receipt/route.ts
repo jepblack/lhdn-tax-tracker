@@ -622,20 +622,19 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
         return NextResponse.json({
           ...pdfResult,
           aiSkippedReason: geminiErrorMsg
-            ? `Gemini AI failed (${geminiErrorMsg.slice(0, 220)}) — fell back to PDF text parser.`
+            ? "Cloud AI is temporarily busy — extracted using built-in PDF reader. Please review the details below."
             : undefined,
         });
       }
     }
 
-    // 4. Seamless fallback to client-side free OCR (include diagnostic reason!)
+    // 4. Seamless fallback to client-side free OCR
     return NextResponse.json({
       fallbackToLocalOcr: true,
-      aiSkippedReason: geminiErrorMsg
-        ? isPdf && geminiErrorMsg.includes("400")
-          ? `This PDF was rejected by Gemini (${geminiErrorMsg.slice(0, 160)}). It may be password-protected or use an unsupported PDF format—try taking a screenshot/photo of it instead!`
-          : `Gemini AI unavailable: ${geminiErrorMsg.slice(0, 240)}`
-        : "External AI unavailable — switched automatically to built-in free OCR.",
+      aiSkippedReason:
+        isPdf && geminiErrorMsg && geminiErrorMsg.includes("400")
+          ? "Could not read this PDF format directly — try uploading a screenshot or photo instead."
+          : "Cloud AI is temporarily unavailable — switched automatically to built-in OCR.",
     });
   } catch (err) {
     console.error("Scan route error:", err);

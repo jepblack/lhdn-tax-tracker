@@ -351,9 +351,9 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
     const skipReason = !authed
       ? "Document archived! Sign in with Google under Profile to enable AI extraction for annual documents."
       : isPdf && pdfText.length < 20
-      ? `Document archived, but this PDF has no readable text (${groqFailReason || geminiFailReason || "scanned PDF"}). Take a screenshot and upload the image instead!`
+      ? "Document archived, but this scanned PDF has no readable text. Take a screenshot and upload the image instead!"
       : groqFailReason || geminiFailReason
-      ? `Document archived, but AI extraction failed (Groq: ${groqFailReason || "n/a"} | Gemini: ${geminiFailReason || "n/a"}).`
+      ? "Document archived, but Cloud AI is temporarily unavailable. Please try again shortly or enter the figures manually."
       : "Document archived! No numeric tax figures were detected automatically.";
 
     return NextResponse.json({
