@@ -430,7 +430,7 @@ export function BatchImportModal({
                         {item.status === "ready" && item.result?.learnedTemplateVendor && (
                           <span
                             title={`Matched shared template: ${item.result.learnedTemplateVendor}`}
-                            className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800"
+                            className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white"
                           >
                             ⚡ Template
                           </span>

@@ -2847,7 +2847,7 @@ function EngineBadge({
     return (
       <span
         title={`Matched shared layout template (${templateVendor})`}
-        className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800"
+        className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white"
       >
         ⚡ Template
       </span>
