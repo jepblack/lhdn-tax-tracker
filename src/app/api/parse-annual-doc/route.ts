@@ -123,6 +123,7 @@ Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract these n
    - "declaredTaxCharged": number (Cukai Pendapatan Dikenakan / Income Tax Charged before rebates)
    - "declaredTaxRebate": number (Jumlah Rebat / Total Rebate including Zakat & RM400/RM800 rebate)
    - "declaredTaxPayable": number (Net Tax Charged / Cukai Kena Dibayar after rebates, BEFORE deducting PCB/MTD)
+   - "declaredRefund": number (Lebihan Bayaran / Excess Payment as positive, or negative Baki Cukai Kena Dibayar if underpaid)
    - "cp500Paid": number (Ansuran CP500 / Bayaran Sendiri)
    - "otherTaxCredits": number (Tolakan Seksyen 110 / Pelepasan Seksyen 132 & 133)
    - "filingReferenceNo": string | null (e-BE acknowledgement / submission reference number, if printed)
@@ -166,6 +167,7 @@ Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": numbe
   "declaredTaxCharged": number,
   "declaredTaxRebate": number,
   "declaredTaxPayable": number,
+  "declaredRefund": number,
   "cp500Paid": number,
   "otherTaxCredits": number,
   "filingReferenceNo": string | null,
@@ -412,8 +414,16 @@ function mergeFormBeText(
       (ext.declaredTaxPayable || 0) > 0
         ? ext.declaredTaxPayable
         : be.declaredTaxPayable || 0,
+    declaredRefund:
+      ext.declaredRefund !== undefined && ext.declaredRefund !== null
+        ? ext.declaredRefund
+        : be.declaredRefund,
     pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : be.pcbPaid || 0,
     cp500Paid: (ext.cp500Paid || 0) > 0 ? ext.cp500Paid : be.cp500Paid || 0,
+    otherTaxCredits:
+      (ext.otherTaxCredits || 0) > 0
+        ? ext.otherTaxCredits
+        : be.otherTaxCredits || 0,
     statusReliefs: ext.statusReliefs ?? be.statusReliefs,
     lifeInsuranceAmount:
       ext.lifeInsuranceAmount > 0
@@ -512,6 +522,10 @@ function normalizeAnnualExtraction(
     declaredTaxCharged: Number(parsed.declaredTaxCharged) || 0,
     declaredTaxRebate: Number(parsed.declaredTaxRebate) || 0,
     declaredTaxPayable: Number(parsed.declaredTaxPayable) || 0,
+    declaredRefund:
+      parsed.declaredRefund !== undefined && parsed.declaredRefund !== null
+        ? Number(parsed.declaredRefund) || 0
+        : undefined,
     assessmentType,
     employmentIncome: Number(parsed.employmentIncome) || 0,
     rentalIncome: Number(parsed.rentalIncome) || 0,

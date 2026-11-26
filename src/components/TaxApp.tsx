@@ -451,6 +451,12 @@ export function TaxApp() {
         ext.annualIncome > 0 ? ext.annualIncome : baseProfile.annualIncome,
       pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : baseProfile.pcbPaid,
       zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : baseProfile.zakatPaid,
+      cp500Paid:
+        (ext.cp500Paid || 0) > 0 ? ext.cp500Paid : baseProfile.cp500Paid,
+      otherTaxCredits:
+        (ext.otherTaxCredits || 0) > 0
+          ? ext.otherTaxCredits
+          : baseProfile.otherTaxCredits,
       statusReliefs: mergedStatusReliefs,
     };
 
@@ -458,6 +464,8 @@ export function TaxApp() {
       ext.annualIncome > 0 ||
       ext.pcbPaid > 0 ||
       ext.zakatPaid > 0 ||
+      (ext.cp500Paid || 0) > 0 ||
+      (ext.otherTaxCredits || 0) > 0 ||
       (isFormBeImport && ext.statusReliefs)
     ) {
       if (targetYear === profile.taxYear) {
@@ -501,6 +509,9 @@ export function TaxApp() {
         declaredTaxCharged: ext.declaredTaxCharged,
         declaredTaxRebate: ext.declaredTaxRebate,
         declaredTaxPayable: ext.declaredTaxPayable,
+        declaredRefund: ext.declaredRefund,
+        cp500Paid: ext.cp500Paid,
+        otherTaxCredits: ext.otherTaxCredits,
       };
       setFormBeBaselines((prev) => {
         const next = { ...prev, [String(targetYear)]: baseline };

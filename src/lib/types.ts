@@ -41,6 +41,8 @@ export interface TaxProfile {
   annualIncome: number;
   zakatPaid: number;
   pcbPaid: number;
+  cp500Paid?: number;
+  otherTaxCredits?: number;
   taxpayerMode?: TaxpayerMode;
   statusReliefs: StatusReliefs;
 }
@@ -278,6 +280,7 @@ export interface AnnualDocExtraction {
   declaredTaxCharged?: number;
   declaredTaxRebate?: number;
   declaredTaxPayable?: number;
+  declaredRefund?: number; // positive = Lebihan Bayaran (refund), negative = Baki Cukai (balance due)
   assessmentType?: "separate" | "joint_self" | "joint_spouse" | null;
   employmentIncome?: number;
   rentalIncome?: number;
@@ -310,6 +313,7 @@ export interface FormBeBaseline {
   declaredTaxCharged?: number;
   declaredTaxRebate?: number;
   declaredTaxPayable?: number;
+  declaredRefund?: number; // positive = Lebihan Bayaran (refund), negative = Baki Cukai (balance due)
   assessmentType?: "separate" | "joint_self" | "joint_spouse" | null;
   employmentIncome?: number;
   rentalIncome?: number;

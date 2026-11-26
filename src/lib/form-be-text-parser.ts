@@ -93,6 +93,38 @@ export function parseFormBeText(
     /Ansuran\s+CP500[^\d]{0,40}([\d,]+(?:\.\d{1,2})?)/i
   );
 
+  const otherTaxCredits = matchLastNumberOnLine(
+    flat,
+    /Jumlah\s+tolakan\s*\/\s*Pelepasan\s+cukai[^\n]{0,100}?\)\s*([\d,]+(?:\.\d{1,2})?)/i
+  );
+
+  const excessPaid =
+    matchLastNumberOnLine(
+      flat,
+      /LEBIHAN\s+BAYARAN\s+(?:TAHUN\s+TAKSIRAN\s+20\d{2}\s+)?([\d,]+(?:\.\d{1,2})?)/i
+    ) ||
+    matchLastNumberOnLine(
+      flat,
+      /EXCESS\s+PAYMENT[^\d]{0,30}([\d,]+(?:\.\d{1,2})?)/i
+    );
+  const balanceDue =
+    matchLastNumberOnLine(
+      flat,
+      /BAKI\s+CUKAI\s+KENA\s+DIBAYAR[^\d]{0,30}([\d,]+(?:\.\d{1,2})?)/i
+    ) ||
+    matchLastNumberOnLine(
+      flat,
+      /BALANCE\s+OF\s+TAX\s+PAYABLE[^\d]{0,30}([\d,]+(?:\.\d{1,2})?)/i
+    );
+  const declaredRefund =
+    excessPaid > 0
+      ? excessPaid
+      : balanceDue > 0
+      ? -balanceDue
+      : pcbPaid > 0 || declaredTaxPayable > 0
+      ? Math.round((pcbPaid + cp500Paid - declaredTaxPayable) * 100) / 100
+      : undefined;
+
   // Status reliefs
   const selfRelief = matchLastNumberOnLine(
     text,
@@ -234,8 +266,10 @@ export function parseFormBeText(
     declaredTaxRebate,
     zakatPaid,
     declaredTaxPayable,
+    declaredRefund,
     pcbPaid,
     cp500Paid,
+    otherTaxCredits,
     statusReliefs,
     lifeInsuranceAmount,
     epfEmployee,

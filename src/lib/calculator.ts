@@ -224,9 +224,10 @@ export function calculateTaxSummary(
   }
 
   const zakatRebate = Math.max(0, profile.zakatPaid || 0);
+  const otherTaxCredits = Math.max(0, profile.otherTaxCredits || 0);
   const netTaxPayable = Math.max(
     0,
-    round2(grossTax - smallIncomeRebate - zakatRebate)
+    round2(grossTax - smallIncomeRebate - zakatRebate - otherTaxCredits)
   );
 
   const taxSavedByExpenseReliefs = Math.max(
@@ -234,7 +235,9 @@ export function calculateTaxSummary(
     round2(grossTaxWithoutExpenseReliefs - grossTax)
   );
 
-  const estimatedRefund = round2((profile.pcbPaid || 0) - netTaxPayable);
+  const estimatedRefund = round2(
+    (profile.pcbPaid || 0) + (profile.cp500Paid || 0) - netTaxPayable
+  );
 
   // Highlight top high-ROI unused relief opportunities
   const highRoiIds = new Set([

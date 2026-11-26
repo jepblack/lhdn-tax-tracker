@@ -503,27 +503,126 @@ export function FilingToolsSheet({
                       </div>
                     )}
 
-                    {/* Tax Computation Tally (Form BE declared totals vs CukaiKu calculation) */}
-                    {(formBeBaseline.declaredTotalReliefs ||
+                    {/* Tax Computation Tally (Form BE RUMUSAN CUKAI vs CukaiKu calculation) */}
+                    {(formBeBaseline.declaredIncome ||
+                      formBeBaseline.declaredTotalReliefs ||
                       formBeBaseline.declaredChargeableIncome ||
-                      formBeBaseline.declaredTaxPayable) ? (() => {
+                      formBeBaseline.declaredTaxCharged ||
+                      formBeBaseline.declaredTaxPayable ||
+                      formBeBaseline.declaredPcb) ? (() => {
+                      const beCredits = formBeBaseline.otherTaxCredits || 0;
+                      const appCredits = profile.otherTaxCredits || 0;
+                      const bePcbTotal =
+                        (formBeBaseline.declaredPcb || 0) +
+                        (formBeBaseline.cp500Paid || 0);
+                      const appPcbTotal =
+                        (profile.pcbPaid || 0) + (profile.cp500Paid || 0);
+                      const beRefund =
+                        formBeBaseline.declaredRefund ??
+                        (bePcbTotal > 0 || (formBeBaseline.declaredTaxPayable || 0) > 0
+                          ? Math.round(
+                              (bePcbTotal -
+                                (formBeBaseline.declaredTaxPayable || 0)) *
+                                100
+                            ) / 100
+                          : 0);
+                      const appRebateTotal =
+                        summary.smallIncomeRebate + summary.zakatRebate;
+
                       const checks = [
                         {
-                          label: lang === "bm" ? "Jumlah Pelepasan" : "Total Reliefs",
+                          label:
+                            lang === "bm"
+                              ? "Jumlah Pendapatan"
+                              : "Aggregate Income",
+                          be: formBeBaseline.declaredIncome || 0,
+                          app: profile.annualIncome,
+                          show: (formBeBaseline.declaredIncome || 0) > 0,
+                        },
+                        {
+                          label:
+                            lang === "bm" ? "Jumlah Pelepasan" : "Total Reliefs",
                           be: formBeBaseline.declaredTotalReliefs || 0,
                           app: summary.totalReliefs,
+                          show: (formBeBaseline.declaredTotalReliefs || 0) > 0,
                         },
                         {
-                          label: lang === "bm" ? "Pendapatan Bercukai" : "Chargeable Income",
+                          label:
+                            lang === "bm"
+                              ? "Pendapatan Bercukai"
+                              : "Chargeable Income",
                           be: formBeBaseline.declaredChargeableIncome || 0,
                           app: summary.chargeableIncome,
+                          show:
+                            (formBeBaseline.declaredChargeableIncome || 0) > 0,
                         },
                         {
-                          label: lang === "bm" ? "Cukai Kena Dibayar" : "Net Tax Payable",
+                          label:
+                            lang === "bm"
+                              ? "Jumlah Cukai Pendapatan"
+                              : "Income Tax Charged",
+                          be: formBeBaseline.declaredTaxCharged || 0,
+                          app: summary.grossTax,
+                          show: (formBeBaseline.declaredTaxCharged || 0) > 0,
+                        },
+                        {
+                          label:
+                            lang === "bm"
+                              ? "Jumlah Rebat & Zakat"
+                              : "Rebates & Zakat",
+                          be:
+                            (formBeBaseline.declaredTaxRebate || 0) > 0
+                              ? formBeBaseline.declaredTaxRebate || 0
+                              : formBeBaseline.declaredZakat || 0,
+                          app: appRebateTotal,
+                          show:
+                            (formBeBaseline.declaredTaxRebate || 0) > 0 ||
+                            (formBeBaseline.declaredZakat || 0) > 0,
+                        },
+                        {
+                          label:
+                            lang === "bm"
+                              ? "Tolakan Seksyen 110/132/133"
+                              : "Tax Credits (S.110/132/133)",
+                          be: beCredits,
+                          app: appCredits,
+                          show: beCredits > 0 || appCredits > 0,
+                        },
+                        {
+                          label:
+                            lang === "bm"
+                              ? "Cukai Kena Dibayar"
+                              : "Net Tax Payable",
                           be: formBeBaseline.declaredTaxPayable || 0,
                           app: summary.netTaxPayable,
+                          show: (formBeBaseline.declaredTaxPayable || 0) > 0,
                         },
-                      ].filter((c) => c.be > 0);
+                        {
+                          label:
+                            (formBeBaseline.cp500Paid || 0) > 0
+                              ? "PCB / MTD + CP500"
+                              : "PCB / MTD",
+                          be: bePcbTotal,
+                          app: appPcbTotal,
+                          show: bePcbTotal > 0,
+                        },
+                        {
+                          label:
+                            beRefund >= 0
+                              ? lang === "bm"
+                                ? "Lebihan Bayaran (Bayaran Balik)"
+                                : "Excess Paid (Tax Refund)"
+                              : lang === "bm"
+                              ? "Baki Cukai Kena Dibayar"
+                              : "Balance of Tax Payable",
+                          be: beRefund,
+                          app: summary.estimatedRefund,
+                          show:
+                            formBeBaseline.declaredRefund !== undefined ||
+                            bePcbTotal > 0 ||
+                            (formBeBaseline.declaredTaxPayable || 0) > 0,
+                        },
+                      ].filter((c) => c.show);
                       const allTallied =
                         checks.length > 0 &&
                         checks.every((c) => Math.abs(c.be - c.app) <= 1);
