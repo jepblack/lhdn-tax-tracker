@@ -2176,6 +2176,23 @@ export function ReceiptScannerModal({
           )}
 
           {/* Optional Raw OCR Text Drawer */}
+          {scanResult && (
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 space-y-1">
+              {scanResult.confidence === "low" && (
+                <p className="font-semibold text-amber-800">
+                  {lang === "bm"
+                    ? "Keyakinan rendah — butiran tidak dapat dipastikan 100%. Sila semak dan isi mana-mana ruangan yang kurang secara manual."
+                    : "Low confidence — details could not be determined 100%. Please verify and adjust any missing or uncertain fields manually."}
+                </p>
+              )}
+              <p>
+                {lang === "bm"
+                  ? "Nota: Imbasan automatik mungkin kadangkala kurang tepat — sila semak semula semua angka berbanding resit/bil asal anda."
+                  : "Note: Automated scanning may occasionally be inaccurate — please double-check all extracted figures against your original receipt/bill."}
+              </p>
+            </div>
+          )}
+
           {scanResult?.rawText && (
             <div>
               <button

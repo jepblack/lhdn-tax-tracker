@@ -368,6 +368,11 @@ export function BatchImportModal({
 
           {items.length > 0 && (
             <div className="space-y-2.5">
+              <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                Note: Automated scanning may occasionally be inaccurate — use{" "}
+                <strong>View</strong> to double-check extracted figures against
+                your original receipts/bills.
+              </p>
               {items.map((item) => {
                 const elig = item.result?.eligibility;
                 return (
@@ -435,6 +440,15 @@ export function BatchImportModal({
                             ⚡ Template
                           </span>
                         )}
+                        {item.status === "ready" &&
+                          item.result?.confidence === "low" && (
+                            <span
+                              title="Low confidence — could not be determined 100%"
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900"
+                            >
+                              Not 100% sure
+                            </span>
+                          )}
                         {item.status === "ready" && elig === "eligible" && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
                             <Sparkles className="h-2.5 w-2.5" /> Eligible
