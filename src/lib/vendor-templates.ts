@@ -23,6 +23,8 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
     vendor_keywords: [
       "TM TECHNOLOGY",
       "TELEKOM MALAYSIA",
+      "200201003726",
+      "571389-H",
       "UNIFI.COM.MY",
       "TM.COM.MY",
       "UNIFI",
@@ -43,6 +45,9 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
       "TT DOTCOM",
       "TIME DOTCOM",
       "TIME FIBRE",
+      "197901008085",
+      "52371-A",
+      "B16-1808-31031789",
       "TIME.COM.MY",
     ],
     amount_anchor: "Total Current Charges",
@@ -57,7 +62,7 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "maxis-fibre",
     vendor_name: "Maxis",
-    vendor_keywords: ["MAXIS"],
+    vendor_keywords: ["MAXIS", "199201002549", "234053-D", "W10-1808-32000489"],
     amount_anchor: "Current Charges",
     date_anchor: "Statement Date",
     invoice_anchor: "Bill No",
@@ -70,7 +75,7 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "celcomdigi",
     vendor_name: "CelcomDigi",
-    vendor_keywords: ["CELCOMDIGI", "CELCOM", "DIGI"],
+    vendor_keywords: ["CELCOMDIGI", "CELCOM", "DIGI", "199701009694", "425190-X"],
     amount_anchor: "Current Charges",
     date_anchor: "Bill Date",
     invoice_anchor: "Bill No",
@@ -83,7 +88,7 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "u-mobile",
     vendor_name: "U Mobile",
-    vendor_keywords: ["U MOBILE", "UMOBILE"],
+    vendor_keywords: ["U MOBILE", "UMOBILE", "199101013657", "223969-U"],
     amount_anchor: "Current Charges",
     date_anchor: "Bill Date",
     invoice_anchor: "Bill No",
@@ -96,7 +101,14 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "yes-5g",
     vendor_name: "Yes 5G",
-    vendor_keywords: ["YTL COMMUNICATIONS", "YES 5G", "YES.MY"],
+    vendor_keywords: [
+      "YTL COMMUNICATIONS",
+      "YES 5G",
+      "YES.MY",
+      "200701035605",
+      "793634-V",
+      "W10-1808-32000311",
+    ],
     amount_anchor: "Current Charges",
     date_anchor: "Statement Date",
     invoice_anchor: "Invoice No",
