@@ -908,7 +908,8 @@ export function FilingToolsSheet({
               </div>
 
               {/* High-ROI Year-End Opportunities */}
-              {summary.opportunities.length > 0 && (
+              {profile.taxYear >= new Date().getFullYear() &&
+                summary.opportunities.length > 0 && (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
                     <Sparkles className="h-4 w-4 text-emerald-600" />

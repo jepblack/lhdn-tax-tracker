@@ -195,6 +195,7 @@ export function DashboardTab({
     .filter((c): c is NonNullable<typeof c> => Boolean(c));
 
   // LHDN e-Filing Deadline Countdown (YA N is filed in year N+1: 30 April for e-BE, 30 June for e-B)
+  const isPastYear = summary.taxYear < new Date().getFullYear();
   const filingYear = summary.taxYear + 1;
   const deadlineDate =
     taxpayerMode === "e-B"
@@ -221,7 +222,7 @@ export function DashboardTab({
       />
 
       {/* Payday Reminder Banner (if within ±2 days or payday has passed without current-month payslip) */}
-      {(nearPayday || paydayPassedNoPayslip) && (
+      {!isPastYear && (nearPayday || paydayPassedNoPayslip) && (
         <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-3 text-xs text-emerald-950 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
@@ -466,15 +467,32 @@ export function DashboardTab({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-bold">
-                {taxpayerMode === "e-B"
-                  ? `${copy.deadlineB} ${filingYear}`
-                  : `${copy.deadlineBe} ${filingYear}`}
-              </span>
-              <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
-                {daysToDeadline} {copy.daysLeft}
-              </span>
-              {taxpayerMode === "e-B" && (
+              {isPastYear ? (
+                <>
+                  <span className="font-bold">
+                    {personalization.language === "bm"
+                      ? `Arkib Audit Sejarah • TT ${summary.taxYear}`
+                      : `Historical Audit Archive • YA ${summary.taxYear}`}
+                  </span>
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                    {personalization.language === "bm"
+                      ? `Simpan hingga ${summary.retentionUntilYear}`
+                      : `Retain until ${summary.retentionUntilYear}`}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-bold">
+                    {taxpayerMode === "e-B"
+                      ? `${copy.deadlineB} ${filingYear}`
+                      : `${copy.deadlineBe} ${filingYear}`}
+                  </span>
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                    {daysToDeadline} {copy.daysLeft}
+                  </span>
+                </>
+              )}
+              {taxpayerMode === "e-B" && !isPastYear && (
                 <span className="rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                   {copy.cp500Active}
                 </span>
@@ -896,7 +914,7 @@ export function DashboardTab({
       {/* Right / Action & Insights Column */}
       <div className="space-y-4 md:col-span-5">
       {/* Personal Tax-Saving Goal Card */}
-      {(() => {
+      {!isPastYear && (() => {
         const maxTaxGoal = calculateMaxTaxSavingGoal(profile);
         const effectiveGoal =
           maxTaxGoal > 0 ? Math.min(personalization.taxSavingGoal, maxTaxGoal) : 0;
@@ -1028,7 +1046,7 @@ export function DashboardTab({
       })()}
 
       {/* 1-Tap Monthly Recurring Bills */}
-      {recurringBills.length > 0 && (
+      {!isPastYear && recurringBills.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -1141,7 +1159,7 @@ export function DashboardTab({
       )}
 
       {/* Maximize Your Reliefs Opportunities */}
-      {summary.opportunities.length > 0 && (
+      {!isPastYear && summary.opportunities.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -1208,7 +1226,7 @@ export function DashboardTab({
       )}
 
       {/* Contextual Tax-Saving Partner Offers (Affiliate / Lead-Gen Recommendations Engine) */}
-      {partnerMatches.length > 0 && (
+      {!isPastYear && partnerMatches.length > 0 && (
         <section className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/60 p-4 shadow-xs">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
