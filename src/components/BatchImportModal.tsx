@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Ban,
   CheckCircle2,
@@ -47,6 +47,9 @@ interface BatchItem {
 interface BatchImportModalProps {
   isOpen: boolean;
   taxYear: TaxYear;
+  initialFiles?: File[] | null;
+  defaultCategoryId?: string;
+  defaultSubCategoryId?: string;
   onClose: () => void;
   onSaveItem: (
     expense: Omit<TaxExpense, "id" | "createdAt">,
@@ -57,6 +60,9 @@ interface BatchImportModalProps {
 export function BatchImportModal({
   isOpen,
   taxYear,
+  initialFiles,
+  defaultCategoryId,
+  defaultSubCategoryId,
   onClose,
   onSaveItem,
 }: BatchImportModalProps) {
@@ -65,22 +71,37 @@ export function BatchImportModal({
   const [isScanningAll, setIsScanningAll] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
 
+  useEffect(() => {
+    if (isOpen && initialFiles && initialFiles.length > 0) {
+      handleFilesChosen(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialFiles]);
+
   if (!isOpen) return null;
 
   const categories = getReliefCategories(taxYear);
 
-  async function handleFilesChosen(fileList: FileList | null) {
+  async function handleFilesChosen(fileList: FileList | File[] | null) {
     if (!fileList || fileList.length === 0) return;
 
-    const newItems: BatchItem[] = Array.from(fileList)
+    const filesArr = Array.isArray(fileList) ? fileList : Array.from(fileList);
+    const fallbackCatId = defaultCategoryId || "lifestyle";
+    const fallbackCatObj = categories.find((c) => c.id === fallbackCatId);
+    const fallbackSubId =
+      defaultSubCategoryId ||
+      fallbackCatObj?.subCategories?.[0]?.id ||
+      (fallbackCatId === "lifestyle" ? "lifestyle_internet" : "");
+
+    const newItems: BatchItem[] = filesArr
       .slice(0, 15)
       .map((file, idx) => ({
         id: `${Date.now()}_${idx}`,
         file,
         status: "queued",
         selected: true,
-        categoryId: "lifestyle",
-        subCategoryId: "lifestyle_internet",
+        categoryId: fallbackCatId,
+        subCategoryId: fallbackSubId,
         merchant: file.name.replace(/\.[^.]+$/, ""),
         amount: 0,
         expenseDate: `${taxYear}-${new Date().toISOString().slice(5, 10)}`,
@@ -133,9 +154,10 @@ export function BatchImportModal({
           scanResult = await runLocalReceiptOcr(item.file, taxYear);
         }
 
-        const catId = scanResult.suggestedCategoryId || "lifestyle";
+        const catId = defaultCategoryId || scanResult.suggestedCategoryId || "lifestyle";
         const matchedCat = categories.find((c) => c.id === catId);
         const subId =
+          (defaultCategoryId ? defaultSubCategoryId : undefined) ||
           scanResult.suggestedSubCategoryId ||
           matchedCat?.subCategories?.[0]?.id ||
           "";

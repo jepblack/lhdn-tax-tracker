@@ -163,6 +163,15 @@ export function TaxApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [batchInitialFiles, setBatchInitialFiles] = useState<File[] | null>(
+    null
+  );
+  const [batchDefaultCategoryId, setBatchDefaultCategoryId] = useState<
+    string | undefined
+  >(undefined);
+  const [batchDefaultSubCategoryId, setBatchDefaultSubCategoryId] = useState<
+    string | undefined
+  >(undefined);
   const [qrOpen, setQrOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [pricingReason, setPricingReason] = useState<string | null>(null);
@@ -2105,6 +2114,14 @@ export function TaxApp() {
         onApplyAnnualExtraction={async (doc, ext, yr) => {
           await handleApplyAnnualDocExtraction(ext, doc, yr);
         }}
+        onOpenBatchWithFiles={(files, catId, subId) => {
+          setScannerOpen(false);
+          setEditingExpense(null);
+          setBatchInitialFiles(files);
+          setBatchDefaultCategoryId(catId);
+          setBatchDefaultSubCategoryId(subId);
+          setBatchOpen(true);
+        }}
       />
 
       {/* Pricing & Malaysia Payment Checkout Modal */}
@@ -2126,7 +2143,15 @@ export function TaxApp() {
       <BatchImportModal
         isOpen={batchOpen}
         taxYear={taxYear}
-        onClose={() => setBatchOpen(false)}
+        initialFiles={batchInitialFiles}
+        defaultCategoryId={batchDefaultCategoryId}
+        defaultSubCategoryId={batchDefaultSubCategoryId}
+        onClose={() => {
+          setBatchOpen(false);
+          setBatchInitialFiles(null);
+          setBatchDefaultCategoryId(undefined);
+          setBatchDefaultSubCategoryId(undefined);
+        }}
         onSaveItem={async (exp, file) => {
           await handleSaveExpense(exp, file);
         }}

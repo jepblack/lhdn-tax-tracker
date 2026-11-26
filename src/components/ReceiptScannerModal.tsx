@@ -100,6 +100,11 @@ interface ReceiptScannerModalProps {
     extraction: AnnualDocExtraction,
     targetYearOverride?: TaxYear
   ) => Promise<void>;
+  onOpenBatchWithFiles?: (
+    files: File[],
+    categoryId?: string,
+    subCategoryId?: string
+  ) => void;
 }
 
 export function ReceiptScannerModal({
@@ -123,6 +128,7 @@ export function ReceiptScannerModal({
   onSave,
   onUploadAnnualDoc,
   onApplyAnnualExtraction,
+  onOpenBatchWithFiles,
 }: ReceiptScannerModalProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1543,11 +1549,17 @@ export function ReceiptScannerModal({
           <input
             ref={fileInputRef}
             type="file"
+            multiple={!editingExpense}
             accept="image/*,application/pdf"
             className="hidden"
             onChange={(e) => {
-              handleFileSelected(e.target.files?.[0]);
+              const chosen = e.target.files ? Array.from(e.target.files) : [];
               e.target.value = "";
+              if (chosen.length > 1 && !editingExpense && onOpenBatchWithFiles) {
+                onOpenBatchWithFiles(chosen, categoryId, subCategoryId);
+                return;
+              }
+              handleFileSelected(chosen[0]);
             }}
           />
 
