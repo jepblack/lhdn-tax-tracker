@@ -29,7 +29,6 @@ import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
 import { FormBeChecklist } from "./FormBeChecklist";
-import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
 import {
   AnnualDocExtraction,
@@ -1093,16 +1092,6 @@ export function ReceiptsTab({
                       {formatRM(exp.amount, true)}
                     </p>
                     <div className="flex items-center gap-1">
-                      {exp.metadata && (
-                        <button
-                          type="button"
-                          onClick={() => downloadJsonMetadata(exp.metadata!)}
-                          title="Download LHDN JSON metadata"
-                          className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-200"
-                        >
-                          JSON
-                        </button>
-                      )}
                       {hasReceipt ? (
                         isRealPreviewable ? (
                           <button
