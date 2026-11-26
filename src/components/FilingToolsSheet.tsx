@@ -503,6 +503,81 @@ export function FilingToolsSheet({
                       </div>
                     )}
 
+                    {/* Tax Computation Tally (Form BE declared totals vs CukaiKu calculation) */}
+                    {(formBeBaseline.declaredTotalReliefs ||
+                      formBeBaseline.declaredChargeableIncome ||
+                      formBeBaseline.declaredTaxPayable) ? (() => {
+                      const checks = [
+                        {
+                          label: lang === "bm" ? "Jumlah Pelepasan" : "Total Reliefs",
+                          be: formBeBaseline.declaredTotalReliefs || 0,
+                          app: summary.totalReliefs,
+                        },
+                        {
+                          label: lang === "bm" ? "Pendapatan Bercukai" : "Chargeable Income",
+                          be: formBeBaseline.declaredChargeableIncome || 0,
+                          app: summary.chargeableIncome,
+                        },
+                        {
+                          label: lang === "bm" ? "Cukai Kena Dibayar" : "Net Tax Payable",
+                          be: formBeBaseline.declaredTaxPayable || 0,
+                          app: summary.netTaxPayable,
+                        },
+                      ].filter((c) => c.be > 0);
+                      const allTallied =
+                        checks.length > 0 &&
+                        checks.every((c) => Math.abs(c.be - c.app) <= 1);
+                      return (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-slate-800">
+                              {lang === "bm"
+                                ? "Semakan Pengiraan Cukai"
+                                : "Tax Computation Tally"}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                allTallied
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-amber-100 text-amber-900"
+                              }`}
+                            >
+                              {allTallied
+                                ? lang === "bm"
+                                  ? "Sepadan dengan LHDN"
+                                  : "Matches LHDN Submission"
+                                : lang === "bm"
+                                ? "Ada Perbezaan"
+                                : "Needs Review"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1 text-[10px]">
+                            {checks.map((c) => {
+                              const diff = c.app - c.be;
+                              const ok = Math.abs(diff) <= 1;
+                              return (
+                                <div
+                                  key={c.label}
+                                  className="flex items-center justify-between text-slate-600"
+                                >
+                                  <span>{c.label}</span>
+                                  <span className="font-mono font-semibold text-slate-800">
+                                    BE {formatRM(c.be, true)} • App {formatRM(c.app, true)}{" "}
+                                    {!ok && (
+                                      <span className="text-amber-700">
+                                        ({diff > 0 ? "+" : ""}
+                                        {formatRM(diff, true)})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })() : null}
+
                     <div className="space-y-1.5">
                       {rows.map((r) => {
                         const isShort = r.declared > 0 && r.verified < r.declared - 0.01;

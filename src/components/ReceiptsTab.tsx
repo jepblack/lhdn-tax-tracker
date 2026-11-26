@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
-import { getReliefCategories } from "@/lib/lhdn-rules";
+import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
@@ -105,11 +105,14 @@ interface ReceiptsTabProps {
   onUploadAnnualDoc: (
     docType: AnnualDocType,
     label: string,
-    file: File
+    file: File,
+    overrideYear?: TaxYear
   ) => Promise<AnnualTaxDoc>;
   onApplyAnnualDocExtraction: (
     extraction: AnnualDocExtraction,
-    doc: AnnualTaxDoc
+    doc: AnnualTaxDoc,
+    overrideYear?: TaxYear,
+    options?: { skipYearSwitch?: boolean }
   ) => Promise<void>;
   onDeleteAnnualDoc: (id: string) => void;
   onOpenBatchImport: () => void;
@@ -154,12 +157,142 @@ export function ReceiptsTab({
   const [pendingExtraction, setPendingExtraction] = useState<{
     extraction: AnnualDocExtraction;
     doc: AnnualTaxDoc;
+    targetYear: TaxYear;
   } | null>(null);
   const [applyingExtraction, setApplyingExtraction] = useState(false);
   const [extractionAppliedMsg, setExtractionAppliedMsg] = useState<string | null>(null);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillQueue, setBackfillQueue] = useState<
+    Array<{
+      id: string;
+      fileName: string;
+      doc: AnnualTaxDoc;
+      extraction: AnnualDocExtraction | null;
+      targetYear: TaxYear;
+      note?: string;
+    }>
+  >([]);
+  const [applyingBackfill, setApplyingBackfill] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const backfillInputRef = useRef<HTMLInputElement>(null);
   const activeDocSlotRef = useRef<{ type: AnnualDocType; label: string } | null>(null);
+
+  async function parseAnnualDocFile(
+    file: File,
+    docType: AnnualDocType,
+    slotLabel: string,
+    fallbackYear: TaxYear
+  ): Promise<{ extraction: AnnualDocExtraction | null; skipReason: string | null }> {
+    const headers: Record<string, string> = {};
+    const sb = getSupabaseClient();
+    if (sb) {
+      const { data: sess } = await sb.auth.getSession();
+      if (sess.session?.access_token) {
+        headers["Authorization"] = `Bearer ${sess.session.access_token}`;
+      }
+    }
+
+    const postToApi = async (uploadFile: File) => {
+      const fd = new FormData();
+      fd.append("file", uploadFile);
+      fd.append("docType", docType);
+      fd.append("taxYear", String(fallbackYear));
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 22000);
+      try {
+        return await fetch("/api/parse-annual-doc", {
+          method: "POST",
+          headers,
+          body: fd,
+          signal: controller.signal,
+        });
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const hasFigures = (ext: AnnualDocExtraction) =>
+      ext.annualIncome > 0 ||
+      ext.pcbPaid > 0 ||
+      ext.zakatPaid > 0 ||
+      ext.epfEmployee > 0 ||
+      ext.socsoEisEmployee > 0 ||
+      ext.lifeInsuranceAmount > 0 ||
+      ext.medicalInsuranceAmount > 0 ||
+      ext.housingLoanInterest > 0 ||
+      (ext.extraReliefs && ext.extraReliefs.length > 0);
+
+    const isPdfFile =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+    // Send the full PDF first so multi-page documents (e.g. MyTax Form e-BE) extract all pages.
+    let res = await postToApi(file);
+    let serverSkipReason: string | null = null;
+    let isScannedPdf = false;
+
+    if (res && res.ok) {
+      const data = await res.json();
+      if (!data.skipped && data.docType) {
+        const ext = data as AnnualDocExtraction;
+        if (hasFigures(ext)) return { extraction: ext, skipReason: null };
+      } else {
+        serverSkipReason = data.skipReason || null;
+        isScannedPdf = Boolean(data.scannedPdf);
+      }
+    }
+
+    // If the PDF was scanned (no selectable text), render Page 1 to JPEG and retry API / OCR.
+    let imageForFallback: File | null = file.type.startsWith("image/") ? file : null;
+    if (isPdfFile && isScannedPdf) {
+      imageForFallback = await renderPdfFirstPageToJpeg(file);
+      if (imageForFallback) {
+        res = await postToApi(imageForFallback);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (!data.skipped && data.docType) {
+            const ext = data as AnnualDocExtraction;
+            if (hasFigures(ext)) return { extraction: ext, skipReason: null };
+          } else if (data.skipReason) {
+            serverSkipReason = data.skipReason;
+          }
+        }
+      }
+    }
+
+    if (imageForFallback && imageForFallback.type.startsWith("image/")) {
+      try {
+        const Tesseract = await import("tesseract.js");
+        const { data: ocrData } = await Tesseract.recognize(imageForFallback, "eng");
+        const p = parseMalaysianPayslipText(ocrData.text || "");
+        const fallbackExt: AnnualDocExtraction = {
+          docType,
+          providerName: slotLabel,
+          annualIncome: p.estimatedAnnualIncome,
+          pcbPaid: p.ytdPcb || p.monthlyPcb,
+          zakatPaid: p.ytdZakat || p.monthlyZakat,
+          epfEmployee: p.ytdEpf || p.employeeEpf,
+          socsoEisEmployee:
+            (p.ytdSocso || p.employeeSocso) + (p.ytdEis || p.employeeEis),
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: 0,
+          summaryNote:
+            "Extracted automatically using built-in on-device OCR.",
+          confidence: p.confidence,
+        };
+        if (hasFigures(fallbackExt)) {
+          return { extraction: fallbackExt, skipReason: null };
+        }
+      } catch {
+        // ignore OCR fallback error
+      }
+    }
+
+    return { extraction: null, skipReason: serverSkipReason };
+  }
 
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
@@ -380,118 +513,26 @@ export function ReceiptsTab({
                 // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, or Form BE
                 if (slot.type !== "other_doc") {
                   try {
-                    // For PDFs (especially scanned EA Forms), render Page 1 to JPEG for reliable Gemini Vision reading
-                    let fileForAi: File = file;
-                    const isPdfFile =
-                      file.type === "application/pdf" ||
-                      file.name.toLowerCase().endsWith(".pdf");
-                    if (isPdfFile) {
-                      const renderedJpeg = await renderPdfFirstPageToJpeg(file);
-                      if (renderedJpeg) fileForAi = renderedJpeg;
-                    }
-
-                    const fd = new FormData();
-                    fd.append("file", fileForAi);
-                    fd.append("docType", slot.type);
-                    fd.append("taxYear", String(taxYear));
-                    const headers: Record<string, string> = {};
-                    const sb = getSupabaseClient();
-                    if (sb) {
-                      const { data: sess } = await sb.auth.getSession();
-                      if (sess.session?.access_token) {
-                        headers["Authorization"] = `Bearer ${sess.session.access_token}`;
-                      }
-                    }
-                    const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), 18000);
-                    let res: Response | null = null;
-                    try {
-                      res = await fetch("/api/parse-annual-doc", {
-                        method: "POST",
-                        headers,
-                        body: fd,
-                        signal: controller.signal,
+                    const { extraction, skipReason } = await parseAnnualDocFile(
+                      file,
+                      slot.type,
+                      slot.label,
+                      taxYear
+                    );
+                    if (extraction) {
+                      const detected =
+                        extraction.detectedTaxYear &&
+                        SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+                          ? extraction.detectedTaxYear
+                          : taxYear;
+                      setPendingExtraction({
+                        extraction,
+                        doc: savedDoc,
+                        targetYear: detected,
                       });
-                    } catch {
-                      res = null;
-                    } finally {
-                      clearTimeout(timer);
-                    }
-
-                    let extractedOk = false;
-                    let serverSkipReason: string | null = null;
-                    if (res && res.ok) {
-                      const data = await res.json();
-                      if (!data.skipped && data.docType) {
-                        const ext = data as AnnualDocExtraction;
-                        const hasAnyFigure =
-                          ext.annualIncome > 0 ||
-                          ext.pcbPaid > 0 ||
-                          ext.zakatPaid > 0 ||
-                          ext.epfEmployee > 0 ||
-                          ext.socsoEisEmployee > 0 ||
-                          ext.lifeInsuranceAmount > 0 ||
-                          ext.medicalInsuranceAmount > 0 ||
-                          ext.housingLoanInterest > 0 ||
-                          (ext.extraReliefs && ext.extraReliefs.length > 0);
-                        if (hasAnyFigure) {
-                          setPendingExtraction({
-                            extraction: ext,
-                            doc: savedDoc,
-                          });
-                          extractedOk = true;
-                        }
-                      } else if (data.skipReason) {
-                        serverSkipReason = data.skipReason;
-                      }
-                    }
-
-                    // Seamless on-device OCR fallback when Gemini times out or is busy
-                    if (!extractedOk && fileForAi.type.startsWith("image/")) {
-                      try {
-                        const Tesseract = await import("tesseract.js");
-                        const { data: ocrData } = await Tesseract.recognize(
-                          fileForAi,
-                          "eng"
-                        );
-                        const p = parseMalaysianPayslipText(ocrData.text || "");
-                        const fallbackExt: AnnualDocExtraction = {
-                          docType: slot.type,
-                          providerName: slot.label,
-                          annualIncome: p.estimatedAnnualIncome,
-                          pcbPaid: p.ytdPcb || p.monthlyPcb,
-                          zakatPaid: p.ytdZakat || p.monthlyZakat,
-                          epfEmployee: p.ytdEpf || p.employeeEpf,
-                          socsoEisEmployee:
-                            (p.ytdSocso || p.employeeSocso) +
-                            (p.ytdEis || p.employeeEis),
-                          lifeInsuranceAmount: 0,
-                          medicalInsuranceAmount: 0,
-                          housingLoanInterest: 0,
-                          summaryNote:
-                            "Gemini was busy — extracted automatically using built-in on-device OCR.",
-                          confidence: p.confidence,
-                        };
-                        const hasOcrFigures =
-                          fallbackExt.annualIncome > 0 ||
-                          fallbackExt.pcbPaid > 0 ||
-                          fallbackExt.epfEmployee > 0 ||
-                          fallbackExt.socsoEisEmployee > 0;
-                        if (hasOcrFigures) {
-                          setPendingExtraction({
-                            extraction: fallbackExt,
-                            doc: savedDoc,
-                          });
-                          extractedOk = true;
-                        }
-                      } catch {
-                        // ignore OCR fallback error
-                      }
-                    }
-
-                    if (!extractedOk) {
+                    } else {
                       setDocNotice(
-                        serverSkipReason ||
+                        skipReason ||
                           `${slot.label} archived! No numeric tax figures were detected automatically—you can enter them under Profile.`
                       );
                     }
@@ -508,6 +549,173 @@ export function ReceiptsTab({
               }
             }}
           />
+
+          <input
+            ref={backfillInputRef}
+            type="file"
+            multiple
+            accept="application/pdf,image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const files = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (files.length === 0) return;
+              setBackfillBusy(true);
+              setExtractionAppliedMsg(null);
+              setDocNotice(null);
+              try {
+                const items: typeof backfillQueue = [];
+                for (const file of files) {
+                  const { extraction, skipReason } = await parseAnnualDocFile(
+                    file,
+                    "form_be_proof",
+                    lang === "bm" ? "Bukti Penghantaran Borang BE LHDN" : "LHDN Form BE Filing Proof",
+                    taxYear
+                  );
+                  const detectedYr =
+                    extraction?.detectedTaxYear &&
+                    SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+                      ? extraction.detectedTaxYear
+                      : taxYear;
+                  const savedDoc = await onUploadAnnualDoc(
+                    "form_be_proof",
+                    lang === "bm" ? "Bukti Penghantaran Borang BE LHDN" : "LHDN Form BE Filing Proof",
+                    file,
+                    detectedYr
+                  );
+                  items.push({
+                    id: savedDoc.id,
+                    fileName: file.name,
+                    doc: savedDoc,
+                    extraction,
+                    targetYear: detectedYr,
+                    note: skipReason || undefined,
+                  });
+                }
+                setBackfillQueue(items);
+              } finally {
+                setBackfillBusy(false);
+              }
+            }}
+          />
+
+          {/* Multi-Year Form BE Backfill Card */}
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3.5 space-y-2.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-indigo-950">
+                  {lang === "bm"
+                    ? "Isi Semula Tahun Lepas (Borang e-BE)"
+                    : "Backfill Past Years (Form e-BE)"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-indigo-800/80">
+                  {lang === "bm"
+                    ? "Muat naik beberapa PDF Borang BE sekaligus. Tahun taksiran dikesan automatik dan diselaraskan dengan pengiraan cukai."
+                    : "Drop multiple past Form BE PDFs at once. Each YA is auto-detected, merged without double-counting, and tallied."}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={backfillBusy}
+                onClick={() => backfillInputRef.current?.click()}
+                className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white active:scale-95 disabled:opacity-50"
+              >
+                {backfillBusy ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Upload className="h-3 w-3" />
+                )}
+                {lang === "bm" ? "Pilih PDF" : "Select PDFs"}
+              </button>
+            </div>
+
+            {backfillQueue.length > 0 && (
+              <div className="space-y-2 border-t border-indigo-200/70 pt-2.5">
+                {backfillQueue.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white p-2.5 text-xs"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-900">
+                        {item.fileName}
+                      </p>
+                      {item.extraction ? (
+                        <p className="text-[10px] text-slate-500">
+                          Income {formatRM(item.extraction.annualIncome)} • Reliefs{" "}
+                          {formatRM(item.extraction.declaredTotalReliefs || 0)} • PCB{" "}
+                          {formatRM(item.extraction.pcbPaid)}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-amber-700">
+                          {item.note || "Archived only — no numeric figures detected"}
+                        </p>
+                      )}
+                    </div>
+                    <select
+                      value={item.targetYear}
+                      onChange={(e) => {
+                        const yr = Number(e.target.value) as TaxYear;
+                        setBackfillQueue((prev) =>
+                          prev.map((q) => (q.id === item.id ? { ...q, targetYear: yr } : q))
+                        );
+                      }}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-800"
+                    >
+                      {SUPPORTED_TAX_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>
+                          YA {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      applyingBackfill || !backfillQueue.some((q) => q.extraction)
+                    }
+                    onClick={async () => {
+                      setApplyingBackfill(true);
+                      try {
+                        const ready = backfillQueue.filter((q) => q.extraction);
+                        for (let i = 0; i < ready.length; i++) {
+                          const q = ready[i];
+                          await onApplyAnnualDocExtraction(
+                            q.extraction!,
+                            q.doc,
+                            q.targetYear,
+                            { skipYearSwitch: i < ready.length - 1 }
+                          );
+                        }
+                        setExtractionAppliedMsg(
+                          `Backfilled ${ready.length} Form BE submission${
+                            ready.length === 1 ? "" : "s"
+                          } (${ready.map((r) => `YA ${r.targetYear}`).join(", ")})!`
+                        );
+                        setBackfillQueue([]);
+                      } finally {
+                        setApplyingBackfill(false);
+                      }
+                    }}
+                    className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {applyingBackfill
+                      ? "Applying..."
+                      : `Apply All (${backfillQueue.filter((q) => q.extraction).length})`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBackfillQueue([])}
+                    className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-900"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {uploadingDocType && (
             <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
@@ -649,6 +857,31 @@ export function ReceiptsTab({
                 {pendingExtraction.extraction.summaryNote}
               </p>
 
+              {(pendingExtraction.doc.docType === "form_be_proof" ||
+                pendingExtraction.extraction.detectedTaxYear) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-2">
+                  <span className="text-[11px] font-semibold text-slate-700">
+                    Target Year of Assessment (YA)
+                  </span>
+                  <select
+                    value={pendingExtraction.targetYear}
+                    onChange={(e) => {
+                      const yr = Number(e.target.value) as TaxYear;
+                      setPendingExtraction((prev) =>
+                        prev ? { ...prev, targetYear: yr } : null
+                      );
+                    }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-900"
+                  >
+                    {SUPPORTED_TAX_YEARS.map((yr) => (
+                      <option key={yr} value={yr}>
+                        YA {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -656,12 +889,14 @@ export function ReceiptsTab({
                   onClick={async () => {
                     setApplyingExtraction(true);
                     try {
+                      const applyYr = pendingExtraction.targetYear;
                       await onApplyAnnualDocExtraction(
                         pendingExtraction.extraction,
-                        pendingExtraction.doc
+                        pendingExtraction.doc,
+                        applyYr
                       );
                       setExtractionAppliedMsg(
-                        `Applied figures from ${pendingExtraction.doc.label} to your YA ${taxYear} tax profile & reliefs!`
+                        `Applied figures from ${pendingExtraction.doc.label} to your YA ${applyYr} tax profile & reliefs!`
                       );
                       setPendingExtraction(null);
                     } finally {
@@ -672,7 +907,7 @@ export function ReceiptsTab({
                 >
                   {applyingExtraction
                     ? "Applying..."
-                    : `Apply to YA ${taxYear} Tax & Reliefs`}
+                    : `Apply to YA ${pendingExtraction.targetYear} Tax & Reliefs`}
                 </button>
                 <button
                   type="button"

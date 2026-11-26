@@ -263,6 +263,7 @@ export interface AnnualTaxDoc {
 export interface AnnualDocExtraction {
   docType: AnnualDocType;
   providerName: string;
+  detectedTaxYear?: number | null;
   annualIncome: number;
   pcbPaid: number;
   zakatPaid: number;
@@ -271,6 +272,12 @@ export interface AnnualDocExtraction {
   lifeInsuranceAmount: number;
   medicalInsuranceAmount: number;
   housingLoanInterest: number;
+  statusReliefs?: Partial<StatusReliefs>;
+  declaredTotalReliefs?: number;
+  declaredChargeableIncome?: number;
+  declaredTaxCharged?: number;
+  declaredTaxRebate?: number;
+  declaredTaxPayable?: number;
   extraReliefs?: Array<{
     categoryId: string;
     subCategoryId?: string | null;
@@ -289,4 +296,10 @@ export interface FormBeBaseline {
   declaredPcb: number;
   declaredZakat: number;
   declaredByCategory: Record<string, number>;
+  statusReliefs?: Partial<StatusReliefs>;
+  declaredTotalReliefs?: number;
+  declaredChargeableIncome?: number;
+  declaredTaxCharged?: number;
+  declaredTaxRebate?: number;
+  declaredTaxPayable?: number;
 }

@@ -80,7 +80,25 @@ export async function POST(request: Request) {
     const formBeExtraPrompt =
       docType === "form_be_proof"
         ? `
-Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract any other claimed relief boxes into "extraReliefs" array using ONLY these valid categoryId values:
+Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract:
+1. "detectedTaxYear": 4-digit Year of Assessment (Tahun Taksiran / YA, e.g. 2024) printed on the form, or null if not visible.
+2. "statusReliefs": {
+   "individual": boolean (true if Individual & Dependent F1 RM9,000/12,000 is claimed),
+   "disabledIndividual": boolean (true if F1a Disabled Individual claimed),
+   "spouse": boolean (true if F6 Spouse/Alimony claimed),
+   "disabledSpouse": boolean (true if F6a Disabled Spouse claimed),
+   "childrenUnder18": number (count of unmarried children under 18 in F8a),
+   "childrenHigherEd": number (count of children 18+ in higher education in F8b),
+   "disabledChildren": number (count of disabled children in F8c),
+   "disabledChildrenHigherEd": number (count of disabled children in higher ed in F8c)
+}
+3. Tax computation totals printed in Part F / Part G / Summary:
+   - "declaredTotalReliefs": number (Jumlah Pelepasan / Total Relief)
+   - "declaredChargeableIncome": number (Pendapatan Bercukai / Chargeable Income)
+   - "declaredTaxCharged": number (Cukai Pendapatan Dikenakan / Income Tax Charged before rebates)
+   - "declaredTaxRebate": number (Jumlah Rebat / Total Rebate including Zakat & RM400/RM800 rebate)
+   - "declaredTaxPayable": number (Net Tax Charged / Cukai Kena Dibayar after rebates, BEFORE deducting PCB/MTD)
+4. "extraReliefs": array of other claimed relief boxes using ONLY these valid categoryId values:
 - "lifestyle" (F9 Lifestyle)
 - "sports" (F10 Sports equipment/activities)
 - "medical_self" (F4 Medical expenses self/spouse/child)
@@ -118,6 +136,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
 }`;
 
     // 1. Try Groq Vision (~1s) first if GROQ_API_KEY is configured
+    const maxTokens = docType === "form_be_proof" ? 1200 : 600;
     let groqFailReason = "";
     if (canUseGroq && (pdfText.length >= 20 || file.type.startsWith("image/"))) {
       try {
@@ -130,7 +149,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               ? null
               : Buffer.from(arrayBuffer).toString("base64"),
           imageMimeType: file.type || "image/jpeg",
-          maxTokens: 600,
+          maxTokens,
         });
         return NextResponse.json(normalizeAnnualExtraction(parsed, docType, "Groq Vision"));
       } catch (groqErr) {
@@ -170,7 +189,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               contents,
               config: {
                 temperature: 0.1,
-                maxOutputTokens: 600,
+                maxOutputTokens: maxTokens,
                 thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
               },
             });
@@ -180,7 +199,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               return await ai.models.generateContent({
                 model: GEMINI_MODEL,
                 contents,
-                config: { temperature: 0.1, maxOutputTokens: 600 },
+                config: { temperature: 0.1, maxOutputTokens: maxTokens },
               });
             }
             throw cfgErr;
@@ -250,7 +269,11 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
       ? `Document archived, but AI extraction failed (Groq: ${groqFailReason || "n/a"} | Gemini: ${geminiFailReason || "n/a"}).`
       : "Document archived! No numeric tax figures were detected automatically.";
 
-    return NextResponse.json({ skipped: true, skipReason });
+    return NextResponse.json({
+      skipped: true,
+      skipReason,
+      scannedPdf: isPdf && pdfText.length < 20,
+    });
   } catch (err) {
     console.error("Annual doc parse error:", err);
     return NextResponse.json({ skipped: true });
@@ -286,9 +309,34 @@ function normalizeAnnualExtraction(
     }))
     .filter((x) => validExtraIds.has(x.categoryId) && x.amount > 0);
 
+  const rawYr = Number(parsed.detectedTaxYear);
+  const detectedTaxYear =
+    Number.isInteger(rawYr) && rawYr >= 2015 && rawYr <= 2035 ? rawYr : null;
+
+  const rawSr =
+    parsed.statusReliefs && typeof parsed.statusReliefs === "object"
+      ? (parsed.statusReliefs as Record<string, unknown>)
+      : null;
+  const statusReliefs = rawSr
+    ? {
+        individual: rawSr.individual !== false,
+        disabledIndividual: Boolean(rawSr.disabledIndividual),
+        spouse: Boolean(rawSr.spouse),
+        disabledSpouse: Boolean(rawSr.disabledSpouse),
+        childrenUnder18: Math.max(0, Math.round(Number(rawSr.childrenUnder18) || 0)),
+        childrenHigherEd: Math.max(0, Math.round(Number(rawSr.childrenHigherEd) || 0)),
+        disabledChildren: Math.max(0, Math.round(Number(rawSr.disabledChildren) || 0)),
+        disabledChildrenHigherEd: Math.max(
+          0,
+          Math.round(Number(rawSr.disabledChildrenHigherEd) || 0)
+        ),
+      }
+    : undefined;
+
   return {
     docType,
     providerName: String(parsed.providerName || ""),
+    detectedTaxYear,
     annualIncome: Number(parsed.annualIncome) || 0,
     pcbPaid: Number(parsed.pcbPaid) || 0,
     zakatPaid: Number(parsed.zakatPaid) || 0,
@@ -297,6 +345,12 @@ function normalizeAnnualExtraction(
     lifeInsuranceAmount: Number(parsed.lifeInsuranceAmount) || 0,
     medicalInsuranceAmount: Number(parsed.medicalInsuranceAmount) || 0,
     housingLoanInterest: Number(parsed.housingLoanInterest) || 0,
+    statusReliefs,
+    declaredTotalReliefs: Number(parsed.declaredTotalReliefs) || 0,
+    declaredChargeableIncome: Number(parsed.declaredChargeableIncome) || 0,
+    declaredTaxCharged: Number(parsed.declaredTaxCharged) || 0,
+    declaredTaxRebate: Number(parsed.declaredTaxRebate) || 0,
+    declaredTaxPayable: Number(parsed.declaredTaxPayable) || 0,
     extraReliefs,
     summaryNote:
       String(parsed.summaryNote || "") ||

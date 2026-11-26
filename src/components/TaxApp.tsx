@@ -313,8 +313,10 @@ export function TaxApp() {
   async function handleUploadAnnualDoc(
     docType: AnnualDocType,
     label: string,
-    file: File
+    file: File,
+    overrideYear?: TaxYear
   ): Promise<AnnualTaxDoc> {
+    const targetYear = overrideYear ?? taxYear;
     const driveToken = getGoogleDriveToken();
     let fileUrl = "";
     let storagePath: string | null = null;
@@ -322,7 +324,7 @@ export function TaxApp() {
 
     if (driveToken) {
       try {
-        const res = await uploadAnnualDocToGoogleDrive(driveToken, taxYear, file);
+        const res = await uploadAnnualDocToGoogleDrive(driveToken, targetYear, file);
         fileUrl = res.webViewLink;
         storageProvider = "gdrive";
       } catch {
@@ -331,7 +333,7 @@ export function TaxApp() {
     }
 
     if (!fileUrl && userId) {
-      const supaRes = await uploadAnnualDocToSupabase(userId, taxYear, file);
+      const supaRes = await uploadAnnualDocToSupabase(userId, targetYear, file);
       if (supaRes) {
         fileUrl = supaRes.signedUrl;
         storagePath = supaRes.storagePath;
@@ -348,8 +350,8 @@ export function TaxApp() {
     }
 
     const newDoc: AnnualTaxDoc = {
-      id: `doc_${Date.now()}`,
-      taxYear,
+      id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      taxYear: targetYear,
       docType,
       label,
       fileName: file.name,
@@ -368,11 +370,13 @@ export function TaxApp() {
       // ignore quota
     }
     if (userId) {
+      const targetProfile =
+        targetYear === profile.taxYear ? profile : await fetchProfile(targetYear, userId);
       await persistAnnualStateToCloud(
-        taxYear,
-        nextAll.filter((d) => d.taxYear === taxYear),
-        formBeBaselines[String(taxYear)] || null,
-        profile,
+        targetYear,
+        nextAll.filter((d) => d.taxYear === targetYear),
+        formBeBaselines[String(targetYear)] || null,
+        targetProfile,
         userId
       );
     }
@@ -382,23 +386,65 @@ export function TaxApp() {
 
   async function handleApplyAnnualDocExtraction(
     ext: AnnualDocExtraction,
-    doc: AnnualTaxDoc
+    doc: AnnualTaxDoc,
+    overrideYear?: TaxYear,
+    options?: { skipYearSwitch?: boolean }
   ) {
-    // 1. Update Income / PCB / Zakat in Tax Profile if extracted
-    if (ext.annualIncome > 0 || ext.pcbPaid > 0 || ext.zakatPaid > 0) {
-      await handleUpdateProfile({
-        ...profile,
-        annualIncome:
-          ext.annualIncome > 0 ? ext.annualIncome : profile.annualIncome,
-        pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : profile.pcbPaid,
-        zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : profile.zakatPaid,
-      });
+    const targetYear = overrideYear ?? doc.taxYear ?? taxYear;
+    const isFormBeImport = doc.docType === "form_be_proof";
+
+    // If the user/AI routed this doc to a different YA than when it was uploaded, move the doc record
+    let effectiveDocs = annualDocs;
+    if (doc.taxYear !== targetYear) {
+      effectiveDocs = annualDocs.map((d) =>
+        d.id === doc.id ? { ...d, taxYear: targetYear } : d
+      );
+      setAnnualDocs(effectiveDocs);
+      try {
+        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(effectiveDocs));
+      } catch {
+        // ignore
+      }
+    }
+
+    // 1. Update Income / PCB / Zakat / Status Reliefs in the target year's Tax Profile
+    const baseProfile =
+      targetYear === profile.taxYear ? profile : await fetchProfile(targetYear, userId);
+    const mergedStatusReliefs =
+      isFormBeImport && ext.statusReliefs
+        ? {
+            ...baseProfile.statusReliefs,
+            ...ext.statusReliefs,
+            individual: true,
+          }
+        : baseProfile.statusReliefs;
+
+    const updatedTargetProfile: TaxProfile = {
+      ...baseProfile,
+      taxYear: targetYear,
+      annualIncome:
+        ext.annualIncome > 0 ? ext.annualIncome : baseProfile.annualIncome,
+      pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : baseProfile.pcbPaid,
+      zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : baseProfile.zakatPaid,
+      statusReliefs: mergedStatusReliefs,
+    };
+
+    if (
+      ext.annualIncome > 0 ||
+      ext.pcbPaid > 0 ||
+      ext.zakatPaid > 0 ||
+      (isFormBeImport && ext.statusReliefs)
+    ) {
+      if (targetYear === profile.taxYear) {
+        await handleUpdateProfile(updatedTargetProfile);
+      } else {
+        await persistProfile(updatedTargetProfile, userId);
+      }
     }
 
     // 2. Log corresponding tax reliefs
-    // For Form BE imports, save a FormBeBaseline for live audit reconciliation AND
+    // For Form BE imports, save a FormBeBaseline for live audit & tax-computation reconciliation AND
     // intentionally leave receiptUrl/receiptPath null so CukaiKu flags missing supporting receipts!
-    const isFormBeImport = doc.docType === "form_be_proof";
     if (isFormBeImport) {
       const declaredByCategory: Record<string, number> = {};
       const epfLife = (ext.epfEmployee || 0) + (ext.lifeInsuranceAmount || 0);
@@ -417,16 +463,22 @@ export function TaxApp() {
         }
       }
       const baseline: FormBeBaseline = {
-        taxYear,
+        taxYear: targetYear,
         uploadedFileName: doc.fileName,
         uploadedAt: new Date().toISOString(),
         declaredIncome: ext.annualIncome || 0,
         declaredPcb: ext.pcbPaid || 0,
         declaredZakat: ext.zakatPaid || 0,
         declaredByCategory,
+        statusReliefs: ext.statusReliefs,
+        declaredTotalReliefs: ext.declaredTotalReliefs,
+        declaredChargeableIncome: ext.declaredChargeableIncome,
+        declaredTaxCharged: ext.declaredTaxCharged,
+        declaredTaxRebate: ext.declaredTaxRebate,
+        declaredTaxPayable: ext.declaredTaxPayable,
       };
       setFormBeBaselines((prev) => {
-        const next = { ...prev, [String(taxYear)]: baseline };
+        const next = { ...prev, [String(targetYear)]: baseline };
         try {
           window.localStorage.setItem(FORM_BE_BASELINES_KEY, JSON.stringify(next));
         } catch {
@@ -435,19 +487,19 @@ export function TaxApp() {
         return next;
       });
       if (userId) {
-        const currentDocs = annualDocs.some((d) => d.id === doc.id)
-          ? annualDocs
-          : [doc, ...annualDocs];
+        const currentDocs = effectiveDocs.some((d) => d.id === doc.id)
+          ? effectiveDocs
+          : [{ ...doc, taxYear: targetYear }, ...effectiveDocs];
         await persistAnnualStateToCloud(
-          taxYear,
-          currentDocs.filter((d) => d.taxYear === taxYear),
+          targetYear,
+          currentDocs.filter((d) => d.taxYear === targetYear),
           baseline,
-          profile,
+          updatedTargetProfile,
           userId
         );
       }
     }
-    const today = `${taxYear}-${new Date().toISOString().slice(5, 10)}`;
+    const today = `${targetYear}-${new Date().toISOString().slice(5, 10)}`;
     const provider = ext.providerName || doc.label;
     const sharedFileFields = isFormBeImport
       ? {
@@ -473,11 +525,27 @@ export function TaxApp() {
       ? `Imported from ${doc.label} — attach supporting receipts for LHDN 7-year audit`
       : `Extracted from ${doc.label}`;
 
+    // Smart merge: avoid double-counting categories that already have expenses logged in targetYear
+    const yearExisting = expenses.filter((e) => e.taxYear === targetYear);
+    const existingByCat: Record<string, number> = {};
+    let existingLifeIns = 0;
+    for (const e of yearExisting) {
+      existingByCat[e.categoryId] = (existingByCat[e.categoryId] || 0) + e.amount;
+      if (
+        e.categoryId === "epf_life_insurance" &&
+        e.subCategoryId === "life_insurance"
+      ) {
+        existingLifeIns += e.amount;
+      }
+    }
+    const gapAmount = (declared: number, existingAmt: number) =>
+      isFormBeImport ? Math.max(0, Math.round((declared - existingAmt) * 100) / 100) : declared;
+
     if (ext.epfEmployee > 0) {
       await upsertStatutoryRelief(
         "epf",
         {
-          taxYear,
+          taxYear: targetYear,
           categoryId: "epf_life_insurance",
           subCategoryId: "epf_mandatory",
           merchant: `${provider} — EPF`,
@@ -494,7 +562,7 @@ export function TaxApp() {
       await upsertStatutoryRelief(
         "socso",
         {
-          taxYear,
+          taxYear: targetYear,
           categoryId: "socso",
           subCategoryId: null,
           merchant: `${provider} — SOCSO & EIS`,
@@ -507,72 +575,94 @@ export function TaxApp() {
       );
     }
 
-    if (ext.lifeInsuranceAmount > 0) {
+    const lifeGap = gapAmount(ext.lifeInsuranceAmount, existingLifeIns);
+    if (lifeGap > 0.01) {
       await handleSaveExpense(
         {
-          taxYear,
+          taxYear: targetYear,
           categoryId: "epf_life_insurance",
           subCategoryId: "life_insurance",
           merchant: `${provider} — Life Insurance`,
           description: descriptionNote,
-          amount: ext.lifeInsuranceAmount,
+          amount: lifeGap,
           expenseDate: today,
           ...sharedFileFields,
         },
-        null
+        null,
+        undefined,
+        options?.skipYearSwitch
       );
     }
 
-    if (ext.medicalInsuranceAmount > 0) {
+    const medGap = gapAmount(ext.medicalInsuranceAmount, existingByCat["edu_med_insurance"] || 0);
+    if (medGap > 0.01) {
       await handleSaveExpense(
         {
-          taxYear,
+          taxYear: targetYear,
           categoryId: "edu_med_insurance",
           subCategoryId: null,
           merchant: `${provider} — Medical Insurance`,
           description: descriptionNote,
-          amount: ext.medicalInsuranceAmount,
+          amount: medGap,
           expenseDate: today,
           ...sharedFileFields,
         },
-        null
+        null,
+        undefined,
+        options?.skipYearSwitch
       );
     }
 
-    if (ext.housingLoanInterest > 0) {
+    const loanGap = gapAmount(ext.housingLoanInterest, existingByCat["first_home_interest"] || 0);
+    if (loanGap > 0.01) {
       await handleSaveExpense(
         {
-          taxYear,
+          taxYear: targetYear,
           categoryId: "first_home_interest",
           subCategoryId: "home_under_500k",
           merchant: `${provider} — Housing Loan Interest`,
           description: descriptionNote,
-          amount: ext.housingLoanInterest,
+          amount: loanGap,
           expenseDate: today,
           ...sharedFileFields,
         },
-        null
+        null,
+        undefined,
+        options?.skipYearSwitch
       );
     }
 
     if (ext.extraReliefs && ext.extraReliefs.length > 0) {
       for (const extra of ext.extraReliefs) {
-        if (extra.amount > 0) {
+        const extraGap = gapAmount(extra.amount, existingByCat[extra.categoryId] || 0);
+        if (extraGap > 0.01) {
+          existingByCat[extra.categoryId] =
+            (existingByCat[extra.categoryId] || 0) + extraGap;
           await handleSaveExpense(
             {
-              taxYear,
+              taxYear: targetYear,
               categoryId: extra.categoryId,
               subCategoryId: extra.subCategoryId || null,
               merchant: `${provider} — ${extra.label}`,
               description: descriptionNote,
-              amount: extra.amount,
+              amount: extraGap,
               expenseDate: today,
               ...sharedFileFields,
             },
-            null
+            null,
+            undefined,
+            options?.skipYearSwitch
           );
         }
       }
+    }
+
+    if (
+      !options?.skipYearSwitch &&
+      targetYear !== taxYear &&
+      SUPPORTED_TAX_YEARS.includes(targetYear)
+    ) {
+      setTaxYear(targetYear);
     }
   }
 
@@ -870,7 +960,8 @@ export function TaxApp() {
   async function handleSaveExpense(
     expenseData: Omit<TaxExpense, "id" | "createdAt">,
     receiptFile: File | null,
-    editingId?: string
+    editingId?: string,
+    skipYearSwitch?: boolean
   ): Promise<TaxExpense> {
     if (editingId) {
       const updated = await updateExpense(
@@ -886,7 +977,11 @@ export function TaxApp() {
     }
     const created = await createExpense(expenseData, receiptFile, userId);
     setExpenses((prev) => [created, ...prev]);
-    if (created.taxYear !== taxYear && SUPPORTED_TAX_YEARS.includes(created.taxYear)) {
+    if (
+      !skipYearSwitch &&
+      created.taxYear !== taxYear &&
+      SUPPORTED_TAX_YEARS.includes(created.taxYear)
+    ) {
       setTaxYear(created.taxYear);
     }
     return created;
