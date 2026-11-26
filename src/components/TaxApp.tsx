@@ -1577,10 +1577,31 @@ export function TaxApp() {
                 {availableTaxYears.map((yr) => {
                   const count = expenseCountByYear[yr] || 0;
                   const expired = isTaxYearRetentionExpired(yr);
+                  const baseline = formBeBaselines[String(yr)];
+                  let statusMark = "";
+                  if (baseline) {
+                    const verifiedByCat: Record<string, number> = {};
+                    for (const exp of expenses) {
+                      if (exp.taxYear === yr && (exp.receiptUrl || exp.receiptPath)) {
+                        verifiedByCat[exp.categoryId] =
+                          (verifiedByCat[exp.categoryId] || 0) + exp.amount;
+                      }
+                    }
+                    const declaredEntries = Object.entries(
+                      baseline.declaredByCategory
+                    ).filter(([, amt]) => amt > 0);
+                    const allVerified =
+                      declaredEntries.length > 0 &&
+                      declaredEntries.every(
+                        ([catId, amt]) => (verifiedByCat[catId] || 0) >= amt - 0.01
+                      );
+                    statusMark = allVerified ? " ✓" : " •";
+                  }
                   return (
                     <option key={yr} value={yr}>
                       {personalization.language === "bm" ? "TT" : "YA"} {yr}
                       {count > 0 ? ` (${count})` : ""}
+                      {statusMark}
                       {expired
                         ? personalization.language === "bm"
                           ? " • Tamat"

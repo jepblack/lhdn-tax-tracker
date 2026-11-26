@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Crown,
+  Download,
   ExternalLink,
   FileUp,
   Gift,
@@ -27,8 +28,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { parseAnnualDocFile } from "@/lib/annual-doc-parser";
+import { exportAuditPackZip } from "@/lib/audit-pack";
 import { calculateMaxTaxSavingGoal, formatRM } from "@/lib/calculator";
-import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
+import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import {
   PARTNER_OFFER_BM,
   RECURRING_BILL_BM,
@@ -138,6 +140,7 @@ export function DashboardTab({
   const [goalDraft, setGoalDraft] = useState(String(personalization.taxSavingGoal));
   const [beParsing, setBeParsing] = useState(false);
   const [beApplying, setBeApplying] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
   const [beNotice, setBeNotice] = useState<string | null>(null);
   const [beQueue, setBeQueue] = useState<
     Array<{
@@ -247,18 +250,20 @@ export function DashboardTab({
 
   return (
     <div className="space-y-4 pb-6">
-      {/* First-time User Quick-Start Checklist */}
-      <QuickStartChecklist
-        taxYear={summary.taxYear}
-        language={personalization.language}
-        profileCustomized={profileCustomized}
-        hasExpenses={expenseCount > 0}
-        hasCloudSync={hasCloudSync}
-        onOpenScanner={() => onQuickAdd()}
-        onNavigateTab={onNavigateTab}
-        onLoadSampleData={onLoadSampleData}
-        onOpenGuideModal={onOpenGuideModal}
-      />
+      {/* First-time User Quick-Start Checklist (current/future years only) */}
+      {!isPastYear && (
+        <QuickStartChecklist
+          taxYear={summary.taxYear}
+          language={personalization.language}
+          profileCustomized={profileCustomized}
+          hasExpenses={expenseCount > 0}
+          hasCloudSync={hasCloudSync}
+          onOpenScanner={() => onQuickAdd()}
+          onNavigateTab={onNavigateTab}
+          onLoadSampleData={onLoadSampleData}
+          onOpenGuideModal={onOpenGuideModal}
+        />
+      )}
 
       {/* Payday Reminder Banner (if within ±2 days or payday has passed without current-month payslip) */}
       {!isPastYear && (nearPayday || paydayPassedNoPayslip) && (
@@ -293,8 +298,8 @@ export function DashboardTab({
         </section>
       )}
 
-      {/* 1-Tap Life-Stage Preset Selector (shown until chosen, always changeable in Settings) */}
-      {!personalization.lifeStage && (
+      {/* 1-Tap Life-Stage Preset Selector (current/future years only) */}
+      {!isPastYear && !personalization.lifeStage && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -723,6 +728,105 @@ export function DashboardTab({
               {beNotice}
             </p>
           )}
+
+          {/* Inline Missing Proof Quick-Upload List or Audit Ready Banner */}
+          {formBeBaseline && beQueue.length === 0 && (() => {
+            const verifiedByCat: Record<string, number> = {};
+            for (const exp of yearExpenses) {
+              if (exp.receiptUrl || exp.receiptPath) {
+                verifiedByCat[exp.categoryId] =
+                  (verifiedByCat[exp.categoryId] || 0) + exp.amount;
+              }
+            }
+            const cats = getReliefCategories(summary.taxYear);
+            const catMap = new Map(cats.map((c) => [c.id, c]));
+            const shortfalls = Object.entries(formBeBaseline.declaredByCategory)
+              .filter(([, declared]) => declared > 0)
+              .map(([catId, declared]) => {
+                const verified = verifiedByCat[catId] || 0;
+                const cat = catMap.get(catId);
+                return {
+                  catId,
+                  name: cat ? tCategory(cat).shortName : catId,
+                  declared,
+                  verified,
+                  short: Math.max(0, Math.round((declared - verified) * 100) / 100),
+                };
+              })
+              .filter((r) => r.short > 0.01);
+
+            if (shortfalls.length === 0) {
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/90 px-3 py-2.5 text-xs">
+                  <div className="flex items-center gap-2 font-bold text-emerald-900">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>
+                      {personalization.language === "bm"
+                        ? `TT ${summary.taxYear} Sedia Audit ✓ — 100% pelepasan disokong resit`
+                        : `YA ${summary.taxYear} Audit Ready ✓ — 100% of Form e-BE reliefs backed by receipts`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={exportingZip}
+                    onClick={async () => {
+                      setExportingZip(true);
+                      try {
+                        await exportAuditPackZip(profile, summary, yearExpenses);
+                      } finally {
+                        setExportingZip(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {exportingZip ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Download className="h-3 w-3" />
+                    )}
+                    {personalization.language === "bm"
+                      ? "Muat Turun Pek Audit ZIP"
+                      : "Download Audit Pack ZIP"}
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-1.5 border-t border-indigo-200/70 pt-2.5">
+                <p className="text-[11px] font-bold text-indigo-950">
+                  {personalization.language === "bm"
+                    ? `Bukti masih diperlukan (${shortfalls.length} kategori):`
+                    : `Receipts still needed (${shortfalls.length} ${shortfalls.length === 1 ? "category" : "categories"}):`}
+                </p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {shortfalls.map((item) => (
+                    <div
+                      key={item.catId}
+                      className="flex items-center justify-between gap-2 rounded-xl bg-white px-2.5 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">
+                          {item.name}
+                        </p>
+                        <p className="text-[10px] font-medium text-amber-700">
+                          {personalization.language === "bm" ? "Kurang" : "Short"}{" "}
+                          {formatRM(item.short, true)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onQuickAdd(item.catId)}
+                        className="shrink-0 rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-bold text-white hover:bg-slate-800"
+                      >
+                        {personalization.language === "bm" ? "+ Bukti" : "+ Proof"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {beQueue.length > 0 && (
             <div className="space-y-2 border-t border-indigo-200/70 pt-2.5">

@@ -636,6 +636,52 @@ export function FilingToolsSheet({
                 );
               })()}
 
+              {profile.taxYear < new Date().getFullYear() && (
+                <details className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <summary className="cursor-pointer text-xs font-bold text-slate-700">
+                    {lang === "bm"
+                      ? `Papar Kotak Borang BE TT ${profile.taxYear} (Rujukan)`
+                      : `Show MyTax Form BE Box Values — YA ${profile.taxYear} (Reference)`}
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-2xl bg-emerald-50 p-3.5 text-xs text-emerald-950">
+                      <p className="font-bold">
+                        {lang === "bm"
+                          ? `Borang BE — TT ${profile.taxYear}`
+                          : `Form BE — YA ${profile.taxYear}`}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-emerald-800">
+                        {lang === "bm"
+                          ? `Jumlah pelepasan: ${formatRM(summary.totalReliefs, true)}`
+                          : `Total reliefs: ${formatRM(summary.totalReliefs, true)}`}
+                      </p>
+                    </div>
+                    <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+                      {formBeRows.map((row) => (
+                        <div
+                          key={row.ref}
+                          className="flex items-center justify-between gap-3 px-3.5 py-2"
+                        >
+                          <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">
+                              {row.ref}
+                            </span>
+                            <p className="truncate text-xs font-medium text-slate-800">
+                              {row.label}
+                            </p>
+                          </div>
+                          <span className="text-xs font-bold text-slate-900">
+                            {formatRM(row.amount, true)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              )}
+
+              {profile.taxYear >= new Date().getFullYear() && (
+              <>
               <div className="rounded-2xl bg-emerald-50 p-3.5 text-xs text-emerald-950">
                 <p className="font-bold">
                   {lang === "bm"
@@ -712,6 +758,8 @@ export function FilingToolsSheet({
                   );
                 })}
               </div>
+              </>
+              )}
 
               {/* Final Summary Totals */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-1.5 text-xs">
