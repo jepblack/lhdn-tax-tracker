@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FileUp,
   Gift,
+  Loader2,
   QrCode,
   Repeat,
   Scale,
@@ -21,10 +22,13 @@ import {
   Star,
   Target,
   TrendingDown,
+  Upload,
   UserCheck,
   Wallet,
 } from "lucide-react";
+import { parseAnnualDocFile } from "@/lib/annual-doc-parser";
 import { calculateMaxTaxSavingGoal, formatRM } from "@/lib/calculator";
+import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import {
   PARTNER_OFFER_BM,
   RECURRING_BILL_BM,
@@ -41,10 +45,15 @@ import {
   UserPersonalization,
 } from "@/lib/personalization";
 import {
+  AnnualDocExtraction,
+  AnnualDocType,
+  AnnualTaxDoc,
+  FormBeBaseline,
   TaxCalculationResult,
   TaxExpense,
   TaxpayerMode,
   TaxProfile,
+  TaxYear,
   UserSubscription,
 } from "@/lib/types";
 import { FilingToolTab } from "./FilingToolsSheet";
@@ -64,6 +73,19 @@ interface DashboardTabProps {
   hasCloudSync: boolean;
   personalization: UserPersonalization;
   recurringBills: RecurringBillTemplate[];
+  formBeBaseline?: FormBeBaseline | null;
+  onUploadAnnualDoc?: (
+    docType: AnnualDocType,
+    label: string,
+    file: File,
+    overrideYear?: TaxYear
+  ) => Promise<AnnualTaxDoc>;
+  onApplyAnnualDocExtraction?: (
+    extraction: AnnualDocExtraction,
+    doc: AnnualTaxDoc,
+    overrideYear?: TaxYear,
+    options?: { skipYearSwitch?: boolean }
+  ) => Promise<void>;
   onChangeTaxpayerMode: (mode: TaxpayerMode) => void;
   onApplyLifeStage: (presetId: LifeStagePresetId) => void;
   onUpdatePersonalization: (next: UserPersonalization) => void;
@@ -90,6 +112,9 @@ export function DashboardTab({
   hasCloudSync,
   personalization,
   recurringBills,
+  formBeBaseline,
+  onUploadAnnualDoc,
+  onApplyAnnualDocExtraction,
   onChangeTaxpayerMode,
   onApplyLifeStage,
   onUpdatePersonalization,
@@ -111,6 +136,20 @@ export function DashboardTab({
   const [loggingBillId, setLoggingBillId] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState(String(personalization.taxSavingGoal));
+  const [beParsing, setBeParsing] = useState(false);
+  const [beApplying, setBeApplying] = useState(false);
+  const [beNotice, setBeNotice] = useState<string | null>(null);
+  const [beQueue, setBeQueue] = useState<
+    Array<{
+      id: string;
+      fileName: string;
+      doc: AnnualTaxDoc;
+      extraction: AnnualDocExtraction | null;
+      targetYear: TaxYear;
+      note?: string;
+    }>
+  >([]);
+  const beInputRef = useRef<HTMLInputElement>(null);
   const { copy, tCategory } = useLanguage();
   const currentMonth = getCurrentYearMonth();
   const nearPayday = isNearPayday(personalization.paydayDay);
@@ -534,6 +573,247 @@ export function DashboardTab({
           </button>
         </div>
       </section>
+
+      {/* Past-Year Form e-BE Backfill Card (directly on Dashboard for previous YAs) */}
+      {isPastYear && onUploadAnnualDoc && onApplyAnnualDocExtraction && (
+        <section className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 space-y-3 shadow-xs">
+          <input
+            ref={beInputRef}
+            type="file"
+            multiple
+            accept="application/pdf,image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const files = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (files.length === 0) return;
+              setBeParsing(true);
+              setBeNotice(null);
+              try {
+                const label =
+                  personalization.language === "bm"
+                    ? "Bukti Penghantaran Borang BE LHDN"
+                    : "LHDN Form BE Filing Proof";
+                const items: typeof beQueue = [];
+                for (const file of files) {
+                  const { extraction, skipReason } = await parseAnnualDocFile(
+                    file,
+                    "form_be_proof",
+                    label,
+                    summary.taxYear
+                  );
+                  const detectedYr =
+                    extraction?.detectedTaxYear &&
+                    SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+                      ? extraction.detectedTaxYear
+                      : summary.taxYear;
+                  const savedDoc = await onUploadAnnualDoc(
+                    "form_be_proof",
+                    label,
+                    file,
+                    detectedYr
+                  );
+                  items.push({
+                    id: savedDoc.id,
+                    fileName: file.name,
+                    doc: savedDoc,
+                    extraction,
+                    targetYear: detectedYr,
+                    note: skipReason || undefined,
+                  });
+                }
+                setBeQueue(items);
+              } finally {
+                setBeParsing(false);
+              }
+            }}
+          />
+
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h2 className="text-sm font-bold text-indigo-950">
+                  {personalization.language === "bm"
+                    ? formBeBaseline
+                      ? `Borang e-BE TT ${summary.taxYear} Dimuat Naik`
+                      : `Isi Semula TT ${summary.taxYear} daripada Borang e-BE`
+                    : formBeBaseline
+                    ? `YA ${summary.taxYear} Form e-BE Loaded`
+                    : `Backfill YA ${summary.taxYear} from Form e-BE`}
+                </h2>
+                {formBeBaseline && (() => {
+                  const verifiedByCat: Record<string, number> = {};
+                  for (const exp of yearExpenses) {
+                    if (exp.receiptUrl || exp.receiptPath) {
+                      verifiedByCat[exp.categoryId] =
+                        (verifiedByCat[exp.categoryId] || 0) + exp.amount;
+                    }
+                  }
+                  const declaredCats = Object.entries(
+                    formBeBaseline.declaredByCategory
+                  ).filter(([, amt]) => amt > 0);
+                  const covered = declaredCats.filter(
+                    ([catId, amt]) => (verifiedByCat[catId] || 0) >= amt - 0.01
+                  ).length;
+                  return (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        declaredCats.length > 0 && covered === declaredCats.length
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-900"
+                      }`}
+                    >
+                      {covered}/{declaredCats.length}{" "}
+                      {personalization.language === "bm" ? "disahkan" : "verified"}
+                    </span>
+                  );
+                })()}
+              </div>
+              <p className="mt-0.5 text-xs text-indigo-800/80">
+                {formBeBaseline
+                  ? personalization.language === "bm"
+                    ? `Sumber: ${formBeBaseline.uploadedFileName} • Semak penyesuaian audit & muat naik resit sokongan yang masih kurang.`
+                    : `Source: ${formBeBaseline.uploadedFileName} • Check audit reconciliation & attach any missing supporting receipts.`
+                  : personalization.language === "bm"
+                  ? "Muat naik PDF Borang e-BE MyTax anda (satu atau beberapa tahun sekaligus) untuk mengisi pendapatan, pelepasan & PCB secara automatik."
+                  : "Upload your MyTax Form e-BE PDF (single or multiple years at once) to auto-fill income, reliefs & PCB."}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {formBeBaseline && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTool("form-be")}
+                  className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-indigo-900 shadow-2xs hover:bg-slate-50"
+                >
+                  {personalization.language === "bm"
+                    ? "Semak Audit"
+                    : "Audit & Tally"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={beParsing}
+                onClick={() => beInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
+              >
+                {beParsing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                {beParsing
+                  ? personalization.language === "bm"
+                    ? "Membaca e-BE..."
+                    : "Reading e-BE..."
+                  : formBeBaseline
+                  ? personalization.language === "bm"
+                    ? "Muat Naik e-BE Lain"
+                    : "Upload Another e-BE"
+                  : personalization.language === "bm"
+                  ? "Muat Naik Borang e-BE"
+                  : "Load Form e-BE PDF"}
+              </button>
+            </div>
+          </div>
+
+          {beNotice && (
+            <p className="rounded-xl bg-white/90 px-3 py-2 text-xs font-medium text-emerald-800">
+              {beNotice}
+            </p>
+          )}
+
+          {beQueue.length > 0 && (
+            <div className="space-y-2 border-t border-indigo-200/70 pt-2.5">
+              {beQueue.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white p-2.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-slate-900">
+                      {item.fileName}
+                    </p>
+                    {item.extraction ? (
+                      <p className="text-[11px] text-slate-500">
+                        Income {formatRM(item.extraction.annualIncome)} • Reliefs{" "}
+                        {formatRM(item.extraction.declaredTotalReliefs || 0)} • PCB{" "}
+                        {formatRM(item.extraction.pcbPaid)}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-700">
+                        {item.note || "Archived only — no numeric figures detected"}
+                      </p>
+                    )}
+                  </div>
+                  <select
+                    value={item.targetYear}
+                    onChange={(e) => {
+                      const yr = Number(e.target.value) as TaxYear;
+                      setBeQueue((prev) =>
+                        prev.map((q) => (q.id === item.id ? { ...q, targetYear: yr } : q))
+                      );
+                    }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-800"
+                  >
+                    {SUPPORTED_TAX_YEARS.map((yr) => (
+                      <option key={yr} value={yr}>
+                        YA {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={beApplying || !beQueue.some((q) => q.extraction)}
+                  onClick={async () => {
+                    setBeApplying(true);
+                    try {
+                      const ready = beQueue.filter((q) => q.extraction);
+                      for (let i = 0; i < ready.length; i++) {
+                        const q = ready[i];
+                        await onApplyAnnualDocExtraction(
+                          q.extraction!,
+                          q.doc,
+                          q.targetYear,
+                          { skipYearSwitch: i < ready.length - 1 }
+                        );
+                      }
+                      setBeNotice(
+                        personalization.language === "bm"
+                          ? `Berjaya isi semula ${ready.length} Borang e-BE (${ready.map((r) => `TT ${r.targetYear}`).join(", ")})!`
+                          : `Applied ${ready.length} Form e-BE submission${ready.length === 1 ? "" : "s"} (${ready.map((r) => `YA ${r.targetYear}`).join(", ")})!`
+                      );
+                      setBeQueue([]);
+                    } finally {
+                      setBeApplying(false);
+                    }
+                  }}
+                  className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {beApplying
+                    ? personalization.language === "bm"
+                      ? "Menggunakan..."
+                      : "Applying..."
+                    : personalization.language === "bm"
+                    ? `Guna Semua (${beQueue.filter((q) => q.extraction).length})`
+                    : `Apply All (${beQueue.filter((q) => q.extraction).length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBeQueue([])}
+                  className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-900"
+                >
+                  {personalization.language === "bm" ? "Batal" : "Dismiss"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="space-y-4 md:grid md:grid-cols-12 md:items-start md:gap-5 md:space-y-0">
         {/* Left / Primary Column */}

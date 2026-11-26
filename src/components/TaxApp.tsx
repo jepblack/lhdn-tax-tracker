@@ -1774,6 +1774,9 @@ export function TaxApp() {
                   hasCloudSync={Boolean(userEmail)}
                   personalization={personalization}
                   recurringBills={recurringBills}
+                  formBeBaseline={formBeBaselines[String(taxYear)] || null}
+                  onUploadAnnualDoc={handleUploadAnnualDoc}
+                  onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
                   onChangeTaxpayerMode={(mode) =>
                     handleUpdateProfile({ ...profile, taxpayerMode: mode })
                   }

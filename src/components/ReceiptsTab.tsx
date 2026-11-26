@@ -22,16 +22,14 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { parseAnnualDocFile } from "@/lib/annual-doc-parser";
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
-import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
-import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
 import { downloadJsonMetadata } from "@/lib/receipt-archiver";
 import { exportExpensesToCsv } from "@/lib/storage";
-import { getSupabaseClient } from "@/lib/supabase";
 import {
   AnnualDocExtraction,
   AnnualDocType,
@@ -177,122 +175,6 @@ export function ReceiptsTab({
   const docInputRef = useRef<HTMLInputElement>(null);
   const backfillInputRef = useRef<HTMLInputElement>(null);
   const activeDocSlotRef = useRef<{ type: AnnualDocType; label: string } | null>(null);
-
-  async function parseAnnualDocFile(
-    file: File,
-    docType: AnnualDocType,
-    slotLabel: string,
-    fallbackYear: TaxYear
-  ): Promise<{ extraction: AnnualDocExtraction | null; skipReason: string | null }> {
-    const headers: Record<string, string> = {};
-    const sb = getSupabaseClient();
-    if (sb) {
-      const { data: sess } = await sb.auth.getSession();
-      if (sess.session?.access_token) {
-        headers["Authorization"] = `Bearer ${sess.session.access_token}`;
-      }
-    }
-
-    const postToApi = async (uploadFile: File) => {
-      const fd = new FormData();
-      fd.append("file", uploadFile);
-      fd.append("docType", docType);
-      fd.append("taxYear", String(fallbackYear));
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 22000);
-      try {
-        return await fetch("/api/parse-annual-doc", {
-          method: "POST",
-          headers,
-          body: fd,
-          signal: controller.signal,
-        });
-      } catch {
-        return null;
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    const hasFigures = (ext: AnnualDocExtraction) =>
-      ext.annualIncome > 0 ||
-      ext.pcbPaid > 0 ||
-      ext.zakatPaid > 0 ||
-      ext.epfEmployee > 0 ||
-      ext.socsoEisEmployee > 0 ||
-      ext.lifeInsuranceAmount > 0 ||
-      ext.medicalInsuranceAmount > 0 ||
-      ext.housingLoanInterest > 0 ||
-      (ext.extraReliefs && ext.extraReliefs.length > 0);
-
-    const isPdfFile =
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-
-    // Send the full PDF first so multi-page documents (e.g. MyTax Form e-BE) extract all pages.
-    let res = await postToApi(file);
-    let serverSkipReason: string | null = null;
-    let isScannedPdf = false;
-
-    if (res && res.ok) {
-      const data = await res.json();
-      if (!data.skipped && data.docType) {
-        const ext = data as AnnualDocExtraction;
-        if (hasFigures(ext)) return { extraction: ext, skipReason: null };
-      } else {
-        serverSkipReason = data.skipReason || null;
-        isScannedPdf = Boolean(data.scannedPdf);
-      }
-    }
-
-    // If the PDF was scanned (no selectable text), render Page 1 to JPEG and retry API / OCR.
-    let imageForFallback: File | null = file.type.startsWith("image/") ? file : null;
-    if (isPdfFile && isScannedPdf) {
-      imageForFallback = await renderPdfFirstPageToJpeg(file);
-      if (imageForFallback) {
-        res = await postToApi(imageForFallback);
-        if (res && res.ok) {
-          const data = await res.json();
-          if (!data.skipped && data.docType) {
-            const ext = data as AnnualDocExtraction;
-            if (hasFigures(ext)) return { extraction: ext, skipReason: null };
-          } else if (data.skipReason) {
-            serverSkipReason = data.skipReason;
-          }
-        }
-      }
-    }
-
-    if (imageForFallback && imageForFallback.type.startsWith("image/")) {
-      try {
-        const Tesseract = await import("tesseract.js");
-        const { data: ocrData } = await Tesseract.recognize(imageForFallback, "eng");
-        const p = parseMalaysianPayslipText(ocrData.text || "");
-        const fallbackExt: AnnualDocExtraction = {
-          docType,
-          providerName: slotLabel,
-          annualIncome: p.estimatedAnnualIncome,
-          pcbPaid: p.ytdPcb || p.monthlyPcb,
-          zakatPaid: p.ytdZakat || p.monthlyZakat,
-          epfEmployee: p.ytdEpf || p.employeeEpf,
-          socsoEisEmployee:
-            (p.ytdSocso || p.employeeSocso) + (p.ytdEis || p.employeeEis),
-          lifeInsuranceAmount: 0,
-          medicalInsuranceAmount: 0,
-          housingLoanInterest: 0,
-          summaryNote:
-            "Extracted automatically using built-in on-device OCR.",
-          confidence: p.confidence,
-        };
-        if (hasFigures(fallbackExt)) {
-          return { extraction: fallbackExt, skipReason: null };
-        }
-      } catch {
-        // ignore OCR fallback error
-      }
-    }
-
-    return { extraction: null, skipReason: serverSkipReason };
-  }
 
   const categories = getReliefCategories(taxYear);
   const catMap = new Map(categories.map((c) => [c.id, c]));
