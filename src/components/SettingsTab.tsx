@@ -77,7 +77,7 @@ interface SettingsTabProps {
   ) => Promise<void>;
   onDeleteExpense?: (expense: TaxExpense) => Promise<void>;
   onLoadSampleData: () => void;
-  onClearLocalData: () => void;
+  onClearLocalData: () => Promise<void> | void;
 }
 
 export function SettingsTab({
@@ -113,6 +113,9 @@ export function SettingsTab({
   const [newBillMerchant, setNewBillMerchant] = useState("");
   const [newBillAmount, setNewBillAmount] = useState("");
   const [newBillCategory, setNewBillCategory] = useState("lifestyle");
+  const [confirmClearYear, setConfirmClearYear] = useState(false);
+  const [clearingYear, setClearingYear] = useState(false);
+  const [clearedBanner, setClearedBanner] = useState<string | null>(null);
 
   // Payslip / EA Form multi-upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
@@ -2439,15 +2442,72 @@ export function SettingsTab({
               ? `Muat Data Contoh TT ${profile.taxYear}`
               : `Load Sample YA ${profile.taxYear} Data`}
           </button>
-          <button
-            type="button"
-            onClick={onClearLocalData}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {copy.clearYearBtn.replace("{year}", String(profile.taxYear))}
-          </button>
+          {!confirmClearYear ? (
+            <button
+              type="button"
+              onClick={() => {
+                setClearedBanner(null);
+                setConfirmClearYear(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {copy.clearYearBtn.replace("{year}", String(profile.taxYear))}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs">
+              <span className="font-semibold text-rose-900">
+                {lang === "bm"
+                  ? `Padam semua resit, Borang EA, pendapatan & profil TT ${profile.taxYear}?`
+                  : `Delete all receipts, EA Forms, income & profile for YA ${profile.taxYear}?`}
+              </span>
+              <button
+                type="button"
+                disabled={clearingYear}
+                onClick={async () => {
+                  setClearingYear(true);
+                  try {
+                    await onClearLocalData();
+                    setEaEmployers([]);
+                    setPayslipSourceInfo(null);
+                    setPayslipQueue([]);
+                    setConfirmClearYear(false);
+                    setClearedBanner(
+                      lang === "bm"
+                        ? `Semua data TT ${profile.taxYear} telah dipadam — sedia untuk mula semula!`
+                        : `All YA ${profile.taxYear} data cleared — ready to start fresh!`
+                    );
+                  } finally {
+                    setClearingYear(false);
+                  }
+                }}
+                className="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {clearingYear
+                  ? lang === "bm"
+                    ? "Memadam…"
+                    : "Clearing…"
+                  : lang === "bm"
+                  ? "Ya, Padam Semua"
+                  : "Yes, Clear All"}
+              </button>
+              <button
+                type="button"
+                disabled={clearingYear}
+                onClick={() => setConfirmClearYear(false)}
+                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 border border-slate-200"
+              >
+                {lang === "bm" ? "Batal" : "Cancel"}
+              </button>
+            </div>
+          )}
         </div>
+        {clearedBanner && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{clearedBanner}</span>
+          </div>
+        )}
       </section>
     </div>
   );

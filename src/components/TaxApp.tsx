@@ -1243,10 +1243,65 @@ export function TaxApp() {
     saveLocalExpenses(merged);
   }
 
-  function handleClearLocalData() {
-    const remaining = expenses.filter((e) => e.taxYear !== taxYear);
+  async function handleClearLocalData(targetYear: TaxYear = taxYear) {
+    const toDelete = expenses.filter((e) => e.taxYear === targetYear);
+    for (const exp of toDelete) {
+      await removeExpense(exp, userId);
+    }
+    const remaining = expenses.filter((e) => e.taxYear !== targetYear);
     setExpenses(remaining);
     saveLocalExpenses(remaining);
+
+    // Clear EA employers, payslip month source, annual docs, and baselines for that year
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(`cukaiku_ea_employers_${targetYear}`);
+        window.localStorage.removeItem(`cukaiku_payslip_source_${targetYear}`);
+      } catch {
+        // ignore
+      }
+    }
+
+    const nextDocs = annualDocs.filter((d) => d.taxYear !== targetYear);
+    setAnnualDocs(nextDocs);
+    try {
+      window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(nextDocs));
+    } catch {
+      // ignore
+    }
+
+    const nextBaselines = { ...formBeBaselines };
+    delete nextBaselines[String(targetYear)];
+    setFormBeBaselines(nextBaselines);
+    try {
+      window.localStorage.setItem(
+        FORM_BE_BASELINES_KEY,
+        JSON.stringify(nextBaselines)
+      );
+    } catch {
+      // ignore
+    }
+
+    // Reset profile for targetYear (preserving permanent individual=true)
+    const freshProfile: TaxProfile = getDefaultProfile(targetYear);
+    if (targetYear === taxYear) {
+      setProfile(freshProfile);
+    }
+    await persistProfile(freshProfile, userId);
+
+    if (userId) {
+      persistAnnualStateToCloud(targetYear, [], null, freshProfile, userId).catch(
+        () => {}
+      );
+    }
+
+    // Clear recurring bill locks for that year
+    const updatedBills = recurringBills.map((b) =>
+      b.lastLoggedMonth?.startsWith(`${targetYear}-`)
+        ? { ...b, lastLoggedMonth: undefined }
+        : b
+    );
+    handleSaveRecurringBills(updatedBills);
   }
 
   const desktopNavItems = [
