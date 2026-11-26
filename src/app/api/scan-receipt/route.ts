@@ -13,6 +13,10 @@ import { callGroqJson } from "@/lib/groq-vision";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
 import {
+  learnPublicVendorTemplate,
+  matchPublicVendorTemplate,
+} from "@/lib/vendor-templates";
+import {
   FAMILY_AI_SCAN_LIMIT,
   FREE_AI_SCAN_LIMIT,
   PRO_AI_SCAN_LIMIT,
@@ -357,6 +361,10 @@ export async function POST(request: Request) {
               fallbackToLocalOcr: false,
             });
           }
+          const tplMatch = await matchPublicVendorTemplate(joined);
+          if (tplMatch) {
+            return NextResponse.json(tplMatch);
+          }
         }
       } catch {
         // continue with normal receipt scanning
@@ -478,7 +486,11 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             maxTokens: 1200,
           });
           await recordServerAiScan(request, quota.userId);
-          return NextResponse.json(normalizeAiPayload(parsed, categories));
+          const normalized = normalizeAiPayload(parsed, categories);
+          if (pdfTextForGroq) {
+            await learnPublicVendorTemplate(pdfTextForGroq, normalized).catch(() => {});
+          }
+          return NextResponse.json(normalized);
         }
       } catch (groqErr) {
         console.warn("Groq vision failed, falling back to Gemini:", groqErr);
@@ -588,9 +600,11 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             .replace(/```\s*$/i, "")
             .trim();
           await recordServerAiScan(request, quota.userId);
-          return NextResponse.json(
-            normalizeAiPayload(JSON.parse(cleanedJson), categories)
-          );
+          const normalized = normalizeAiPayload(JSON.parse(cleanedJson), categories);
+          if (pdfExtractedText) {
+            await learnPublicVendorTemplate(pdfExtractedText, normalized).catch(() => {});
+          }
+          return NextResponse.json(normalized);
         }
       } catch (err) {
         const rawErr = err instanceof Error ? err.message : String(err);
