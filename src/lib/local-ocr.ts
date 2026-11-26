@@ -939,10 +939,13 @@ export function parseAndClassifyReceiptText(
 }
 
 const KNOWN_MY_MERCHANTS: Array<{ pattern: RegExp; name: string }> = [
-  { pattern: /\b(tm\s*unifi|unifi\s*home|tm\s*technology)\b/i, name: "TM Unifi" },
-  { pattern: /\b(time\s*dotcom|time\s*fibre)\b/i, name: "TIME Fibre" },
-  { pattern: /\bmaxis\s*fibre\b/i, name: "Maxis Fibre" },
-  { pattern: /\bcelcomdigi\s*fibre\b/i, name: "CelcomDigi Fibre" },
+  { pattern: /\b(tm\s*unifi|unifi\s*home|tm\s*technology|telekom\s*malaysia)\b/i, name: "TM Unifi" },
+  { pattern: /\b(tt\s*dotcom|time\s*dotcom|time\s*fibre)\b/i, name: "TIME Fibre" },
+  { pattern: /\b(maxis\s*fibre|maxis\s*broadband|maxis)\b/i, name: "Maxis" },
+  { pattern: /\b(celcomdigi|celcom\s*mobile|digi\s*telecommunications)\b/i, name: "CelcomDigi" },
+  { pattern: /\b(u\s*mobile|umobile)\b/i, name: "U Mobile" },
+  { pattern: /\b(ytl\s*communications|yes\s*5g)\b/i, name: "Yes 5G" },
+  { pattern: /\b(astro\s*fibre|measat\s*broadcast)\b/i, name: "Astro Fibre" },
   { pattern: /\bdecathlon\b/i, name: "Decathlon Malaysia" },
   { pattern: /\bal[\-\s]?ikhsan\b/i, name: "Al-Ikhsan Sports" },
   { pattern: /\bsports\s*direct\b/i, name: "Sports Direct Malaysia" },

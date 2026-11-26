@@ -20,7 +20,13 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "tm-unifi",
     vendor_name: "TM Unifi",
-    vendor_keywords: ["TELEKOM MALAYSIA", "UNIFI"],
+    vendor_keywords: [
+      "TM TECHNOLOGY",
+      "TELEKOM MALAYSIA",
+      "UNIFI.COM.MY",
+      "TM.COM.MY",
+      "UNIFI",
+    ],
     amount_anchor: "Current Charges",
     date_anchor: "Bill Date",
     invoice_anchor: "Bill No",
@@ -33,7 +39,12 @@ const BUILTIN_TEMPLATES: VendorReceiptTemplate[] = [
   {
     vendor_key: "time-fibre",
     vendor_name: "TIME Fibre",
-    vendor_keywords: ["TIME DOTCOM", "TIME FIBRE"],
+    vendor_keywords: [
+      "TT DOTCOM",
+      "TIME DOTCOM",
+      "TIME FIBRE",
+      "TIME.COM.MY",
+    ],
     amount_anchor: "Total Current Charges",
     date_anchor: "Bill Date",
     invoice_anchor: "Invoice No",
@@ -311,14 +322,19 @@ export async function matchPublicVendorTemplate(
 
   for (const tpl of sortedTemplates) {
     if (!tpl.vendor_keywords.length) continue;
-    const isSingleKwBuiltin =
-      ["maxis-fibre", "celcomdigi", "u-mobile", "yes-5g", "astro-fibre"].includes(
-        tpl.vendor_key
-      );
+    const isBuiltinTelco = [
+      "tm-unifi",
+      "time-fibre",
+      "maxis-fibre",
+      "celcomdigi",
+      "u-mobile",
+      "yes-5g",
+      "astro-fibre",
+    ].includes(tpl.vendor_key);
     const matchedKwCount = tpl.vendor_keywords.filter(
       (kw) => headerUpper.includes(kw.toUpperCase()) || upper.includes(kw.toUpperCase())
     ).length;
-    const requiredMatches = isSingleKwBuiltin
+    const requiredMatches = isBuiltinTelco
       ? 1
       : Math.min(2, tpl.vendor_keywords.length);
     if (matchedKwCount < requiredMatches) continue;
