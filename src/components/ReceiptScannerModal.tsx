@@ -461,6 +461,13 @@ export function ReceiptScannerModal({
   }, [isOpen, scannerMode, stopDocCamera]);
 
   useEffect(() => {
+    if (docCamActive && docVideoRef.current && docStreamRef.current) {
+      docVideoRef.current.srcObject = docStreamRef.current;
+      docVideoRef.current.play().catch(() => {});
+    }
+  }, [docCamActive]);
+
+  useEffect(() => {
     if (!docCamActive || !isOpen) return;
     let cancelled = false;
     let timerId: number | null = null;
@@ -554,8 +561,8 @@ export function ReceiptScannerModal({
         navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
           audio: false,
         }),
@@ -950,6 +957,7 @@ export function ReceiptScannerModal({
         } else {
           setScanStatusText("Optimizing photo...");
           uploadFile = await normalizeImageForAiUpload(file);
+          fileForOcr = uploadFile;
         }
         setScanStatusText("Scanning with Cloud AI...");
         const formData = new FormData();
@@ -1552,8 +1560,12 @@ export function ReceiptScannerModal({
             capture="environment"
             className="hidden"
             onChange={(e) => {
-              handleFileSelected(e.target.files?.[0]);
-              e.target.value = "";
+              const picked = e.target.files?.[0];
+              handleFileSelected(picked);
+              const el = e.currentTarget;
+              setTimeout(() => {
+                el.value = "";
+              }, 100);
             }}
           />
           <input
@@ -1564,7 +1576,10 @@ export function ReceiptScannerModal({
             className="hidden"
             onChange={(e) => {
               const chosen = e.target.files ? Array.from(e.target.files) : [];
-              e.target.value = "";
+              const el = e.currentTarget;
+              setTimeout(() => {
+                el.value = "";
+              }, 100);
               if (chosen.length > 1 && !editingExpense && onOpenBatchWithFiles) {
                 onOpenBatchWithFiles(chosen, categoryId, subCategoryId);
                 return;
