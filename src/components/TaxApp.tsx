@@ -1767,8 +1767,8 @@ export function TaxApp() {
                   expenseCount={yearExpenses.length}
                   missingReceiptsTotal={missingReceiptsTotal}
                   profileCustomized={
-                    profile.annualIncome !== 96000 ||
-                    profile.pcbPaid !== 6200 ||
+                    profile.annualIncome > 0 ||
+                    profile.pcbPaid > 0 ||
                     profile.zakatPaid > 0
                   }
                   hasCloudSync={Boolean(userEmail)}

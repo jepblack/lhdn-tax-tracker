@@ -26,9 +26,9 @@ const LOCAL_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
 export function getDefaultProfile(taxYear: TaxYear): TaxProfile {
   return {
     taxYear,
-    annualIncome: 96000,
+    annualIncome: 0,
     zakatPaid: 0,
-    pcbPaid: 6200,
+    pcbPaid: 0,
     taxpayerMode: "e-BE",
     statusReliefs: { ...DEFAULT_STATUS_RELIEFS },
   };
@@ -453,7 +453,7 @@ export async function syncLocalDataToCloud(
   try {
     for (const yr of SUPPORTED_TAX_YEARS) {
       const localProf = loadLocalProfile(yr);
-      if (localProf && (localProf.annualIncome !== 96000 || localProf.zakatPaid > 0 || localProf.pcbPaid !== 6200)) {
+      if (localProf && (localProf.annualIncome > 0 || localProf.zakatPaid > 0 || localProf.pcbPaid > 0)) {
         await persistProfile(localProf, userId);
         syncedProfile = true;
       }
