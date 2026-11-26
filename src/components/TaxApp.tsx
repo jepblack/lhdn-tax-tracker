@@ -129,6 +129,8 @@ export function TaxApp() {
     getDefaultProfile(taxYear)
   );
   const [expenses, setExpenses] = useState<TaxExpense[]>([]);
+  const expensesRef = useRef<TaxExpense[]>([]);
+  expensesRef.current = expenses;
   const [isLoaded, setIsLoaded] = useState(false);
   const [personalization, setPersonalization] = useState<UserPersonalization>(
     DEFAULT_PERSONALIZATION
@@ -976,7 +978,61 @@ export function TaxApp() {
       return updated;
     }
     const created = await createExpense(expenseData, receiptFile, userId);
-    setExpenses((prev) => [created, ...prev]);
+
+    // Auto-reconcile unreceipted Form BE placeholders when a real receipted expense is added
+    const hasReceiptProof = Boolean(
+      receiptFile || created.receiptUrl || created.receiptPath
+    );
+    const deletedIds = new Set<string>();
+    const updatedMap = new Map<string, TaxExpense>();
+
+    if (hasReceiptProof && created.amount > 0) {
+      const isFormBePlaceholder = (e: TaxExpense) =>
+        e.taxYear === created.taxYear &&
+        e.categoryId === created.categoryId &&
+        !e.receiptUrl &&
+        !e.receiptPath &&
+        Boolean(e.description?.includes("attach supporting receipts for LHDN 7-year audit"));
+
+      const matching = expensesRef.current
+        .filter(isFormBePlaceholder)
+        .sort((a, b) => {
+          const aExact = created.subCategoryId && a.subCategoryId === created.subCategoryId ? 0 : 1;
+          const bExact = created.subCategoryId && b.subCategoryId === created.subCategoryId ? 0 : 1;
+          return aExact - bExact;
+        });
+
+      let remaining = created.amount;
+      for (const placeholder of matching) {
+        if (remaining <= 0.01) break;
+        if (placeholder.amount <= remaining + 0.01) {
+          remaining = Math.round((remaining - placeholder.amount) * 100) / 100;
+          await removeExpense(placeholder, userId);
+          deletedIds.add(placeholder.id);
+        } else {
+          const nextAmount =
+            Math.round((placeholder.amount - remaining) * 100) / 100;
+          remaining = 0;
+          const patched = await updateExpense(
+            placeholder.id,
+            { ...placeholder, amount: nextAmount },
+            null,
+            userId
+          );
+          updatedMap.set(placeholder.id, patched);
+        }
+      }
+    }
+
+    const applyReconcile = (list: TaxExpense[]) => [
+      created,
+      ...list
+        .filter((e) => !deletedIds.has(e.id))
+        .map((e) => updatedMap.get(e.id) || e),
+    ];
+    expensesRef.current = applyReconcile(expensesRef.current);
+    setExpenses((prev) => applyReconcile(prev));
+
     if (
       !skipYearSwitch &&
       created.taxYear !== taxYear &&
