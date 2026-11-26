@@ -201,6 +201,7 @@ export function ReceiptScannerModal({
     useState<AnnualDocExtraction | null>(null);
   const [annualDocType, setAnnualDocType] =
     useState<AnnualDocType>("ea_form");
+  const [syncAllAnnualRecords, setSyncAllAnnualRecords] = useState(true);
   const isGeneralScanMode = !initialCategoryId;
 
   useEffect(() => {
@@ -763,6 +764,7 @@ export function ReceiptScannerModal({
   ) {
     setAnnualExtraction(extraction);
     setAnnualDocType(docType);
+    setSyncAllAnnualRecords(true);
     if (extraction.providerName) setMerchant(extraction.providerName);
     if (
       extraction.detectedTaxYear &&
@@ -1129,6 +1131,7 @@ export function ReceiptScannerModal({
     try {
       if (
         annualExtraction &&
+        syncAllAnnualRecords &&
         receiptFile &&
         onUploadAnnualDoc &&
         onApplyAnnualExtraction
@@ -2757,6 +2760,19 @@ export function ReceiptScannerModal({
                       </span>
                     )}
                   </div>
+                  <label className="flex cursor-pointer items-start gap-2 pt-1 text-[11px] font-medium text-indigo-900">
+                    <input
+                      type="checkbox"
+                      checked={syncAllAnnualRecords}
+                      onChange={(e) => setSyncAllAnnualRecords(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+                    />
+                    <span>
+                      {lang === "bm"
+                        ? "Kemas kini juga semua rekod berkaitan (Pendapatan, PCB, KWSP, PERKESO, Zakat). Nyahtanda untuk simpan kategori ini sahaja."
+                        : "Also update all related records (Income, PCB, EPF, SOCSO, Zakat). Uncheck to save only this category."}
+                    </span>
+                  </label>
                 </div>
               )}
 
@@ -2770,7 +2786,7 @@ export function ReceiptScannerModal({
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {lang === "bm" ? "Menyimpan..." : "Saving..."}
                   </>
-                ) : annualExtraction ? (
+                ) : annualExtraction && syncAllAnnualRecords ? (
                   lang === "bm"
                     ? "Simpan & Segerak Penyata Tahunan"
                     : "Save & Sync Annual Statement"
