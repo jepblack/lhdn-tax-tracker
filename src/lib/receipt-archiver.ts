@@ -84,13 +84,14 @@ export async function computeFileSha256(file: File): Promise<string> {
 }
 
 /**
- * Masks any accidentally visible full card numbers (13-19 digits) or Malaysian NRIC (YYMMDD-PB-####)
- * in metadata text fields to protect privacy.
+ * Masks any accidentally visible full card numbers (13-19 digits) or Malaysian NRIC (dashed or unhyphenated 12-digit)
+ * in metadata text fields to protect PDPA privacy.
  */
 export function maskSensitiveText(text: string): string {
   if (!text) return "";
   return text
     .replace(/\b\d{6}-\d{2}-\d{4}\b/g, "******-**-****")
+    .replace(/\b(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{6}\b/g, "************")
     .replace(/\b(?:\d[ -]*?){13,19}\b/g, (match) => {
       const digits = match.replace(/\D/g, "");
       if (digits.length >= 13 && digits.length <= 19) {

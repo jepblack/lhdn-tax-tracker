@@ -2,6 +2,12 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
+import {
+  checkRateLimit,
+  enforceMaxUploadBytes,
+  getClientIp,
+  verifySameOrigin,
+} from "@/lib/api-security";
 import { callGroqJson } from "@/lib/groq-vision";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { AnnualDocExtraction, AnnualDocType } from "@/lib/types";
@@ -29,6 +35,15 @@ async function isAuthed(request: Request): Promise<boolean> {
 
 export async function POST(request: Request) {
   try {
+    const originErr = verifySameOrigin(request);
+    if (originErr) return originErr;
+
+    const rateErr = checkRateLimit(
+      `annual-doc:${getClientIp(request)}`,
+      15
+    );
+    if (rateErr) return rateErr;
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const docType = String(formData.get("docType") || "other_doc") as AnnualDocType;
@@ -40,6 +55,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const sizeErr = enforceMaxUploadBytes(file, 15);
+    if (sizeErr) return sizeErr;
 
     // Only generic other_doc is archive-only; EA Form, KWSP, Insurance, Loan & Form BE all extract!
     if (docType === "other_doc") {

@@ -37,7 +37,11 @@ import {
   PayslipExtraction,
 } from "@/lib/payslip-parser";
 import { renderPdfFirstPageToJpeg } from "@/lib/pdf-to-image";
-import { getCloudSyncStatus, syncLocalDataToCloud } from "@/lib/storage";
+import {
+  getCloudSyncStatus,
+  syncLocalDataToCloud,
+  wipeAllLocalPii,
+} from "@/lib/storage";
 import {
   getUiCopy,
   LIFE_STAGE_PRESETS,
@@ -50,8 +54,10 @@ import {
   ChildProfile,
   getChildAgeInYear,
   loadChildrenProfiles,
+  sanitizeChildBirthInput,
   saveChildrenProfiles,
 } from "@/lib/children-profiles";
+import { savePdpaConsent } from "./LegalPrivacyModal";
 import { TaxExpense, TaxProfile, UserSubscription } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 
@@ -78,6 +84,8 @@ interface SettingsTabProps {
   onDeleteExpense?: (expense: TaxExpense) => Promise<void>;
   onLoadSampleData: () => void;
   onClearLocalData: () => Promise<void> | void;
+  onOpenLegal?: (section?: "pdpa" | "terms") => void;
+  onAccountWiped?: () => void;
 }
 
 export function SettingsTab({
@@ -98,6 +106,8 @@ export function SettingsTab({
   onDeleteExpense,
   onLoadSampleData,
   onClearLocalData,
+  onOpenLegal,
+  onAccountWiped,
 }: SettingsTabProps) {
   const amounts = getStatusReliefAmounts(profile.taxYear);
   const lang = personalization.language;
@@ -116,6 +126,10 @@ export function SettingsTab({
   const [confirmClearYear, setConfirmClearYear] = useState(false);
   const [clearingYear, setClearingYear] = useState(false);
   const [clearedBanner, setClearedBanner] = useState<string | null>(null);
+  const [signupPdpaConsent, setSignupPdpaConsent] = useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountMsg, setDeleteAccountMsg] = useState<string | null>(null);
 
   // Payslip / EA Form multi-upload state
   const [payslipFile, setPayslipFile] = useState<File | null>(null);
@@ -560,6 +574,14 @@ export function SettingsTab({
   async function handleAuth(mode: "signin" | "signup") {
     const supabase = getSupabaseClient();
     if (!supabase || !email || !password) return;
+    if (mode === "signup" && !signupPdpaConsent) {
+      setAuthStatus(
+        lang === "bm"
+          ? "Sila tandakan kotak persetujuan Notis Privasi PDPA sebelum mendaftar akaun."
+          : "Please tick the PDPA Privacy Notice consent checkbox before creating an account."
+      );
+      return;
+    }
     setAuthLoading(true);
     setAuthStatus(null);
     try {
@@ -570,6 +592,9 @@ export function SettingsTab({
       if (error) {
         setAuthStatus(error.message);
       } else {
+        if (mode === "signup") {
+          await savePdpaConsent();
+        }
         setAuthStatus(
           mode === "signup"
             ? "Account created! Check your email if confirmation is enabled."
@@ -751,8 +776,52 @@ export function SettingsTab({
   }
 
   async function handleSignOut() {
+    await wipeAllLocalPii();
     const supabase = getSupabaseClient();
     if (supabase) await supabase.auth.signOut();
+    setEaEmployers([]);
+    setPayslipSourceInfo(null);
+    setChildrenProfiles([]);
+    onAccountWiped?.();
+  }
+
+  async function handleDeleteCloudAccount() {
+    setDeletingAccount(true);
+    setDeleteAccountMsg(null);
+    try {
+      const supabase = getSupabaseClient();
+      const session = (await supabase?.auth.getSession())?.data.session;
+      if (session?.access_token) {
+        const res = await fetch("/api/account/delete", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to erase cloud account data.");
+        }
+      }
+      await wipeAllLocalPii();
+      if (supabase) await supabase.auth.signOut();
+      setEaEmployers([]);
+      setPayslipSourceInfo(null);
+      setChildrenProfiles([]);
+      setConfirmDeleteAccount(false);
+      onAccountWiped?.();
+      setDeleteAccountMsg(
+        lang === "bm"
+          ? "Semua fail awan, rekod cukai & data peranti telah dipadamkan sepenuhnya mengikut PDPA."
+          : "All cloud files, tax records & local device data have been permanently erased under PDPA."
+      );
+    } catch (err) {
+      setDeleteAccountMsg(
+        err instanceof Error ? err.message : "Could not complete account erasure."
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
   }
 
   async function handlePushLocalToCloud() {
@@ -2008,8 +2077,8 @@ export function SettingsTab({
           </div>
           <p className="text-[11px] text-slate-500">
             {lang === "bm"
-              ? "Digunakan untuk menyemak kelayakan umur bagi Taska/Tadika (≤6 thn), Penyusuan (≤2 thn), dan kategori anak."
-              : "Used to validate age prerequisites for Childcare (≤6 yrs), Breastfeeding (≤2 yrs), and child reliefs."}
+              ? "Menyemak umur bagi Taska/Tadika (≤6 thn) & Penyusuan (≤2 thn). Privasi PDPA: Sebarang MyKad ditukar kepada Tahun & Bulan Lahir (YYYY-MM) sahaja — nombor IC penuh tidak disimpan."
+              : "Validates Childcare (≤6 yrs) & Breastfeeding (≤2 yrs). PDPA Privacy: Any MyKad is immediately converted to Birth Year & Month (YYYY-MM) only — full IC numbers are never stored."}
           </p>
           {childrenProfiles.length > 0 && (
             <div className="space-y-1.5">
@@ -2078,13 +2147,14 @@ export function SettingsTab({
             <button
               type="button"
               onClick={() => {
-                if (!newChildName.trim() || !newChildBirth.trim()) return;
+                const cleanBirth = sanitizeChildBirthInput(newChildBirth);
+                if (!newChildName.trim() || !cleanBirth) return;
                 const next: ChildProfile[] = [
                   ...childrenProfiles,
                   {
                     id: `child_${Date.now()}`,
                     name: newChildName.trim(),
-                    birthOrMyKad: newChildBirth.trim(),
+                    birthOrMyKad: cleanBirth,
                   },
                 ];
                 setChildrenProfiles(next);
@@ -2370,6 +2440,29 @@ export function SettingsTab({
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
                     />
+                    <label className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-[11px] text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={signupPdpaConsent}
+                        onChange={(e) => setSignupPdpaConsent(e.target.checked)}
+                        className="mt-0.5 h-3.5 w-3.5 accent-emerald-600"
+                      />
+                      <span>
+                        {lang === "bm"
+                          ? "Bagi pendaftaran akaun baharu, saya bersetuju dengan pemprosesan data peribadi & sensitif (resit perubatan/OKU/Zakat & AI) mengikut "
+                          : "For new account sign-up, I explicitly consent to personal & sensitive data processing (medical/OKU/Zakat receipts & AI) under the "}
+                        <button
+                          type="button"
+                          onClick={() => onOpenLegal?.("pdpa")}
+                          className="font-semibold text-emerald-700 underline"
+                        >
+                          {lang === "bm"
+                            ? "Notis Privasi PDPA"
+                            : "PDPA Privacy Notice"}
+                        </button>
+                        .
+                      </span>
+                    </label>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -2506,6 +2599,99 @@ export function SettingsTab({
           <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
             <span>{clearedBanner}</span>
+          </div>
+        )}
+      </section>
+
+      {/* PDPA Privacy, Legal Disclaimers & Right to Erasure */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          <h2 className="text-sm font-bold text-slate-900">
+            {lang === "bm"
+              ? "Privasi PDPA, Penafian LHDN & Pemadaman Akaun"
+              : "PDPA Privacy, LHDN Disclaimer & Account Erasure"}
+          </h2>
+        </div>
+        <p className="text-xs text-slate-500">
+          {lang === "bm"
+            ? "Selaras dengan Akta Perlindungan Data Peribadi 2010 (Pindaan 2024) & Seksyen 153 ACP 1967. Apabila anda log keluar, semua data peribadi tempatan pada peranti ini dipadamkan secara automatik."
+            : "Compliant with Malaysia's PDPA 2010 (2024 Amendment) & ITA 1967 s.153. Signing out automatically wipes cached personal data from this device."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenLegal?.("pdpa")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+            {lang === "bm"
+              ? "Notis Privasi PDPA (EN/BM)"
+              : "PDPA Privacy Notice (EN/BM)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenLegal?.("terms")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+          >
+            {lang === "bm"
+              ? "Penafian LHDN (Sek. 153) & Terma"
+              : "LHDN Disclaimer (s.153) & Terms"}
+          </button>
+
+          {!confirmDeleteAccount ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteAccountMsg(null);
+                setConfirmDeleteAccount(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {userEmail
+                ? lang === "bm"
+                  ? "Padam Akaun & Semua Data Awan"
+                  : "Delete Account & All Cloud Data"
+                : lang === "bm"
+                ? "Padam Semua Data Peranti Ini"
+                : "Wipe All Local Device Data"}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs">
+              <span className="font-semibold text-rose-900">
+                {lang === "bm"
+                  ? "Tindakan kekal: Padam semua fail resit awan, semua tahun taksiran & akaun anda?"
+                  : "Permanent action: Erase all cloud receipt files, all tax years & your account?"}
+              </span>
+              <button
+                type="button"
+                disabled={deletingAccount}
+                onClick={handleDeleteCloudAccount}
+                className="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deletingAccount
+                  ? lang === "bm"
+                    ? "Memadam…"
+                    : "Erasing…"
+                  : lang === "bm"
+                  ? "Ya, Padam Kekal"
+                  : "Yes, Permanently Erase"}
+              </button>
+              <button
+                type="button"
+                disabled={deletingAccount}
+                onClick={() => setConfirmDeleteAccount(false)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+              >
+                {lang === "bm" ? "Batal" : "Cancel"}
+              </button>
+            </div>
+          )}
+        </div>
+        {deleteAccountMsg && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
+            {deleteAccountMsg}
           </div>
         )}
       </section>

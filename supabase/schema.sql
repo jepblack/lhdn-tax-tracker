@@ -75,6 +75,17 @@ create policy "Users view own receipts"
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 
+create policy "Users update own receipts"
+  on storage.objects for update
+  using (
+    bucket_id = 'receipts'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  )
+  with check (
+    bucket_id = 'receipts'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
 create policy "Users delete own receipts"
   on storage.objects for delete
   using (
@@ -82,7 +93,7 @@ create policy "Users delete own receipts"
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- 5. User Subscriptions & AI Quota Tracking (Monetization & Paywall)
+-- 5. User Subscriptions & AI Quota Tracking (Locked-down RLS + Server Webhook Upgrades)
 create table if not exists public.user_subscriptions (
   user_id uuid primary key references auth.users(id) on delete cascade,
   plan_tier text not null default 'free' check (plan_tier in ('free', 'pro', 'family')),
@@ -91,15 +102,63 @@ create table if not exists public.user_subscriptions (
   gateway text default null,
   payment_ref text default null,
   expires_at timestamptz default null,
+  pdpa_consented_at timestamptz default null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-grant select, insert, update on table public.user_subscriptions to authenticated;
+-- Authenticated users can ONLY read their subscription; plan_tier & ai_scans_limit
+-- can only be modified by service_role (verified payment webhooks) or safe SECURITY DEFINER RPCs.
+revoke insert, update, delete on table public.user_subscriptions from authenticated, anon;
+grant select on table public.user_subscriptions to authenticated;
 
 alter table public.user_subscriptions enable row level security;
 
-create policy "Users view and manage own subscription"
-  on public.user_subscriptions for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "Users view and manage own subscription" on public.user_subscriptions;
+create policy "Users view own subscription"
+  on public.user_subscriptions for select
+  using (auth.uid() = user_id);
+
+-- Safe RPC allowing an authenticated user (or server acting with their JWT) to increment ONLY ai_scans_used
+create or replace function public.increment_own_ai_scan()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+  insert into public.user_subscriptions (user_id, plan_tier, ai_scans_used, ai_scans_limit, updated_at)
+  values (auth.uid(), 'free', 1, 5, now())
+  on conflict (user_id)
+  do update set
+    ai_scans_used = public.user_subscriptions.ai_scans_used + 1,
+    updated_at = now();
+end;
+$$;
+
+grant execute on function public.increment_own_ai_scan() to authenticated;
+
+-- Safe RPC to record PDPA explicit consent timestamp without exposing plan_tier writes
+create or replace function public.record_pdpa_consent()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+  insert into public.user_subscriptions (user_id, plan_tier, ai_scans_used, ai_scans_limit, pdpa_consented_at, updated_at)
+  values (auth.uid(), 'free', 0, 5, now(), now())
+  on conflict (user_id)
+  do update set
+    pdpa_consented_at = coalesce(public.user_subscriptions.pdpa_consented_at, now()),
+    updated_at = now();
+end;
+$$;
+
+grant execute on function public.record_pdpa_consent() to authenticated;

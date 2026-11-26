@@ -3,6 +3,7 @@ import {
   getGoogleDriveToken,
   saveGoogleDriveToken,
 } from "./google-drive";
+import { clearAllOfflineQueuedReceipts } from "./offline-queue";
 import {
   DEFAULT_STATUS_RELIEFS,
   getReliefCategories,
@@ -22,6 +23,36 @@ const LOCAL_EXPENSES_KEY = "cukaiku_expenses_v1";
 const LOCAL_PROFILES_KEY = "cukaiku_profiles_v1";
 const LOCAL_ANNUAL_DOCS_KEY = "cukaiku_annual_docs_v1";
 const LOCAL_BASELINES_KEY = "cukaiku_form_be_baselines_v1";
+
+/**
+ * PDPA Security: Wipes all cached personal/financial data from localStorage,
+ * revokes cached Google Drive token, and clears the IndexedDB offline receipt queue.
+ * Called on Sign-Out and Account Deletion so shared devices retain zero taxpayer PII.
+ */
+export async function wipeAllLocalPii(): Promise<void> {
+  saveGoogleDriveToken(null);
+  await clearAllOfflineQueuedReceipts();
+  if (typeof window === "undefined") return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (
+        k &&
+        k.startsWith("cukaiku_") &&
+        k !== "cukaiku_theme" &&
+        k !== "cukaiku_pdpa_consent_v1"
+      ) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      window.localStorage.removeItem(k);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export function getDefaultProfile(taxYear: TaxYear): TaxProfile {
   return {

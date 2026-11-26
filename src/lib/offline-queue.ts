@@ -80,3 +80,18 @@ export async function removeOfflineQueuedReceipt(id: string): Promise<void> {
     // ignore
   }
 }
+
+export async function clearAllOfflineQueuedReceipts(): Promise<void> {
+  try {
+    const db = await openOfflineDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // ignore
+  }
+}

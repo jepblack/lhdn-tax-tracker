@@ -1,6 +1,12 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
+import {
+  checkRateLimit,
+  enforceMaxUploadBytes,
+  getClientIp,
+  verifySameOrigin,
+} from "@/lib/api-security";
 import { callGroqJson } from "@/lib/groq-vision";
 import {
   EaFormExtraction,
@@ -252,6 +258,15 @@ function normalizeAiPayslip(
 
 export async function POST(request: Request) {
   try {
+    const originErr = verifySameOrigin(request);
+    if (originErr) return originErr;
+
+    const rateErr = checkRateLimit(
+      `payslip:${getClientIp(request)}`,
+      15
+    );
+    if (rateErr) return rateErr;
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const renderedImage = formData.get("renderedImage") as File | null;
@@ -262,6 +277,11 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const sizeErr =
+      enforceMaxUploadBytes(file, 15) ||
+      enforceMaxUploadBytes(renderedImage, 15);
+    if (sizeErr) return sizeErr;
 
     const arrayBuffer = await file.arrayBuffer();
     if (arrayBuffer.byteLength === 0) {

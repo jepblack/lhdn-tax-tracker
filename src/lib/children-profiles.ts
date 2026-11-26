@@ -1,68 +1,52 @@
 export interface ChildProfile {
   id: string;
   name: string;
-  birthOrMyKad: string; // DOB (YYYY-MM-DD / DD/MM/YYYY), MyKad (YYMMDD...), or age
+  birthOrMyKad: string; // Stored strictly as YYYY-MM, YYYY, or plain age (raw MyKad is immediately sanitized!)
 }
 
 const CHILDREN_STORAGE_KEY = "cukaiku_children_profiles_v1";
 
-export function loadChildrenProfiles(): ChildProfile[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(CHILDREN_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveChildrenProfiles(list: ChildProfile[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CHILDREN_STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
-}
-
 /**
- * Derives a child's age in the given LHDN Tax Year from:
- * - Plain integer age (only accurate for current year, but supported)
- * - ISO date YYYY-MM-DD
- * - Slash/dash date DD/MM/YYYY
- * - Malaysian MyKad / MyKid 12-digit (or 6-digit YYMMDD prefix)
+ * PDPA Data Minimization:
+ * Converts any entered Malaysian MyKad / MyKid (YYMMDD-PB-#### or 12 digits) or full DOB
+ * into Birth Year & Month ONLY ("YYYY-MM") so raw IC numbers are NEVER persisted to storage.
  */
-export function getChildAgeInYear(
-  birthOrMyKad: string,
-  taxYear: number
-): number | null {
-  const raw = birthOrMyKad.trim();
-  if (!raw) return null;
+export function sanitizeChildBirthInput(input: string): string {
+  const raw = input.trim();
+  if (!raw) return "";
 
-  // Plain age like "4" or "12"
+  // Plain integer age like "4" or "12"
   if (/^\d{1,2}$/.test(raw)) {
     const ageNow = Number(raw);
-    const currentYear = new Date().getFullYear();
-    return Math.max(0, ageNow + (taxYear - currentYear));
+    const birthYear = new Date().getFullYear() - ageNow;
+    return String(birthYear);
   }
 
-  // YYYY-MM-DD
+  // Already YYYY or YYYY-MM
+  const ymMatch = raw.match(/^(\d{4})(?:-(\d{1,2}))?$/);
+  if (ymMatch) {
+    const yr = Number(ymMatch[1]);
+    const mo = ymMatch[2] ? String(Number(ymMatch[2])).padStart(2, "0") : "";
+    return mo ? `${yr}-${mo}` : `${yr}`;
+  }
+
+  // ISO date YYYY-MM-DD -> keep YYYY-MM only
   const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (isoMatch) {
-    const birthYear = Number(isoMatch[1]);
-    return Math.max(0, taxYear - birthYear);
+    const yr = Number(isoMatch[1]);
+    const mo = String(Number(isoMatch[2])).padStart(2, "0");
+    return `${yr}-${mo}`;
   }
 
-  // DD/MM/YYYY or DD-MM-YYYY
+  // DD/MM/YYYY or DD-MM-YYYY -> keep YYYY-MM only
   const dmyMatch = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
   if (dmyMatch) {
-    const birthYear = Number(dmyMatch[3]);
-    return Math.max(0, taxYear - birthYear);
+    const yr = Number(dmyMatch[3]);
+    const mo = String(Number(dmyMatch[2])).padStart(2, "0");
+    return `${yr}-${mo}`;
   }
 
-  // Malaysian MyKad / MyKid: starts with YYMMDD (with or without hyphens)
+  // Malaysian MyKad / MyKid (6 to 12 digits starting with YYMMDD) -> convert to YYYY-MM & discard IC!
   const digits = raw.replace(/\D/g, "");
   if (digits.length >= 6) {
     const yy = Number(digits.slice(0, 2));
@@ -71,10 +55,60 @@ export function getChildAgeInYear(
     if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
       const currentTwoDigit = new Date().getFullYear() % 100;
       const birthYear = yy > currentTwoDigit + 1 ? 1900 + yy : 2000 + yy;
-      return Math.max(0, taxYear - birthYear);
+      return `${birthYear}-${String(mm).padStart(2, "0")}`;
     }
   }
 
+  return raw.replace(/\d{6,}/g, "[REDACTED]");
+}
+
+export function loadChildrenProfiles(): ChildProfile[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CHILDREN_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Auto-sanitize any legacy stored MyKad numbers on read
+    const sanitized = parsed.map((c: ChildProfile) => ({
+      ...c,
+      birthOrMyKad: sanitizeChildBirthInput(String(c.birthOrMyKad || "")),
+    }));
+    window.localStorage.setItem(CHILDREN_STORAGE_KEY, JSON.stringify(sanitized));
+    return sanitized;
+  } catch {
+    return [];
+  }
+}
+
+export function saveChildrenProfiles(list: ChildProfile[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const sanitized = list.map((c) => ({
+      ...c,
+      birthOrMyKad: sanitizeChildBirthInput(c.birthOrMyKad),
+    }));
+    window.localStorage.setItem(CHILDREN_STORAGE_KEY, JSON.stringify(sanitized));
+  } catch {
+    // ignore
+  }
+}
+
+export function getChildAgeInYear(
+  birthOrMyKad: string,
+  taxYear: number
+): number | null {
+  const clean = sanitizeChildBirthInput(birthOrMyKad);
+  if (!clean) return null;
+
+  const yrMatch = clean.match(/^(\d{4})/);
+  if (yrMatch) {
+    return Math.max(0, taxYear - Number(yrMatch[1]));
+  }
+  if (/^\d{1,2}$/.test(clean)) {
+    const ageNow = Number(clean);
+    return Math.max(0, ageNow + (taxYear - new Date().getFullYear()));
+  }
   return null;
 }
 

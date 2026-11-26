@@ -2,6 +2,13 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { extractText } from "unpdf";
+import {
+  checkRateLimit,
+  enforceMaxUploadBytes,
+  getClientIp,
+  getSupabaseAdminClient,
+  verifySameOrigin,
+} from "@/lib/api-security";
 import { callGroqJson } from "@/lib/groq-vision";
 import { getReliefCategories } from "@/lib/lhdn-rules";
 import { parseAndClassifyReceiptText } from "@/lib/local-ocr";
@@ -171,10 +178,8 @@ async function checkUserAuthAndQuota(
       tier =
         subRow.plan_tier === "pro" || subRow.plan_tier === "family"
           ? subRow.plan_tier
-          : clientPlanTier !== "free"
-          ? clientPlanTier
           : "free";
-      used = Math.max(clientScansUsed, Number(subRow.ai_scans_used) || 0);
+      used = Number(subRow.ai_scans_used) || 0;
       limit =
         Number(subRow.ai_scans_limit) ||
         (tier === "family"
@@ -182,6 +187,10 @@ async function checkUserAuthAndQuota(
           : tier === "pro"
           ? PRO_AI_SCAN_LIMIT
           : FREE_AI_SCAN_LIMIT);
+    } else {
+      tier = "free";
+      used = clientScansUsed;
+      limit = FREE_AI_SCAN_LIMIT;
     }
 
     const exceeded = tier === "free" && used >= FREE_AI_SCAN_LIMIT;
@@ -208,8 +217,62 @@ async function checkUserAuthAndQuota(
   }
 }
 
+async function recordServerAiScan(request: Request, userId: string | null) {
+  if (!userId) return;
+  try {
+    const admin = getSupabaseAdminClient();
+    if (admin) {
+      const { data: row } = await admin
+        .from("user_subscriptions")
+        .select("ai_scans_used")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (row) {
+        await admin
+          .from("user_subscriptions")
+          .update({
+            ai_scans_used: (Number(row.ai_scans_used) || 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId);
+      } else {
+        await admin.from("user_subscriptions").insert({
+          user_id: userId,
+          plan_tier: "free",
+          ai_scans_used: 1,
+          ai_scans_limit: FREE_AI_SCAN_LIMIT,
+        });
+      }
+      return;
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const token = (request.headers.get("authorization") || "")
+      .replace(/^Bearer\s+/i, "")
+      .trim();
+    if (supabaseUrl && supabaseKey && token) {
+      const sb = createClient(supabaseUrl, supabaseKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      await sb.rpc("increment_own_ai_scan");
+    }
+  } catch {
+    // Non-fatal if RPC not yet migrated
+  }
+}
+
 export async function POST(request: Request) {
   try {
+    const originErr = verifySameOrigin(request);
+    if (originErr) return originErr;
+
+    const rateErr = checkRateLimit(
+      `scan-receipt:${getClientIp(request)}`,
+      25
+    );
+    if (rateErr) return rateErr;
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const rawYear = Number(formData.get("taxYear") || 2026);
@@ -222,6 +285,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const sizeErr = enforceMaxUploadBytes(file, 15);
+    if (sizeErr) return sizeErr;
 
     const rawPlan = String(formData.get("planTier") || "free");
     const clientPlanTier: PlanTier =
@@ -386,6 +452,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             imageMimeType: mimeType,
             maxTokens: 1200,
           });
+          await recordServerAiScan(request, quota.userId);
           return NextResponse.json(normalizeAiPayload(parsed, categories));
         }
       } catch (groqErr) {
@@ -426,6 +493,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
           const oaiJson = await oaiRes.json();
           const content = oaiJson.choices?.[0]?.message?.content;
           if (content) {
+            await recordServerAiScan(request, quota.userId);
             return NextResponse.json(
               normalizeAiPayload(JSON.parse(content), categories)
             );
@@ -494,6 +562,7 @@ Return ONLY a raw valid JSON object (no markdown fences) with these exact keys:
             .replace(/^```\s*/i, "")
             .replace(/```\s*$/i, "")
             .trim();
+          await recordServerAiScan(request, quota.userId);
           return NextResponse.json(
             normalizeAiPayload(JSON.parse(cleanedJson), categories)
           );

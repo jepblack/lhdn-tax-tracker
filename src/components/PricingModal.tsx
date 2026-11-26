@@ -141,6 +141,11 @@ export function PricingModal({
 
   if (!isOpen) return null;
 
+  const isProd = process.env.NODE_ENV === "production";
+  const visibleGateways = isProd
+    ? GATEWAY_OPTIONS.filter((g) => g.id !== "demo")
+    : GATEWAY_OPTIONS;
+
   async function handleCheckout(targetPlan: PlanTier) {
     if (targetPlan === "free") {
       await onUpgradeSuccess(
@@ -368,7 +373,7 @@ export function PricingModal({
                 : "Select Payment Method (Malaysia FPX / DuitNow / Card)"}
             </label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {GATEWAY_OPTIONS.map((gw) => {
+              {visibleGateways.map((gw) => {
                 const Icon = gw.icon;
                 const active = selectedGateway === gw.id;
                 return (
@@ -451,7 +456,7 @@ export function PricingModal({
                   ? "Pas TT sekali bayar • Tiada pembaharuan automatik"
                   : "One-time YA pass • No auto-renewal lock-in"}
               </span>
-              {subscription.planTier !== "free" && (
+              {!isProd && subscription.planTier !== "free" && (
                 <button
                   type="button"
                   onClick={() => handleCheckout("free")}
@@ -463,6 +468,12 @@ export function PricingModal({
                 </button>
               )}
             </div>
+
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-[10px] leading-relaxed text-slate-500">
+              {lang === "bm"
+                ? "Pendedahan E-Dagang Malaysia & Seksyen 153 ACP 1967: Semua harga dalam MYR (tiada pembaharuan automatik). Bayaran balik penuh dalam 7 hari jika <10 imbasan AI digunakan (support@cukaiku.my). CukaiKu ialah alat pengurusan resit layan diri, bukan ejen cukai berlesen."
+                : "Malaysia E-Commerce (ETT 2024) & ITA s.153 Disclosure: Prices in MYR (one-time pass, no auto-debit). 7-day refund guarantee if <10 AI scans used (support@cukaiku.my). CukaiKu is a self-service organizer, not a licensed tax agent."}
+            </p>
           </div>
         </div>
       </div>

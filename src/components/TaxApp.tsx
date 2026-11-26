@@ -92,6 +92,11 @@ import {
 import { BatchImportModal } from "./BatchImportModal";
 import { DashboardTab } from "./DashboardTab";
 import { FilingToolsSheet, FilingToolTab } from "./FilingToolsSheet";
+import {
+  hasStoredPdpaConsent,
+  LegalPrivacyModal,
+  savePdpaConsent,
+} from "./LegalPrivacyModal";
 import { MyInvoisQrModal } from "./MyInvoisQrModal";
 import { QuickGuideModal, WELCOME_SEEN_KEY } from "./QuickStartGuide";
 import { PricingModal } from "./PricingModal";
@@ -170,6 +175,9 @@ export function TaxApp() {
   >({});
   const [privacyBlur, setPrivacyBlur] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
+  const [legalSection, setLegalSection] = useState<"pdpa" | "terms">("pdpa");
+  const [pdpaConsented, setPdpaConsented] = useState(true);
 
   async function refreshOfflineQueueCount() {
     const items = await listOfflineQueuedReceipts();
@@ -217,6 +225,7 @@ export function TaxApp() {
 
       setPersonalization(loadPersonalization());
       setRecurringBills(loadRecurringBills());
+      setPdpaConsented(hasStoredPdpaConsent());
 
       refreshOfflineQueueCount();
 
@@ -229,20 +238,34 @@ export function TaxApp() {
         setScannerModeInit("qr");
         setScannerOpen(true);
       }
-      const upgraded = params.get("upgraded");
-      const gatewayParam = params.get("gateway") as PaymentGatewayId | null;
-      if (upgraded === "pro" || upgraded === "family") {
-        persistSubscription(
-          {
-            ...getDefaultSubscription(),
-            planTier: upgraded,
-            gateway: gatewayParam || "stripe",
-            expiresAt: new Date(
-              Date.now() + 365 * 24 * 60 * 60 * 1000
-            ).toISOString(),
-          },
-          null
-        ).then((sub) => setSubscription(sub));
+
+      // Verify Stripe checkout session server-side instead of trusting bare URL query params
+      const checkoutSessionId = params.get("checkout_session");
+      const checkoutState = params.get("checkout");
+      if (checkoutSessionId) {
+        fetch("/api/verify-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: checkoutSessionId }),
+        })
+          .then((r) => r.json())
+          .then((res) => {
+            if (res?.verified && (res.planTier === "pro" || res.planTier === "family")) {
+              return persistSubscription(
+                {
+                  ...getDefaultSubscription(),
+                  planTier: res.planTier,
+                  gateway: "stripe",
+                  expiresAt: res.expiresAt,
+                  aiScansLimit: res.aiScansLimit,
+                },
+                null
+              ).then((sub) => setSubscription(sub));
+            }
+          })
+          .catch(() => {});
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (checkoutState === "pending_webhook" || checkoutState === "cancelled") {
         window.history.replaceState({}, "", window.location.pathname);
       }
     } catch {
@@ -1876,12 +1899,105 @@ export function TaxApp() {
                   onDeleteExpense={handleDeleteExpense}
                   onLoadSampleData={handleLoadSampleData}
                   onClearLocalData={handleClearLocalData}
+                  onOpenLegal={(sec) => {
+                    setLegalSection(sec || "pdpa");
+                    setLegalOpen(true);
+                  }}
+                  onAccountWiped={() => {
+                    setExpenses([]);
+                    setAnnualDocs([]);
+                    setFormBeBaselines({});
+                    setProfile(getDefaultProfile(taxYear));
+                    setSubscription(getDefaultSubscription());
+                    setDriveConnected(false);
+                    setOfflineQueueCount(0);
+                  }}
                 />
               )}
             </>
           )}
+
+          {/* Malaysian Law (ITA s.153) & PDPA Compliance Footer */}
+          <footer className="mt-6 border-t border-slate-200/80 pt-4 pb-20 text-center text-[11px] text-slate-500 lg:pb-6">
+            <p>
+              {personalization.language === "bm"
+                ? "CukaiKu ialah alat pengurusan resit & penganggar cukai layan diri — bukan ejen cukai berlesen di bawah Seksyen 153 ACP 1967. Sila sahkan angka akhir di MyTax (ez.hasil.gov.my)."
+                : "CukaiKu is a self-service receipt organizer & tax estimator — not a licensed tax agent under s.153 Income Tax Act 1967. Always verify final figures on LHDN MyTax (ez.hasil.gov.my)."}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-3 font-semibold text-emerald-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setLegalSection("pdpa");
+                  setLegalOpen(true);
+                }}
+                className="hover:underline"
+              >
+                {personalization.language === "bm"
+                  ? "Notis Privasi PDPA (EN/BM)"
+                  : "PDPA Privacy Notice (EN/BM)"}
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLegalSection("terms");
+                  setLegalOpen(true);
+                }}
+                className="hover:underline"
+              >
+                {personalization.language === "bm"
+                  ? "Penafian LHDN & Terma E-Dagang"
+                  : "LHDN Disclaimer & E-Commerce Terms"}
+              </button>
+            </div>
+          </footer>
         </main>
       </div>
+
+      {/* First-Time PDPA Explicit Consent Banner (Malaysian PDPA 2010 / 2024 Amendment) */}
+      {!pdpaConsented && (
+        <div className="fixed inset-x-3 bottom-20 z-40 mx-auto max-w-2xl rounded-2xl border border-emerald-300 bg-white/95 p-3.5 shadow-xl backdrop-blur-md lg:bottom-4">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-slate-700">
+              <p className="font-bold text-slate-900">
+                {personalization.language === "bm"
+                  ? "Privasi PDPA Malaysia & Persetujuan Data"
+                  : "Malaysia PDPA Privacy & Data Consent"}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-600">
+                {personalization.language === "bm"
+                  ? "Kami meminimumkan data peribadi anda (tiada nombor MyKad penuh disimpan) & menyulitkan resit anda mengikut PDPA 2010/2024."
+                  : "We minimize personal data (raw MyKad numbers are never stored) & protect your tax receipts under Malaysia's PDPA 2010/2024."}{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLegalSection("pdpa");
+                    setLegalOpen(true);
+                  }}
+                  className="font-semibold text-emerald-700 underline"
+                >
+                  {personalization.language === "bm"
+                    ? "Baca Notis EN/BM"
+                    : "Read EN/BM Notice"}
+                </button>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await savePdpaConsent();
+                setPdpaConsented(true);
+              }}
+              className="shrink-0 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+            >
+              {personalization.language === "bm"
+                ? "Saya Setuju"
+                : "I Consent"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mobile & Tablet (< 1024px) Fixed Bottom Navigation Bar with Elevated Circular Scan CTA */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-safe backdrop-blur-md lg:hidden">
@@ -2057,6 +2173,14 @@ export function TaxApp() {
         onStartScanning={() => openScanner()}
         onGoToSettings={() => setActiveTab("settings")}
         onLoadSampleData={handleLoadSampleData}
+      />
+
+      <LegalPrivacyModal
+        isOpen={legalOpen}
+        initialLang={personalization.language}
+        initialSection={legalSection}
+        onClose={() => setLegalOpen(false)}
+        onAcceptConsent={() => setPdpaConsented(true)}
       />
     </div>
     </LanguageProvider>

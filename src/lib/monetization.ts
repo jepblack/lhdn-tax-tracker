@@ -267,24 +267,7 @@ export async function fetchSubscription(
           data.plan_tier === "pro" || data.plan_tier === "family"
             ? data.plan_tier
             : "free";
-        const localNewer =
-          new Date(local.updatedAt).getTime() >
-          new Date(data.updated_at || 0).getTime();
-
-        // If user upgraded offline (local has paid tier & newer timestamp while cloud is still free), push local up
-        if (local.planTier !== "free" && cloudTier === "free" && localNewer) {
-          return await persistSubscription(
-            {
-              ...local,
-              aiScansUsed: Math.max(
-                local.aiScansUsed,
-                Number(data.ai_scans_used) || 0
-              ),
-            },
-            userId
-          );
-        }
-
+        // Never let tampered localStorage self-upgrade a cloud user whose server record is free
         const merged: UserSubscription = {
           planTier: cloudTier,
           aiScansUsed: Math.max(local.aiScansUsed, Number(data.ai_scans_used) || 0),
@@ -295,9 +278,13 @@ export async function fetchSubscription(
         };
         saveLocalSubscription(merged);
         return merged;
-      } else if (!error && !data && (local.planTier !== "free" || local.aiScansUsed > 0)) {
-        // Cloud row doesn't exist yet for this user — sync local package & usage up
-        return await persistSubscription(local, userId);
+      } else if (!error && !data) {
+        const freshFree: UserSubscription = {
+          ...getDefaultSubscription(),
+          aiScansUsed: local.aiScansUsed,
+        };
+        saveLocalSubscription(freshFree);
+        return freshFree;
       }
     } catch {
       // Table may not be migrated yet; fall back cleanly to local state
@@ -346,8 +333,19 @@ export async function incrementAiScanUsage(
   const next: UserSubscription = {
     ...current,
     aiScansUsed: current.aiScansUsed + 1,
+    updatedAt: new Date().toISOString(),
   };
-  return persistSubscription(next, userId);
+  saveLocalSubscription(next);
+
+  const supabase = getSupabaseClient();
+  if (supabase && userId) {
+    try {
+      await supabase.rpc("increment_own_ai_scan");
+    } catch {
+      // Server /api/scan-receipt also increments via service role or RPC
+    }
+  }
+  return next;
 }
 
 export function canUseCloudAiScan(sub: UserSubscription): boolean {
