@@ -179,6 +179,17 @@ export async function matchPublicVendorTemplate(
     );
     if (!allMatch) continue;
 
+    // If an internet bill is bundled with TV/entertainment/device packs (e.g. Unifi TV),
+    // skip the total-charge template so AI can isolate only the eligible internet line item.
+    if (
+      tpl.sub_category_id === "lifestyle_internet" &&
+      /(UNIFI\s*TV|HYPPTV|ASTRO|ENTERTAINMENT\s*PACK|ULTIMATE\s*PACK|DEVICE\s*INSTALLMENT)/i.test(
+        upper
+      )
+    ) {
+      continue;
+    }
+
     const amtStr = extractValueAfterAnchor(
       flat,
       tpl.amount_anchor,

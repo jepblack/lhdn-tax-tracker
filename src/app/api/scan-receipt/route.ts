@@ -419,6 +419,7 @@ Strict Eligibility Rules:
   - Set claimableAmount to totalAmount, needsReview=true, and provide 2 to 3 closest plausible LHDN relief choices in suggestedOptions (using valid categoryId and subCategoryId from the list above) so the user can choose or discard.
 - Sports gear/gym/courts -> "sports" (NOT "lifestyle").
 - Home broadband/PC/smartphone/tablet/books -> "lifestyle".
+- Internet / Broadband bills (lifestyle_internet such as TM Unifi, TIME, Maxis Fibre): ALWAYS exclude Service Tax (SST / ST 6%/8%) AND exclude non-qualifying bundled items (e.g., Unifi TV, Astro/TV packs, device installments, late fees). Set eligibility="partial" when non-qualifying items exist, and set claimableAmount to ONLY the net qualifying internet subscription charge.
 - Dental -> "medical_self" / "med_dental"; Vaccination -> "med_vaccination"; Checkup/mental health/BP monitor -> "med_checkup".
 - For mixed receipts (eligibility="partial"), set claimableAmount to ONLY qualifying items and list non-claimable items in excludedItems.
 
