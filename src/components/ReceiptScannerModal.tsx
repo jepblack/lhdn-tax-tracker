@@ -52,7 +52,9 @@ import {
 } from "@/lib/receipt-archiver";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
+  AnnualDocExtraction,
   AnnualDocType,
+  AnnualTaxDoc,
   ArchiveCategory,
   CategorySummary,
   ExpenseClaimType,
@@ -87,6 +89,17 @@ interface ReceiptScannerModalProps {
     receiptFile: File | null,
     editingId?: string
   ) => Promise<void>;
+  onUploadAnnualDoc?: (
+    docType: AnnualDocType,
+    label: string,
+    file: File,
+    yearOverride?: TaxYear
+  ) => Promise<AnnualTaxDoc>;
+  onApplyAnnualExtraction?: (
+    doc: AnnualTaxDoc,
+    extraction: AnnualDocExtraction,
+    targetYearOverride?: TaxYear
+  ) => Promise<void>;
 }
 
 export function ReceiptScannerModal({
@@ -108,6 +121,8 @@ export function ReceiptScannerModal({
   onOpenUpgrade,
   onOfflineQueued,
   onSave,
+  onUploadAnnualDoc,
+  onApplyAnnualExtraction,
 }: ReceiptScannerModalProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +191,10 @@ export function ReceiptScannerModal({
       ? "annual_doc"
       : "receipt"
   );
+  const [annualExtraction, setAnnualExtraction] =
+    useState<AnnualDocExtraction | null>(null);
+  const [annualDocType, setAnnualDocType] =
+    useState<AnnualDocType>("ea_form");
   const isGeneralScanMode = !initialCategoryId;
 
   useEffect(() => {
@@ -202,6 +221,7 @@ export function ReceiptScannerModal({
       setSheetExpanded(true);
       setManualQrUrl("");
       setQrDetectedUrl(null);
+      setAnnualExtraction(null);
       if (editingExpense) {
         setTargetTaxYear(editingExpense.taxYear);
         setCategoryId(editingExpense.categoryId);
@@ -671,6 +691,7 @@ export function ReceiptScannerModal({
     setShowRawText(false);
     setOverrideRejection(false);
     setScanNotice(null);
+    setAnnualExtraction(null);
     setScanProgress(0);
     setMerchant("");
     setAmount("");
@@ -722,6 +743,61 @@ export function ReceiptScannerModal({
             ""
         );
       }
+    }
+  }
+
+  function applyAnnualExtractionToModal(
+    extraction: AnnualDocExtraction,
+    docType: AnnualDocType
+  ) {
+    setAnnualExtraction(extraction);
+    setAnnualDocType(docType);
+    if (extraction.providerName) setMerchant(extraction.providerName);
+    if (
+      extraction.detectedTaxYear &&
+      SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+    ) {
+      setTargetTaxYear(extraction.detectedTaxYear);
+      setExpenseDate(`${extraction.detectedTaxYear}-12-31`);
+    }
+    let extractedAmt = 0;
+    if (categoryId === "epf_life_insurance") {
+      extractedAmt =
+        (extraction.epfEmployee || 0) + (extraction.lifeInsuranceAmount || 0);
+    } else if (categoryId === "socso") {
+      extractedAmt = extraction.socsoEisEmployee || 0;
+    } else if (categoryId === "edu_med_insurance") {
+      extractedAmt = extraction.medicalInsuranceAmount || 0;
+    } else if (categoryId === "first_home_interest") {
+      extractedAmt = extraction.housingLoanInterest || 0;
+    } else {
+      const matchedExtra = extraction.extraReliefs?.find(
+        (r) => r.categoryId === categoryId
+      );
+      extractedAmt = matchedExtra?.amount || 0;
+    }
+    if (extractedAmt <= 0 && isGeneralScanMode) {
+      if ((extraction.epfEmployee || 0) + (extraction.lifeInsuranceAmount || 0) > 0) {
+        setCategoryId("epf_life_insurance");
+        extractedAmt =
+          (extraction.epfEmployee || 0) + (extraction.lifeInsuranceAmount || 0);
+      } else if ((extraction.socsoEisEmployee || 0) > 0) {
+        setCategoryId("socso");
+        extractedAmt = extraction.socsoEisEmployee || 0;
+      } else if ((extraction.medicalInsuranceAmount || 0) > 0) {
+        setCategoryId("edu_med_insurance");
+        extractedAmt = extraction.medicalInsuranceAmount || 0;
+      }
+    }
+    if (extractedAmt > 0) {
+      const capped =
+        effectiveCap !== null
+          ? Math.min(extractedAmt, effectiveCap)
+          : extractedAmt;
+      setAmount(String(capped));
+    }
+    if (extraction.summaryNote) {
+      setDescription(extraction.summaryNote);
     }
   }
 
@@ -815,35 +891,15 @@ export function ReceiptScannerModal({
           targetTaxYear
         );
         if (extraction) {
-          if (extraction.providerName) setMerchant(extraction.providerName);
-          if (extraction.detectedTaxYear && SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)) {
-            setTargetTaxYear(extraction.detectedTaxYear);
-            setExpenseDate(`${extraction.detectedTaxYear}-12-31`);
-          }
-          let extractedAmt = 0;
-          if (categoryId === "epf_life_insurance") {
-            extractedAmt = (extraction.epfEmployee || 0) + (extraction.lifeInsuranceAmount || 0);
-          } else if (categoryId === "socso") {
-            extractedAmt = extraction.socsoEisEmployee || 0;
-          } else if (categoryId === "edu_med_insurance") {
-            extractedAmt = extraction.medicalInsuranceAmount || 0;
-          } else if (categoryId === "first_home_interest") {
-            extractedAmt = extraction.housingLoanInterest || 0;
-          } else {
-            const matchedExtra = extraction.extraReliefs?.find(
-              (r) => r.categoryId === categoryId
-            );
-            extractedAmt = matchedExtra?.amount || 0;
-          }
-          if (extractedAmt > 0) {
-            const capped =
-              effectiveCap !== null ? Math.min(extractedAmt, effectiveCap) : extractedAmt;
-            setAmount(String(capped));
-          }
-          if (extraction.summaryNote) {
-            setDescription(extraction.summaryNote);
-          }
-          if (extractedAmt <= 0) {
+          applyAnnualExtractionToModal(extraction, mappedDocType);
+          if (
+            !extraction.annualIncome &&
+            !extraction.pcbPaid &&
+            !extraction.epfEmployee &&
+            !extraction.socsoEisEmployee &&
+            !extraction.medicalInsuranceAmount &&
+            !extraction.housingLoanInterest
+          ) {
             setScanNotice(
               lang === "bm"
                 ? "Penyata dilampirkan! Masukkan jumlah tuntutan daripada penyata anda di bawah."
@@ -909,14 +965,37 @@ export function ReceiptScannerModal({
 
         if (res.ok) {
           const data = await res.json();
-          if (data.aiSkippedReason) {
-            setScanNotice(data.aiSkippedReason);
-          }
-          if (!data.fallbackToLocalOcr && data.eligibility) {
-            applyScanResult(data as ReceiptScanResult);
-            usedCloudAi = true;
-            await onAiScanCompleted();
-          } else if (isPdf && data.fallbackToLocalOcr) {
+          if (data.detectedAnnualDocType) {
+            const detectedType = data.detectedAnnualDocType as AnnualDocType;
+            setProofMode("annual_doc");
+            setScanStatusText(
+              detectedType === "form_be_proof"
+                ? lang === "bm"
+                  ? "Borang e-BE dikesan! Membaca semua rekod..."
+                  : "Form e-BE detected! Reading all records..."
+                : lang === "bm"
+                ? "Borang EA / Penyata dikesan! Membaca semua rekod..."
+                : "EA Form / Statement detected! Reading all records..."
+            );
+            const { extraction } = await parseAnnualDocFile(
+              file,
+              detectedType,
+              selectedCategory?.shortName || "Annual Statement",
+              targetTaxYear
+            );
+            if (extraction) {
+              applyAnnualExtractionToModal(extraction, detectedType);
+              usedCloudAi = true;
+            }
+          } else {
+            if (data.aiSkippedReason) {
+              setScanNotice(data.aiSkippedReason);
+            }
+            if (!data.fallbackToLocalOcr && data.eligibility) {
+              applyScanResult(data as ReceiptScanResult);
+              usedCloudAi = true;
+              await onAiScanCompleted();
+            } else if (isPdf && data.fallbackToLocalOcr) {
             // Scanned PDF with no selectable text: render Page 1 to JPEG and retry AI/OCR
             setScanStatusText("Rendering scanned PDF page...");
             const renderedJpeg = await renderPdfFirstPageToJpeg(file, 1200);
@@ -941,6 +1020,7 @@ export function ReceiptScannerModal({
                 }
               }
             }
+          }
           }
         } else {
           const errJson = await res.json().catch(() => null);
@@ -1036,6 +1116,38 @@ export function ReceiptScannerModal({
 
     setIsSaving(true);
     try {
+      if (
+        annualExtraction &&
+        receiptFile &&
+        onUploadAnnualDoc &&
+        onApplyAnnualExtraction
+      ) {
+        const docLabel =
+          annualDocType === "form_be_proof"
+            ? "LHDN Form BE Filing Proof"
+            : annualDocType === "kwsp_statement"
+            ? "KWSP / EPF Annual Statement"
+            : annualDocType === "insurance_statement"
+            ? "Insurance Annual Tax Statement"
+            : annualDocType === "loan_interest_statement"
+            ? "Housing Loan Interest Statement"
+            : "Employer EA Form (C.P.8A)";
+        const savedDoc = await onUploadAnnualDoc(
+          annualDocType,
+          docLabel,
+          receiptFile,
+          targetTaxYear
+        );
+        await onApplyAnnualExtraction(
+          savedDoc,
+          annualExtraction,
+          targetTaxYear
+        );
+        resetScan();
+        onClose();
+        return;
+      }
+
       const archiveCat: ArchiveCategory =
         scanResult?.archiveCategory ||
         mapReliefToArchiveCategory(categoryId, subCategoryId);
@@ -2543,6 +2655,67 @@ export function ReceiptScannerModal({
                   )}
                 </div>
               </div>
+
+              {annualExtraction && (
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/90 p-3 text-xs text-indigo-950 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold">
+                      {annualDocType === "form_be_proof"
+                        ? lang === "bm"
+                          ? "Borang e-BE Dikesan — Kemas Kini Semua Rekod"
+                          : "Form e-BE Detected — Multi-Record Sync"
+                        : lang === "bm"
+                        ? "Penyata Tahunan / Borang EA Dikesan — Kemas Kini Semua Rekod"
+                        : "Annual Statement / EA Form Detected — Multi-Record Sync"}
+                    </span>
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                      YA {annualExtraction.detectedTaxYear || targetTaxYear}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800">
+                    {lang === "bm"
+                      ? "Menyimpan dokumen ini akan mengemas kini profil cukai anda dan semua pelepasan berkaitan dengan bukti dilampirkan:"
+                      : "Saving this document will update your tax profile and all related reliefs with proof attached:"}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
+                    {annualExtraction.annualIncome > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-slate-800">
+                        {lang === "bm" ? "Pendapatan" : "Income"} {formatRM(annualExtraction.annualIncome, true)}
+                      </span>
+                    )}
+                    {annualExtraction.pcbPaid > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-slate-800">
+                        PCB {formatRM(annualExtraction.pcbPaid, true)}
+                      </span>
+                    )}
+                    {annualExtraction.epfEmployee > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-emerald-800">
+                        EPF {formatRM(annualExtraction.epfEmployee, true)}
+                      </span>
+                    )}
+                    {annualExtraction.lifeInsuranceAmount > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-emerald-800">
+                        {lang === "bm" ? "Insurans Nyawa" : "Life Ins"} {formatRM(annualExtraction.lifeInsuranceAmount, true)}
+                      </span>
+                    )}
+                    {annualExtraction.socsoEisEmployee > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-emerald-800">
+                        SOCSO {formatRM(annualExtraction.socsoEisEmployee, true)}
+                      </span>
+                    )}
+                    {annualExtraction.medicalInsuranceAmount > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-emerald-800">
+                        {lang === "bm" ? "Insurans Perubatan" : "Med Ins"} {formatRM(annualExtraction.medicalInsuranceAmount, true)}
+                      </span>
+                    )}
+                    {annualExtraction.zakatPaid > 0 && (
+                      <span className="rounded-md bg-white px-2 py-0.5 text-emerald-800">
+                        Zakat {formatRM(annualExtraction.zakatPaid, true)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

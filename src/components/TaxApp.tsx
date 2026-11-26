@@ -2093,6 +2093,10 @@ export function TaxApp() {
         onSave={async (d, f, id) => {
           await handleSaveExpense(d, f, id);
         }}
+        onUploadAnnualDoc={handleUploadAnnualDoc}
+        onApplyAnnualExtraction={async (doc, ext, yr) => {
+          await handleApplyAnnualDocExtraction(ext, doc, yr);
+        }}
       />
 
       {/* Pricing & Malaysia Payment Checkout Modal */}

@@ -338,6 +338,31 @@ export async function POST(request: Request) {
       file.type === "application/pdf" ||
       file.name.toLowerCase().endsWith(".pdf");
 
+    // Fast-path: if a PDF is actually a Form e-BE, EA Form, or KWSP Statement,
+    // tell the client so it can route to the full Annual Document pipeline and update all related records!
+    if (isPdf) {
+      try {
+        const { text } = await extractText(
+          new Uint8Array(arrayBuffer.slice(0)),
+          { mergePages: true }
+        );
+        const joined = (Array.isArray(text) ? text.join("\n") : String(text || ""))
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+          .trim();
+        if (joined.length >= 40) {
+          const detectedAnnualDocType = detectAnnualDocTypeFromText(joined);
+          if (detectedAnnualDocType) {
+            return NextResponse.json({
+              detectedAnnualDocType,
+              fallbackToLocalOcr: false,
+            });
+          }
+        }
+      } catch {
+        // continue with normal receipt scanning
+      }
+    }
+
     if (!hasGroq && !hasGemini && !hasOpenAi) {
       if (isPdf) {
         const pdfResult = await tryExtractPdfReceipt(arrayBuffer.slice(0), taxYear);
@@ -662,6 +687,35 @@ async function tryExtractPdfReceipt(arrayBuffer: ArrayBuffer, taxYear: TaxYear) 
     }
   } catch (err) {
     console.warn("PDF text extraction failed:", err);
+  }
+  return null;
+}
+
+function detectAnnualDocTypeFromText(
+  text: string
+): "form_be_proof" | "ea_form" | "kwsp_statement" | null {
+  const flat = text.replace(/\s+/g, " ");
+  if (
+    (/BORANG\s+NYATA\s+INDIVIDU/i.test(flat) || /\be-BE\b/i.test(flat)) &&
+    (/TAHUN\s+TAKSIRAN/i.test(flat) ||
+      /PENDAPATAN\s+AGREGAT/i.test(flat) ||
+      /RUMUSAN\s+CUKAI/i.test(flat))
+  ) {
+    return "form_be_proof";
+  }
+  if (
+    /PENYATA\s+SARAAN\s+DARIPADA\s+PENGGAJIAN/i.test(flat) ||
+    /\bC\.?P\.?\s*8A\b/i.test(flat) ||
+    /\bBORANG\s+EA\b/i.test(flat) ||
+    (/\bEA\s+FORM\b/i.test(flat) && /PCB|EPF|KWSP|SOCSO|PERKESO/i.test(flat))
+  ) {
+    return "ea_form";
+  }
+  if (
+    /KUMPULAN\s+WANG\s+SIMPANAN\s+PEKERJA/i.test(flat) &&
+    /PENYATA\s+AHLI/i.test(flat)
+  ) {
+    return "kwsp_statement";
   }
   return null;
 }
