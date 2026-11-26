@@ -272,9 +272,9 @@ function extractCurrentPeriodTotalAfterTax(
     ) {
       continue;
     }
-    // Skip if it's explicitly "(excl. tax)" / "(before tax)" — handled by extractPreTaxCurrentCharges
+    // Skip if it's explicitly "(excl. tax)" / "Before Tax" — handled by extractPreTaxCurrentCharges
     if (
-      /\((?:excl|before|sebelum|tidak\s+termasuk)[^)]*(?:tax|sst|cukai)/i.test(
+      /\b(?:excl(?:uding)?\.?\s*(?:svc\.?|service)?\s*tax|before\s+(?:sst|tax)|sebelum\s+cukai|tidak\s+termasuk\s+cukai)\b/i.test(
         seg
       )
     ) {
