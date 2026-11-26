@@ -2048,6 +2048,7 @@ export function ReceiptScannerModal({
                   <p className="mt-1 text-[11px] text-amber-900">
                     {scanResult.reasoning}
                   </p>
+                  <ScanCalculationBreakdown result={scanResult} lang={lang} />
                   {scanResult.excludedItems &&
                     scanResult.excludedItems.length > 0 && (
                       <div className="mt-2 rounded-lg bg-white/70 p-2 text-[11px] text-amber-900">
@@ -2087,6 +2088,7 @@ export function ReceiptScannerModal({
                   <p className="mt-0.5 text-[11px] text-indigo-800">
                     {scanResult.reasoning}
                   </p>
+                  <ScanCalculationBreakdown result={scanResult} lang={lang} />
                 </div>
               </div>
 
@@ -2168,6 +2170,7 @@ export function ReceiptScannerModal({
                 <p className="mt-1 text-[11px] text-emerald-900">
                   {scanResult.reasoning}
                 </p>
+                <ScanCalculationBreakdown result={scanResult} lang={lang} />
               </div>
             </div>
           )}
@@ -2831,6 +2834,72 @@ export function ReceiptScannerModal({
             </>
           )}
         </form>
+      </div>
+    </div>
+  );
+}
+
+function ScanCalculationBreakdown({
+  result,
+  lang,
+}: {
+  result: ReceiptScanResult;
+  lang: "en" | "bm";
+}) {
+  const total = result.totalAmount || 0;
+  const claimable = result.amount > 0 ? result.amount : total;
+  const sst = result.sstOrTaxAmount || 0;
+  if (total <= 0) return null;
+
+  const isSstExcluded = sst > 0 && claimable <= total - sst + 0.02;
+  const otherExcluded = Math.max(
+    0,
+    Math.round((total - claimable - (isSstExcluded ? sst : 0)) * 100) / 100
+  );
+
+  return (
+    <div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 text-[11px] text-slate-800 space-y-0.5 font-mono">
+      <div className="flex items-center justify-between">
+        <span className="font-sans text-slate-600">
+          {lang === "bm" ? "Jumlah Bil / Resit" : "Bill / Receipt Total"}
+        </span>
+        <span>{formatRM(total, true)}</span>
+      </div>
+      {otherExcluded > 0.01 && (
+        <div className="flex items-center justify-between text-amber-700">
+          <span className="font-sans">
+            {lang === "bm"
+              ? "− Diskaun / Item Tidak Layak"
+              : "− Discounts / Non-Qualifying"}
+          </span>
+          <span>− {formatRM(otherExcluded, true)}</span>
+        </div>
+      )}
+      {sst > 0.01 && (
+        <div
+          className={`flex items-center justify-between ${
+            isSstExcluded ? "text-amber-700" : "text-slate-500"
+          }`}
+        >
+          <span className="font-sans">
+            {isSstExcluded
+              ? lang === "bm"
+                ? "− Cukai Perkhidmatan (SST)"
+                : "− Service Tax (SST)"
+              : lang === "bm"
+              ? "Termasuk SST (layak)"
+              : "Includes SST (claimable)"}
+          </span>
+          <span>
+            {isSstExcluded ? `− ${formatRM(sst, true)}` : formatRM(sst, true)}
+          </span>
+        </div>
+      )}
+      <div className="flex items-center justify-between border-t border-slate-200/80 pt-1 font-bold text-emerald-700">
+        <span className="font-sans">
+          {lang === "bm" ? "= Jumlah Boleh Dituntut" : "= Claimable Amount"}
+        </span>
+        <span>{formatRM(claimable, true)}</span>
       </div>
     </div>
   );
