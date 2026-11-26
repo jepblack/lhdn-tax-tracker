@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Ban,
   CheckCircle2,
+  Eye,
   Files,
   HelpCircle,
   Loader2,
@@ -70,6 +71,22 @@ export function BatchImportModal({
   const [items, setItems] = useState<BatchItem[]>([]);
   const [isScanningAll, setIsScanningAll] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const previewItem = items.find((i) => i.id === previewItemId) || null;
+
+  useEffect(() => {
+    if (!previewItem) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(previewItem.file);
+    setPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [previewItem]);
 
   useEffect(() => {
     if (isOpen && initialFiles && initialFiles.length > 0) {
@@ -385,7 +402,16 @@ export function BatchImportModal({
                         </div>
                       </label>
 
-                      <div className="shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewItemId(item.id)}
+                          title="View uploaded receipt / document"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          <Eye className="h-3 w-3 text-emerald-600" />
+                          View
+                        </button>
                         {item.status === "scanning" && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                             <Loader2 className="h-3 w-3 animate-spin" /> Scanning
@@ -420,7 +446,39 @@ export function BatchImportModal({
                     </div>
 
                     {item.status === "ready" && (
-                      <div className="grid grid-cols-3 gap-2 pl-6">
+                      <div className="space-y-1.5 pl-6">
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            value={item.merchant}
+                            onChange={(e) =>
+                              setItems((prev) =>
+                                prev.map((x) =>
+                                  x.id === item.id
+                                    ? { ...x, merchant: e.target.value }
+                                    : x
+                                )
+                              )
+                            }
+                            placeholder="Merchant"
+                            className="col-span-2 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium"
+                          />
+                          <input
+                            type="date"
+                            value={item.expenseDate}
+                            onChange={(e) =>
+                              setItems((prev) =>
+                                prev.map((x) =>
+                                  x.id === item.id
+                                    ? { ...x, expenseDate: e.target.value }
+                                    : x
+                                )
+                              )
+                            }
+                            className="rounded-lg border border-slate-200 px-1.5 py-1 text-[11px]"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
                         <select
                           value={item.categoryId}
                           onChange={(e) => {
@@ -467,6 +525,7 @@ export function BatchImportModal({
                           }
                           className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-right"
                         />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -501,6 +560,49 @@ export function BatchImportModal({
           </div>
         )}
       </div>
+
+      {/* Inline Document / Receipt Preview Overlay */}
+      {previewItem && previewUrl && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
+          <div className="flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">
+                  {previewItem.merchant || previewItem.file.name}
+                </p>
+                <p className="truncate text-[11px] text-slate-500">
+                  {previewItem.file.name} • {previewItem.expenseDate} •{" "}
+                  {formatRM(previewItem.amount, true)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItemId(null)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-slate-100 p-2">
+              {previewItem.file.type === "application/pdf" ||
+              previewItem.file.name.toLowerCase().endsWith(".pdf") ? (
+                <iframe
+                  src={previewUrl}
+                  title={previewItem.file.name}
+                  className="h-full w-full rounded-xl border border-slate-200 bg-white"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt={previewItem.file.name}
+                  className="mx-auto max-h-full w-auto rounded-xl object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
