@@ -188,31 +188,56 @@ export async function matchPublicVendorTemplate(
       );
 
     if (isBundledInternet) {
-      // If the bundled bill also has discounts/rebates/promos, let AI compute the exact net
-      // internet charge after discounts instead of grabbing the pre-discount gross rate.
-      const hasDiscount =
-        /(DISCOUNT|DISKAUN|REBATE|REBAT|PROMO|CREDIT\s+ADJUSTMENT|-\s*(?:RM|MYR)?\s*\d+\.\d{2})/i.test(
-          upper
+      const lineMatch = flat.match(
+        /(?:Residential\s+High\s+Speed\s+Internet|unifi\s+\d+\s*(?:Mbps|Gbps)|High\s+Speed\s+Broadband)[^\n]{0,100}?(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+      );
+      const grossLineAmt = lineMatch ? Number(lineMatch[1].replace(/,/g, "")) : 0;
+
+      const sstStr = tpl.sst_anchor
+        ? extractValueAfterAnchor(flat, tpl.sst_anchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i)
+        : "";
+      const sstAmt = sstStr ? Number(sstStr.replace(/,/g, "")) : 0;
+      const totalStr = extractValueAfterAnchor(
+        flat,
+        tpl.amount_anchor,
+        /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+      );
+      const totalAmt = totalStr ? Number(totalStr.replace(/,/g, "")) : 0;
+
+      // Check for discount/rebate near the internet line (e.g. "-70.00" or "(70.00)")
+      let discountAmt = 0;
+      if (lineMatch && lineMatch.index !== undefined) {
+        const afterLine = flat.slice(lineMatch.index, lineMatch.index + 240);
+        const discMatch = afterLine.match(
+          /(?:Discount|Diskaun|Rebate|Rebat|Promo)[^\d\-]{0,40}[-(]?\s*(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
         );
-      if (hasDiscount) {
-        continue;
+        if (discMatch) {
+          discountAmt = Number(discMatch[1].replace(/,/g, "")) || 0;
+        }
       }
 
-      const lineMatch = flat.match(
-        /(?:Residential\s+High\s+Speed\s+Internet|unifi\s+\d+\s*(?:Mbps|Gbps)|High\s+Speed\s+Broadband)[^\n]{0,80}?(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+      // Also check for non-zero Unifi TV / Pack charge to subtract from (Current Charges - SST)
+      const tvMatch = flat.match(
+        /(?:unifi\s*TV|HyppTV|Ultimate\s*Pack|Entertainment\s*Pack)[^\n]{0,80}?(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
       );
-      const netLineAmt = lineMatch ? Number(lineMatch[1].replace(/,/g, "")) : 0;
+      const tvAmt = tvMatch ? Number(tvMatch[1].replace(/,/g, "")) || 0 : 0;
+
+      let netLineAmt = 0;
+      if (totalAmt > sstAmt && totalAmt > 0) {
+        const netBeforeSst = Math.round((totalAmt - sstAmt) * 100) / 100;
+        if (grossLineAmt > 0 && discountAmt > 0 && grossLineAmt > discountAmt) {
+          netLineAmt = Math.round((grossLineAmt - discountAmt) * 100) / 100;
+        } else if (tvAmt >= 0 && netBeforeSst > tvAmt) {
+          netLineAmt = Math.round((netBeforeSst - tvAmt) * 100) / 100;
+        }
+      } else if (grossLineAmt > 0) {
+        netLineAmt =
+          discountAmt > 0 && grossLineAmt > discountAmt
+            ? Math.round((grossLineAmt - discountAmt) * 100) / 100
+            : grossLineAmt;
+      }
+
       if (Number.isFinite(netLineAmt) && netLineAmt > 0 && netLineAmt < 1000) {
-        const sstStr = tpl.sst_anchor
-          ? extractValueAfterAnchor(flat, tpl.sst_anchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i)
-          : "";
-        const sstAmt = sstStr ? Number(sstStr.replace(/,/g, "")) : 0;
-        const totalStr = extractValueAfterAnchor(
-          flat,
-          tpl.amount_anchor,
-          /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
-        );
-        const totalAmt = totalStr ? Number(totalStr.replace(/,/g, "")) : netLineAmt;
         const dateSeg = tpl.date_anchor
           ? flat.match(new RegExp(`${escapeRegex(tpl.date_anchor)}[^\\n]{0,45}`, "i"))?.[0] || ""
           : "";
@@ -235,11 +260,11 @@ export async function matchPublicVendorTemplate(
           currency: "MYR",
           invoiceNumber: invStr,
           archiveCategory: "personal",
-          description: `${tpl.vendor_name} — Internet portion only (TV/entertainment & SST excluded via shared template)`,
+          description: `${tpl.vendor_name} — Net internet charge after discounts (TV & SST excluded via shared template)`,
           suggestedCategoryId: tpl.category_id,
           suggestedSubCategoryId: tpl.sub_category_id,
           confidence: "high",
-          reasoning: `Matched shared CukaiKu layout template for ${tpl.vendor_name}; isolated net internet subscription (${netLineAmt.toFixed(2)}) excluding bundled TV/SST.`,
+          reasoning: `Matched shared CukaiKu layout template for ${tpl.vendor_name}; isolated net internet subscription (RM ${netLineAmt.toFixed(2)}) after discounts, excluding bundled TV/SST.`,
           scanEngine: "local-ocr",
           learnedTemplateVendor: tpl.vendor_key,
         };
