@@ -216,6 +216,49 @@ export async function loadPublicVendorTemplates(): Promise<VendorReceiptTemplate
   return cachedTemplates;
 }
 
+function extractCurrentPeriodTotalAfterTax(
+  flatText: string,
+  primaryAnchor: string
+): number {
+  const anchors = [
+    primaryAnchor,
+    "This month's charges",
+    "Total Current Charges",
+    "Current Charges",
+    "Caj Semasa",
+    "Monthly Charges",
+  ].filter(Boolean);
+
+  for (const anchor of anchors) {
+    // Reject if the matched line actually refers to Total Amount Due / Previous Balance / Overdue / Brought Forward
+    const rx = new RegExp(`${escapeRegex(anchor)}[^\\n]{0,55}`, "i");
+    const seg = flatText.match(rx)?.[0] || "";
+    if (!seg) continue;
+    const tail = seg.slice(anchor.length);
+    if (
+      /\b(previous\s+balance|brought\s+forward|overdue|total\s+amount\s+due|balance\s+b\/f|bayaran\s+diterima|baki\s+terdahulu)\b/i.test(
+        seg
+      )
+    ) {
+      continue;
+    }
+    // Skip if it's explicitly "(excl. tax)" / "(before tax)" — handled by extractPreTaxCurrentCharges
+    if (
+      /\((?:excl|before|sebelum|tidak\s+termasuk)[^)]*(?:tax|sst|cukai)/i.test(
+        seg
+      )
+    ) {
+      continue;
+    }
+    const val = tail.match(/(?:RM|MYR)?\s*([\d,]+\.\d{2})/i);
+    if (val) {
+      const n = Number(val[1].replace(/,/g, ""));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return 0;
+}
+
 function extractPreTaxCurrentCharges(flatText: string): number {
   const rx =
     /(?:Total\s+(?:Current\s+)?Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Current\s+Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Caj\s+Semasa\s*\(?(?:sebelum\s+cukai|tidak\s+termasuk\s+cukai)\)?|Sub-?total\s*\(?(?:before\s*(?:SST|tax)|excl\.?\s*tax)\)?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/i;
@@ -370,46 +413,56 @@ export async function matchPublicVendorTemplate(
       continue;
     }
 
-    const amtStr = extractValueAfterAnchor(
-      flat,
-      tpl.amount_anchor,
-      /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
-    );
     const preTaxCurrent = extractPreTaxCurrentCharges(flat);
-    const parsedAmt =
-      (amtStr ? Number(amtStr.replace(/,/g, "")) : 0) ||
-      Number(
-        (
-          extractValueAfterAnchor(
-            flat,
-            "Monthly Charges",
-            /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
-          ) ||
-          extractValueAfterAnchor(
-            flat,
-            "Caj Semasa",
-            /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
-          ) ||
-          "0"
-        ).replace(/,/g, "")
-      ) ||
-      preTaxCurrent;
-    if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) continue;
+    const currentAfterTax = extractCurrentPeriodTotalAfterTax(
+      flat,
+      tpl.amount_anchor
+    );
+    if (preTaxCurrent <= 0 && currentAfterTax <= 0) {
+      // Cannot reliably determine current-period charges (do not guess from Total Amount Due / Previous Balance)
+      continue;
+    }
 
-    const sstAmt = extractSstAmount(flat, tpl.sst_anchor, parsedAmt);
+    const refTotal = currentAfterTax > 0 ? currentAfterTax : preTaxCurrent;
+    const sstAmt = extractSstAmount(flat, tpl.sst_anchor, refTotal);
 
-    // Prefer explicit pre-tax current charges when printed; otherwise deduct SST from tax-inclusive Current Charges
-    const claimable = tpl.exclude_sst
-      ? preTaxCurrent > 0
-        ? preTaxCurrent
-        : sstAmt > 0 && parsedAmt > sstAmt
-        ? Math.round((parsedAmt - sstAmt) * 100) / 100
-        : parsedAmt
-      : parsedAmt;
+    // Prefer explicit current-period pre-tax subtotal; otherwise calculate (current_period_total_after_tax - tax_amount)
+    let claimable = 0;
+    let needsReview = false;
+    let validationNote = "";
+
+    if (tpl.exclude_sst) {
+      if (preTaxCurrent > 0) {
+        claimable = preTaxCurrent;
+        if (
+          currentAfterTax > 0 &&
+          sstAmt > 0 &&
+          Math.abs(preTaxCurrent + sstAmt - currentAfterTax) > 0.5
+        ) {
+          needsReview = true;
+          validationNote = `Pre-tax subtotal (RM ${preTaxCurrent.toFixed(2)}) + SST (RM ${sstAmt.toFixed(2)}) differs from current-period total (RM ${currentAfterTax.toFixed(2)}); please verify.`;
+        }
+      } else if (currentAfterTax > 0 && sstAmt > 0 && currentAfterTax > sstAmt) {
+        claimable = Math.round((currentAfterTax - sstAmt) * 100) / 100;
+      } else if (currentAfterTax > 0 && sstAmt === 0) {
+        // Current-period total found without a separate tax line — do not guess tax, flag for review
+        claimable = currentAfterTax;
+        needsReview = true;
+        validationNote =
+          "Current-period charges found, but no separate SST/Service Tax line was detected — verify whether tax is included.";
+      }
+    } else {
+      claimable = currentAfterTax > 0 ? currentAfterTax : preTaxCurrent;
+    }
+
+    if (!Number.isFinite(claimable) || claimable <= 0) continue;
+
     const displayTotal =
-      preTaxCurrent > 0 && parsedAmt === preTaxCurrent && sstAmt > 0
-        ? Math.round((preTaxCurrent + sstAmt) * 100) / 100
-        : parsedAmt;
+      currentAfterTax > 0
+        ? currentAfterTax
+        : sstAmt > 0
+        ? Math.round((claimable + sstAmt) * 100) / 100
+        : claimable;
 
     const dateSeg = tpl.date_anchor
       ? flat.match(new RegExp(`${escapeRegex(tpl.date_anchor)}[^\\n]{0,45}`, "i"))?.[0] ||
@@ -449,8 +502,13 @@ export async function matchPublicVendorTemplate(
       ).catch(() => {});
     }
 
+    const finalNeedsReview = isMobileTelcoWithoutBroadband || needsReview;
+    const finalReviewReason = isMobileTelcoWithoutBroadband
+      ? "No clear voice vs. data breakdown detected on this telco bill. Extracted current-period recurring charges (excl. SST); verify under LHDN rules (only home broadband/data plans qualify)."
+      : validationNote || undefined;
+
     return {
-      eligibility: isMobileTelcoWithoutBroadband ? "uncertain" : "eligible",
+      eligibility: finalNeedsReview ? "uncertain" : "eligible",
       merchant: tpl.vendor_name,
       date: parsedDate,
       amount: claimable,
@@ -462,18 +520,17 @@ export async function matchPublicVendorTemplate(
       archiveCategory:
         tpl.sub_category_id === "lifestyle_internet" ? "personal" : "other",
       description: isMobileTelcoWithoutBroadband
-        ? `${tpl.vendor_name} — Recurring charges excl. SST (verify LHDN eligibility)`
+        ? `${tpl.vendor_name} — Current-period recurring charges excl. SST (verify LHDN eligibility)`
         : `${tpl.vendor_name} (auto-extracted via shared layout template)`,
       suggestedCategoryId: tpl.category_id,
       suggestedSubCategoryId: tpl.sub_category_id,
-      needsReview: isMobileTelcoWithoutBroadband,
-      reviewReason: isMobileTelcoWithoutBroadband
-        ? "No clear voice vs. data breakdown detected on this telco bill. Extracted recurring charges (excl. SST); verify under LHDN rules (only home broadband/data plans qualify)."
-        : undefined,
-      confidence: isMobileTelcoWithoutBroadband ? "medium" : "high",
+      needsReview: finalNeedsReview,
+      reviewReason: finalReviewReason,
+      confidence: finalNeedsReview ? "medium" : "high",
       reasoning: isMobileTelcoWithoutBroadband
-        ? `Matched shared ${tpl.vendor_name} template; extracted recurring charges (RM ${claimable.toFixed(2)}) excluding SST. Note: LHDN Lifestyle relief only covers home broadband/dedicated data plans, not personal mobile voice plans.`
-        : `Matched shared CukaiKu layout template for ${tpl.vendor_name} (${tpl.amount_anchor}).`,
+        ? `Matched shared ${tpl.vendor_name} template; extracted current-period charges (RM ${claimable.toFixed(2)}) excluding SST & prior balances. Note: LHDN Lifestyle relief only covers home broadband/dedicated data plans.`
+        : validationNote ||
+          `Matched shared CukaiKu layout template for ${tpl.vendor_name} (current-period pre-tax RM ${claimable.toFixed(2)}).`,
       scanEngine: "local-ocr",
       learnedTemplateVendor: tpl.vendor_key,
     };

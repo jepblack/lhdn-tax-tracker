@@ -420,7 +420,14 @@ Strict Eligibility Rules:
   - Set claimableAmount to totalAmount, needsReview=true, and provide 2 to 3 closest plausible LHDN relief choices in suggestedOptions (using valid categoryId and subCategoryId from the list above) so the user can choose or discard.
 - Sports gear/gym/courts -> "sports" (NOT "lifestyle").
 - Home broadband/PC/smartphone/tablet/books -> "lifestyle".
-- Internet / Broadband bills (lifestyle_internet such as TM Unifi, TIME, Maxis Fibre): ALWAYS exclude Service Tax (SST / ST 6%/8%) AND exclude non-qualifying bundled items (e.g., Unifi TV, Astro/TV packs, device installments, late fees). Always deduct any discounts, rebates, or promo credits applied to the internet service — set claimableAmount to ONLY the actual net internet subscription charge paid after discounts (NEVER the pre-discount gross rate), and set eligibility="partial" when non-qualifying items exist.
+- Internet / Broadband & Recurring Telco Bills (lifestyle_internet such as TM Unifi, TIME, Maxis, CelcomDigi, U Mobile, Yes 5G, Astro Fibre):
+  Extract financial values based on their meaning and relationship, not solely on provider labels, and determine ONLY charges attributable to the CURRENT billing period:
+  * PRE-TAX AMOUNT: Total qualifying charges for the current billing period BEFORE GST/SST/Service Tax/VAT.
+  * EXCLUDE from pre-tax & claimableAmount: previous balances, balance brought forward, overdue amounts, prior-bill late-payment fees, payments received, deposits, and Total Amount Due that includes previous balances. Never assume total_amount_due = current_period_total.
+  * EXCLUDE non-qualifying bundled items (e.g., Unifi TV, Astro/TV packs, device installments) and deduct all plan discounts/rebates/promo credits (never use pre-discount gross rate).
+  * Prefer an explicitly stated current-period pre-tax subtotal; otherwise calculate from itemized current-period charges or (current_period_total_after_tax - tax_amount) and validate: pre_tax_amount + tax_amount + adjustments ≈ current_period_total_after_tax.
+  * If the current-period pre-tax amount cannot be reliably determined, do NOT guess: set claimableAmount=0, needsReview=true, and explain the reason in reviewReason/reasoning.
+  * Set eligibility="partial" when non-qualifying items/SST are excluded; for mobile/telco bills without a clear voice vs. data breakdown, set eligibility="uncertain", needsReview=true, and warn the user.
 - Dental -> "medical_self" / "med_dental"; Vaccination -> "med_vaccination"; Checkup/mental health/BP monitor -> "med_checkup".
 - For mixed receipts (eligibility="partial"), set claimableAmount to ONLY qualifying items and list non-claimable items in excludedItems.
 
