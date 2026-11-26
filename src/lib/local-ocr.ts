@@ -767,6 +767,12 @@ export function parseAndClassifyReceiptText(
     !lower.includes("u home") &&
     !lower.includes("home 5g")
   ) {
+    const preTaxMatch = rawText.match(
+      /(?:Total\s+(?:Current\s+)?Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Current\s+Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Caj\s+Semasa\s*\(?(?:sebelum\s+cukai|tidak\s+termasuk\s+cukai)\)?|Sub-?total\s*\(?(?:before\s*(?:SST|tax)|excl\.?\s*tax)\)?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
+    );
+    const preTaxAmt = preTaxMatch
+      ? Number(preTaxMatch[1].replace(/,/g, "")) || 0
+      : 0;
     const recurringMatch = rawText.match(
       /(?:Monthly\s+(?:Recurring\s+)?Charges?|Recurring\s+Charges?|Current\s+Charges?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
     );
@@ -783,7 +789,9 @@ export function parseAndClassifyReceiptText(
       if (v > 0 && (baseAmt <= 0 || v < baseAmt * 0.2)) sstAmt = v;
     }
     const netAmt =
-      baseAmt > sstAmt && sstAmt > 0
+      preTaxAmt > 0
+        ? preTaxAmt
+        : baseAmt > sstAmt && sstAmt > 0
         ? Math.round((baseAmt - sstAmt) * 100) / 100
         : baseAmt;
     const warnMsg =

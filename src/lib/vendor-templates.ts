@@ -216,6 +216,15 @@ export async function loadPublicVendorTemplates(): Promise<VendorReceiptTemplate
   return cachedTemplates;
 }
 
+function extractPreTaxCurrentCharges(flatText: string): number {
+  const rx =
+    /(?:Total\s+(?:Current\s+)?Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Current\s+Charges\s*\(?(?:excl(?:uding)?\.?\s*(?:Svc\.?|Service)\s*Tax|before\s*(?:SST|tax))\)?|Caj\s+Semasa\s*\(?(?:sebelum\s+cukai|tidak\s+termasuk\s+cukai)\)?|Sub-?total\s*\(?(?:before\s*(?:SST|tax)|excl\.?\s*tax)\)?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/i;
+  const m = flatText.match(rx);
+  if (!m) return 0;
+  const n = Number(m[1].replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function extractSstAmount(flatText: string, sstAnchor: string, totalAmt: number): number {
   const candidates: number[] = [];
   if (sstAnchor) {
@@ -366,6 +375,7 @@ export async function matchPublicVendorTemplate(
       tpl.amount_anchor,
       /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
     );
+    const preTaxCurrent = extractPreTaxCurrentCharges(flat);
     const parsedAmt =
       (amtStr ? Number(amtStr.replace(/,/g, "")) : 0) ||
       Number(
@@ -382,14 +392,23 @@ export async function matchPublicVendorTemplate(
           ) ||
           "0"
         ).replace(/,/g, "")
-      );
+      ) ||
+      preTaxCurrent;
     if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) continue;
 
     const sstAmt = extractSstAmount(flat, tpl.sst_anchor, parsedAmt);
 
-    const claimable =
-      tpl.exclude_sst && sstAmt > 0 && parsedAmt > sstAmt
+    // Prefer explicit pre-tax current charges when printed; otherwise deduct SST from tax-inclusive Current Charges
+    const claimable = tpl.exclude_sst
+      ? preTaxCurrent > 0
+        ? preTaxCurrent
+        : sstAmt > 0 && parsedAmt > sstAmt
         ? Math.round((parsedAmt - sstAmt) * 100) / 100
+        : parsedAmt
+      : parsedAmt;
+    const displayTotal =
+      preTaxCurrent > 0 && parsedAmt === preTaxCurrent && sstAmt > 0
+        ? Math.round((preTaxCurrent + sstAmt) * 100) / 100
         : parsedAmt;
 
     const dateSeg = tpl.date_anchor
@@ -435,7 +454,7 @@ export async function matchPublicVendorTemplate(
       merchant: tpl.vendor_name,
       date: parsedDate,
       amount: claimable,
-      totalAmount: parsedAmt,
+      totalAmount: displayTotal,
       sstOrTaxAmount: sstAmt,
       taxInclusive: true,
       currency: "MYR",
