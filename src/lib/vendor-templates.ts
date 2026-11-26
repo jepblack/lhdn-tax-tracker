@@ -164,6 +164,26 @@ export async function loadPublicVendorTemplates(): Promise<VendorReceiptTemplate
   return cachedTemplates;
 }
 
+function extractSstAmount(flatText: string, sstAnchor: string, totalAmt: number): number {
+  const candidates: number[] = [];
+  if (sstAnchor) {
+    const raw = extractValueAfterAnchor(flatText, sstAnchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i);
+    if (raw) {
+      const n = Number(raw.replace(/,/g, ""));
+      if (Number.isFinite(n) && n > 0) candidates.push(n);
+    }
+  }
+  const rx = /(?:Total\s+Service\s+Tax|Service\s+Tax(?:\s*\(\d+%\))?|Cukai\s+Perkhidmatan(?:\s*\(\d+%\))?|\bST\s*\(\d+%\)|\bST\b\s*(?:\d+%)?)[^\d\n]{0,35}(?:RM|MYR)?\s*([\d,]+\.\d{2})/gi;
+  let m: RegExpExecArray | null;
+  while ((m = rx.exec(flatText)) !== null) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (Number.isFinite(n) && n > 0 && (totalAmt <= 0 || n < totalAmt * 0.2)) {
+      candidates.push(n);
+    }
+  }
+  return candidates.length > 0 ? candidates[candidates.length - 1] : 0;
+}
+
 export async function matchPublicVendorTemplate(
   pdfText: string
 ): Promise<(ReceiptScanResult & { learnedTemplateVendor?: string }) | null> {
@@ -193,16 +213,13 @@ export async function matchPublicVendorTemplate(
       );
       const grossLineAmt = lineMatch ? Number(lineMatch[1].replace(/,/g, "")) : 0;
 
-      const sstStr = tpl.sst_anchor
-        ? extractValueAfterAnchor(flat, tpl.sst_anchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i)
-        : "";
-      const sstAmt = sstStr ? Number(sstStr.replace(/,/g, "")) : 0;
       const totalStr = extractValueAfterAnchor(
         flat,
         tpl.amount_anchor,
         /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i
       );
       const totalAmt = totalStr ? Number(totalStr.replace(/,/g, "")) : 0;
+      const sstAmt = extractSstAmount(flat, tpl.sst_anchor, totalAmt);
 
       // Check for discount/rebate near the internet line (e.g. "-70.00" or "(70.00)")
       let discountAmt = 0;
@@ -280,10 +297,7 @@ export async function matchPublicVendorTemplate(
     const parsedAmt = amtStr ? Number(amtStr.replace(/,/g, "")) : 0;
     if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) continue;
 
-    const sstStr = tpl.sst_anchor
-      ? extractValueAfterAnchor(flat, tpl.sst_anchor, /(?:RM|MYR)?\s*([\d,]+\.\d{2})/i)
-      : "";
-    const sstAmt = sstStr ? Number(sstStr.replace(/,/g, "")) : 0;
+    const sstAmt = extractSstAmount(flat, tpl.sst_anchor, parsedAmt);
 
     const claimable =
       tpl.exclude_sst && sstAmt > 0 && parsedAmt > sstAmt
