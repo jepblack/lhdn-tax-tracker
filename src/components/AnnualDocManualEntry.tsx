@@ -10,6 +10,7 @@ interface AnnualDocManualEntryProps {
   doc: AnnualTaxDoc;
   defaultYear: TaxYear;
   lang: "en" | "bm";
+  hasOtherEaInYear?: boolean;
   onApply: (
     extraction: AnnualDocExtraction,
     doc: AnnualTaxDoc,
@@ -27,6 +28,7 @@ export function AnnualDocManualEntry({
   doc,
   defaultYear,
   lang,
+  hasOtherEaInYear = false,
   onApply,
   onCancel,
 }: AnnualDocManualEntryProps) {
@@ -72,6 +74,9 @@ export function AnnualDocManualEntry({
   const [donations, setDonations] = useState("");
 
   const [saving, setSaving] = useState(false);
+  const [addToExisting, setAddToExisting] = useState(
+    doc.docType === "ea_form" && hasOtherEaInYear
+  );
 
   async function handleSave() {
     setSaving(true);
@@ -123,6 +128,7 @@ export function AnnualDocManualEntry({
             }
           : {}),
         extraReliefs,
+        ...(isEa ? { addToExistingProfile: addToExisting } : {}),
         summaryNote: "Entered manually by taxpayer.",
         confidence: "high",
       };
@@ -566,6 +572,20 @@ export function AnnualDocManualEntry({
             </div>
           )}
         </div>
+      )}
+
+      {isEa && (
+        <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={addToExisting}
+            onChange={(e) => setAddToExisting(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          {lang === "bm"
+            ? `Tambah kepada Pendapatan & PCB TT ${targetYear} sedia ada (jika majikan ke-2)`
+            : `Add to existing YA ${targetYear} Income, PCB & Zakat (for 2nd employer)`}
+        </label>
       )}
 
       <div className="flex gap-2 pt-1">

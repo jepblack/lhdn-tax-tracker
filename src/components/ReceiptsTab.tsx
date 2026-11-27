@@ -799,6 +799,14 @@ export function ReceiptsTab({
               doc={manualDoc}
               defaultYear={taxYear}
               lang={lang}
+              hasOtherEaInYear={annualDocs.some(
+                (d) =>
+                  d.id !== manualDoc.id &&
+                  d.taxYear === taxYear &&
+                  d.docType === "ea_form" &&
+                  (d.extractionStatus === "extracted" ||
+                    d.extractionStatus === "manual")
+              )}
               onApply={async (ext, doc, yr) => {
                 await onApplyAnnualDocExtraction(ext, doc, yr);
                 setExtractionAppliedMsg(

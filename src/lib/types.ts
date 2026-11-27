@@ -295,6 +295,7 @@ export interface AnnualDocExtraction {
   filingReferenceNo?: string | null;
   filingDate?: string | null;
   isAcknowledgement?: boolean;
+  addToExistingProfile?: boolean;
   extraReliefs?: Array<{
     categoryId: string;
     subCategoryId?: string | null;

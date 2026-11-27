@@ -502,10 +502,22 @@ export function TaxApp() {
       taxYear: targetYear,
       annualIncome:
         !preservePreDonationIncome && ext.annualIncome > 0
-          ? ext.annualIncome
+          ? ext.addToExistingProfile
+            ? Math.round(((baseProfile.annualIncome || 0) + ext.annualIncome) * 100) / 100
+            : ext.annualIncome
           : baseProfile.annualIncome,
-      pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : baseProfile.pcbPaid,
-      zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : baseProfile.zakatPaid,
+      pcbPaid:
+        ext.pcbPaid > 0
+          ? ext.addToExistingProfile
+            ? Math.round(((baseProfile.pcbPaid || 0) + ext.pcbPaid) * 100) / 100
+            : ext.pcbPaid
+          : baseProfile.pcbPaid,
+      zakatPaid:
+        ext.zakatPaid > 0
+          ? ext.addToExistingProfile
+            ? Math.round(((baseProfile.zakatPaid || 0) + ext.zakatPaid) * 100) / 100
+            : ext.zakatPaid
+          : baseProfile.zakatPaid,
       cp500Paid:
         (ext.cp500Paid || 0) > 0 ? ext.cp500Paid : baseProfile.cp500Paid,
       otherTaxCredits:
