@@ -375,6 +375,10 @@ export function BatchImportModal({
               </p>
               {items.map((item) => {
                 const elig = item.result?.eligibility;
+                const selectedCatObj = categories.find(
+                  (c) => c.id === item.categoryId
+                );
+                const subCategories = selectedCatObj?.subCategories || [];
                 return (
                   <div
                     key={item.id}
@@ -548,6 +552,28 @@ export function BatchImportModal({
                           className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-right"
                         />
                         </div>
+                        {subCategories.length > 0 && (
+                          <select
+                            aria-label="Sub-category"
+                            value={item.subCategoryId || subCategories[0]?.id || ""}
+                            onChange={(e) =>
+                              setItems((prev) =>
+                                prev.map((x) =>
+                                  x.id === item.id
+                                    ? { ...x, subCategoryId: e.target.value }
+                                    : x
+                                )
+                              )
+                            }
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-700"
+                          >
+                            {subCategories.map((sub) => (
+                              <option key={sub.id} value={sub.id}>
+                                {sub.name} (Sub-cap {formatRM(sub.maxLimit)})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     )}
                   </div>
