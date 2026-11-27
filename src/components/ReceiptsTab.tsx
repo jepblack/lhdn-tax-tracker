@@ -1111,23 +1111,21 @@ export function ReceiptsTab({
                           <div className="flex shrink-0 items-center gap-1.5">
                             {doc.docType !== "other_doc" && (
                               <>
-                                <button
-                                  type="button"
-                                  disabled={isRetrying}
-                                  onClick={() => handleRetryAnnualDoc(doc)}
-                                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold shadow-xs disabled:opacity-50 ${
-                                    isFailed
-                                      ? "bg-amber-600 text-white hover:bg-amber-700"
-                                      : "bg-white text-slate-700 hover:bg-slate-50"
-                                  }`}
-                                >
-                                  {isRetrying ? (
-                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                  ) : (
-                                    <RotateCcw className="h-2.5 w-2.5" />
-                                  )}
-                                  {lang === "bm" ? "Cuba Lagi" : "Retry"}
-                                </button>
+                                {isFailed && (
+                                  <button
+                                    type="button"
+                                    disabled={isRetrying}
+                                    onClick={() => handleRetryAnnualDoc(doc)}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50"
+                                  >
+                                    {isRetrying ? (
+                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="h-2.5 w-2.5" />
+                                    )}
+                                    {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => {
