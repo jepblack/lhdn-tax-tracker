@@ -129,11 +129,11 @@ export function AnnualDocManualEntry({
   }
 
   const inputCls =
-    "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-500";
-  const labelCls = "block text-[10px] font-semibold text-slate-600 mb-0.5";
+    "w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-500";
+  const labelCls = "block text-[10px] font-semibold text-slate-700 mb-0.5";
 
   return (
-    <div className="space-y-2.5 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 text-xs">
+    <div className="space-y-2.5 rounded-2xl border border-indigo-200 bg-white p-3.5 text-xs shadow-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
           <Edit3 className="h-3.5 w-3.5 text-indigo-600" />
