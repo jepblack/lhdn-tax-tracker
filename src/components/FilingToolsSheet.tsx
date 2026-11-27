@@ -494,7 +494,7 @@ export function FilingToolsSheet({
                               </span>
                             )}
                             {formBeBaseline.filingDate && (
-                              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                              <span className="inline-flex items-center rounded-full bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-white">
                                 {lang === "bm" ? "Dihantar:" : "Filed:"}{" "}
                                 {formBeBaseline.filingDate}
                               </span>
@@ -770,7 +770,7 @@ export function FilingToolsSheet({
                           >
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="rounded bg-slate-200/70 px-1 py-0.5 font-mono text-[9px] font-bold text-slate-700">
+                                <span className="rounded bg-slate-700 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white">
                                   {r.ref}
                                 </span>
                                 <span className="truncate font-semibold text-slate-900">
