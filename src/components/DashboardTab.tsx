@@ -58,6 +58,7 @@ import {
   TaxYear,
   UserSubscription,
 } from "@/lib/types";
+import { computeFormBeReconciliation } from "@/lib/form-be-reconciliation";
 import { FilingToolTab } from "./FilingToolsSheet";
 import { InfoHint } from "./InfoHint";
 import { QuickStartChecklist } from "./QuickStartGuide";
@@ -648,32 +649,20 @@ export function DashboardTab({
                     : `Backfill YA ${summary.taxYear} from Form e-BE`}
                 </h2>
                 {formBeBaseline && (() => {
-                  const verifiedByCat: Record<string, number> = {};
-                  for (const exp of yearExpenses) {
-                    if (
-                      exp.receiptUrl ||
-                      exp.receiptPath ||
-                      exp.subCategoryId === "parents_allowance"
-                    ) {
-                      verifiedByCat[exp.categoryId] =
-                        (verifiedByCat[exp.categoryId] || 0) + exp.amount;
-                    }
-                  }
-                  const declaredCats = Object.entries(
-                    formBeBaseline.declaredByCategory
-                  ).filter(([, amt]) => amt > 0);
-                  const covered = declaredCats.filter(
-                    ([catId, amt]) => (verifiedByCat[catId] || 0) >= amt - 0.01
-                  ).length;
+                  const beAudit = computeFormBeReconciliation(
+                    summary.taxYear,
+                    profile.annualIncome,
+                    yearExpenses,
+                    formBeBaseline
+                  );
+                  if (!beAudit) return null;
                   return (
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        declaredCats.length > 0 && covered === declaredCats.length
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-900"
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                        beAudit.isAuditReady ? "bg-emerald-600" : "bg-amber-600"
                       }`}
                     >
-                      {covered}/{declaredCats.length}{" "}
+                      {beAudit.verifiedCategoryCount}/{beAudit.declaredCategoryCount}{" "}
                       {personalization.language === "bm" ? "disahkan" : "verified"}
                     </span>
                   );
@@ -736,33 +725,27 @@ export function DashboardTab({
 
           {/* Inline Missing Proof Quick-Upload List or Audit Ready Banner */}
           {formBeBaseline && beQueue.length === 0 && (() => {
-            const verifiedByCat: Record<string, number> = {};
-            for (const exp of yearExpenses) {
-              if (
-                exp.receiptUrl ||
-                exp.receiptPath ||
-                exp.subCategoryId === "parents_allowance"
-              ) {
-                verifiedByCat[exp.categoryId] =
-                  (verifiedByCat[exp.categoryId] || 0) + exp.amount;
-              }
-            }
+            const beAudit = computeFormBeReconciliation(
+              summary.taxYear,
+              profile.annualIncome,
+              yearExpenses,
+              formBeBaseline
+            );
+            if (!beAudit) return null;
             const cats = getReliefCategories(summary.taxYear);
             const catMap = new Map(cats.map((c) => [c.id, c]));
-            const shortfalls = Object.entries(formBeBaseline.declaredByCategory)
-              .filter(([, declared]) => declared > 0)
-              .map(([catId, declared]) => {
-                const verified = verifiedByCat[catId] || 0;
-                const cat = catMap.get(catId);
+            const shortfalls = beAudit.rows
+              .filter((r) => r.status === "shortfall")
+              .map((r) => {
+                const cat = catMap.get(r.catId);
                 return {
-                  catId,
-                  name: cat ? tCategory(cat).shortName : catId,
-                  declared,
-                  verified,
-                  short: Math.max(0, Math.round((declared - verified) * 100) / 100),
+                  catId: r.catId,
+                  name: cat ? tCategory(cat).shortName : r.shortName,
+                  declared: r.declared,
+                  verified: r.verifiedClaimable,
+                  short: r.shortfall,
                 };
-              })
-              .filter((r) => r.short > 0.01);
+              });
 
             if (shortfalls.length === 0) {
               return (

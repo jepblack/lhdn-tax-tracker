@@ -13,20 +13,32 @@ import {
   Star,
 } from "lucide-react";
 import { formatRM } from "@/lib/calculator";
+import {
+  computeFormBeReconciliation,
+  isFormBePlaceholderExpense,
+} from "@/lib/form-be-reconciliation";
 import { useLanguage } from "@/lib/language-context";
 import { AppLanguage } from "@/lib/personalization";
-import { CategorySummary, TaxExpense, TaxYear } from "@/lib/types";
+import {
+  CategorySummary,
+  FormBeBaseline,
+  TaxExpense,
+  TaxYear,
+} from "@/lib/types";
 import { InfoHint } from "./InfoHint";
 import { ReceiptPreviewModal } from "./ReceiptPreviewModal";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface ReliefsTabProps {
   taxYear: TaxYear;
+  annualIncome?: number;
   expenses: TaxExpense[];
   summaries: CategorySummary[];
   marginalRate: number;
   language?: AppLanguage;
   pinnedCategoryIds: string[];
+  formBeBaseline?: FormBeBaseline | null;
+  onOpenAuditTally?: () => void;
   onTogglePinCategory: (categoryId: string) => void;
   onAddExpenseForCategory: (categoryId: string, subCategoryId?: string) => void;
 }
@@ -42,11 +54,14 @@ const GROUP_FILTERS = [
 
 export function ReliefsTab({
   taxYear,
+  annualIncome = 0,
   expenses,
   summaries,
   marginalRate,
   language = "en",
   pinnedCategoryIds,
+  formBeBaseline,
+  onOpenAuditTally,
   onTogglePinCategory,
   onAddExpenseForCategory,
 }: ReliefsTabProps) {
@@ -63,6 +78,12 @@ export function ReliefsTab({
     setExpandedReceiptLists((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
+  const beAudit = computeFormBeReconciliation(
+    taxYear,
+    annualIncome,
+    expenses,
+    formBeBaseline
+  );
 
   const renderReceiptRows = (items: TaxExpense[]) => {
     if (items.length === 0) return null;
@@ -71,6 +92,7 @@ export function ReliefsTab({
         {items.map((exp) => {
           const isPreviewable =
             Boolean(exp.receiptUrl) && exp.receiptUrl !== "sample://attached";
+          const isPlaceholder = isFormBePlaceholderExpense(exp);
           return (
             <div
               key={exp.id}
@@ -97,6 +119,10 @@ export function ReliefsTab({
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
                   <FileCheck2 className="h-3 w-3" />
                   {lang === "bm" ? "Dilampirkan" : "Attached"}
+                </span>
+              ) : isPlaceholder ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {lang === "bm" ? "Perlu Bukti" : "Needs Receipt"}
                 </span>
               ) : null}
             </div>
@@ -162,6 +188,60 @@ export function ReliefsTab({
         })}
       </div>
 
+      {/* Form e-BE Audit Tally Summary Banner */}
+      {beAudit && formBeBaseline && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-xs">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold text-slate-900">
+                {lang === "bm"
+                  ? `Penyesuaian Borang e-BE TT ${taxYear}`
+                  : `YA ${taxYear} Form e-BE Audit Tally`}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                  beAudit.isAuditReady ? "bg-emerald-600" : "bg-amber-600"
+                }`}
+              >
+                {beAudit.verifiedCategoryCount}/{beAudit.declaredCategoryCount}{" "}
+                {lang === "bm" ? "disahkan" : "verified"}
+              </span>
+              {beAudit.totalUnclaimedExtra > 0 && (
+                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                  +{formatRM(beAudit.totalUnclaimedExtra, true)}{" "}
+                  {lang === "bm" ? "belum tuntut" : "unclaimed"}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-600">
+              {lang === "bm" ? "Diisytihar e-BE" : "Declared on e-BE"}:{" "}
+              <strong>{formatRM(beAudit.totalDeclaredExpenseReliefs, true)}</strong> •{" "}
+              {lang === "bm" ? "Bukti Sah" : "Backed Proof"}:{" "}
+              <strong>{formatRM(beAudit.totalVerifiedClaimable, true)}</strong>
+              {beAudit.totalShortfall > 0 && (
+                <>
+                  {" "}
+                  •{" "}
+                  <span className="font-semibold text-amber-700">
+                    {lang === "bm" ? "Kurang bukti" : "Short"}{" "}
+                    {formatRM(beAudit.totalShortfall, true)}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          {onOpenAuditTally && (
+            <button
+              type="button"
+              onClick={onOpenAuditTally}
+              className="shrink-0 rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-indigo-700 active:scale-95"
+            >
+              {lang === "bm" ? "Jadual Penuh" : "Full Audit Tally"}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Category Cards */}
       <div className="space-y-3">
         {filtered.map((item) => {
@@ -169,6 +249,7 @@ export function ReliefsTab({
           const isMaxed = item.percentUsed >= 100;
           const hasSubLimits = item.subSummaries.length > 0;
           const potentialTaxSavings = Math.round(item.remaining * marginalRate);
+          const catAudit = beAudit?.byCategory[item.category.id];
 
           return (
             <div
@@ -299,6 +380,46 @@ export function ReliefsTab({
                         ? `Dibelanjakan ${formatRM(item.spent)} — ${formatRM(item.overflow)} melebihi had LHDN`
                         : `Spent ${formatRM(item.spent)} — ${formatRM(item.overflow)} exceeds LHDN cap / sub-limit`}
                     </p>
+                  )}
+
+                  {catAudit && (catAudit.declared > 0 || catAudit.verifiedRaw > 0) && (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-[11px]">
+                      <span className="text-slate-600">
+                        <strong className="text-slate-800">e-BE:</strong>{" "}
+                        {formatRM(catAudit.declared, true)} •{" "}
+                        <strong className="text-slate-800">
+                          {lang === "bm" ? "Bukti:" : "Proof:"}
+                        </strong>{" "}
+                        {formatRM(catAudit.verifiedClaimable, true)}
+                        {catAudit.excessAboveCap > 0 && (
+                          <span className="text-[10px] text-slate-400">
+                            {" "}
+                            ({formatRM(catAudit.verifiedRaw, true)}{" "}
+                            {lang === "bm" ? "jumlah resit" : "uploaded"})
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {catAudit.status === "verified" && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                            <CheckCircle2 className="h-2.5 w-2.5" />{" "}
+                            {lang === "bm" ? "Sepadan e-BE" : "Tallies with e-BE"}
+                          </span>
+                        )}
+                        {catAudit.status === "shortfall" && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                            {lang === "bm" ? "Kurang" : "Short"}{" "}
+                            {formatRM(catAudit.shortfall, true)}
+                          </span>
+                        )}
+                        {catAudit.unclaimedExtra > 0 && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                            +{formatRM(catAudit.unclaimedExtra, true)}{" "}
+                            {lang === "bm" ? "belum tuntut" : "unclaimed"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
               </button>

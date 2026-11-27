@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { calculateProgressiveTax, formatRM } from "@/lib/calculator";
+import { computeFormBeReconciliation } from "@/lib/form-be-reconciliation";
 import { useLanguage } from "@/lib/language-context";
 import { getReliefCategories, getStatusReliefAmounts } from "@/lib/lhdn-rules";
 import {
@@ -413,51 +414,26 @@ export function FilingToolsSheet({
             <div className="space-y-4">
               {/* Form BE Audit Reconciliation Card (when a Form BE PDF has been uploaded) */}
               {formBeBaseline && (() => {
+                const beAudit = computeFormBeReconciliation(
+                  profile.taxYear,
+                  profile.annualIncome,
+                  yearExpenses,
+                  formBeBaseline
+                );
+                if (!beAudit) return null;
                 const cats = getReliefCategories(profile.taxYear);
                 const catMap = new Map(cats.map((c) => [c.id, c]));
-                // Sum ONLY verified receipts (expenses that actually have a receipt file attached)
-                const verifiedByCat: Record<string, number> = {};
-                for (const exp of yearExpenses) {
-                  if (
-                    exp.receiptUrl ||
-                    exp.receiptPath ||
-                    exp.subCategoryId === "parents_allowance"
-                  ) {
-                    verifiedByCat[exp.categoryId] =
-                      (verifiedByCat[exp.categoryId] || 0) + exp.amount;
-                  }
-                }
-                const allCatIds = Array.from(
-                  new Set([
-                    ...Object.keys(formBeBaseline.declaredByCategory),
-                    ...Object.keys(verifiedByCat),
-                  ])
-                );
-                const rows = allCatIds
-                  .map((catId) => {
-                    const declared = formBeBaseline.declaredByCategory[catId] || 0;
-                    const verified = verifiedByCat[catId] || 0;
-                    const diff = verified - declared;
-                    const cat = catMap.get(catId);
-                    return {
-                      catId,
-                      ref: cat?.formBeRef || "BE",
-                      name: cat ? tCategory(cat).shortName : catId,
-                      declared,
-                      verified,
-                      diff,
-                    };
-                  })
-                  .filter((r) => r.declared > 0 || r.verified > 0);
+                const rows = beAudit.rows.map((r) => {
+                  const cat = catMap.get(r.catId);
+                  return {
+                    ...r,
+                    name: cat ? tCategory(cat).shortName : r.shortName,
+                  };
+                });
 
-                const declaredCount = rows.filter((r) => r.declared > 0).length;
-                const coveredCount = rows.filter(
-                  (r) => r.declared > 0 && r.verified >= r.declared - 0.01
-                ).length;
-                const totalShortfall = rows.reduce(
-                  (s, r) => (r.declared > r.verified ? s + (r.declared - r.verified) : s),
-                  0
-                );
+                const declaredCount = beAudit.declaredCategoryCount;
+                const coveredCount = beAudit.verifiedCategoryCount;
+                const totalShortfall = beAudit.totalShortfall;
 
                 return (
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
@@ -683,8 +659,8 @@ export function FilingToolsSheet({
 
                     <div className="space-y-1.5">
                       {rows.map((r) => {
-                        const isShort = r.declared > 0 && r.verified < r.declared - 0.01;
-                        const isExtra = r.declared === 0 && r.verified > 0;
+                        const isShort = r.status === "shortfall";
+                        const isExtraOnly = r.status === "unclaimed";
                         return (
                           <div
                             key={r.catId}
@@ -700,15 +676,25 @@ export function FilingToolsSheet({
                                 </span>
                               </div>
                               <p className="mt-0.5 text-[10px] text-slate-500">
-                                {lang === "bm" ? "Borang BE" : "Form BE"}: {formatRM(r.declared, true)} •{" "}
-                                {lang === "bm" ? "Resit" : "Receipts"}: {formatRM(r.verified, true)}
+                                {lang === "bm" ? "Borang BE" : "Form BE"}:{" "}
+                                {formatRM(r.declared, true)} •{" "}
+                                {lang === "bm" ? "Bukti Sah" : "Valid Proof"}:{" "}
+                                {formatRM(r.verifiedClaimable, true)}
+                                {r.excessAboveCap > 0 && (
+                                  <span className="text-slate-400">
+                                    {" "}
+                                    ({formatRM(r.verifiedRaw, true)}{" "}
+                                    {lang === "bm" ? "dimuat naik" : "uploaded"})
+                                  </span>
+                                )}
                               </p>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                               {isShort ? (
                                 <>
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                                    {lang === "bm" ? "Kurang" : "Short"} {formatRM(r.declared - r.verified)}
+                                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                    {lang === "bm" ? "Kurang" : "Short"}{" "}
+                                    {formatRM(r.shortfall, true)}
                                   </span>
                                   <button
                                     type="button"
@@ -721,14 +707,24 @@ export function FilingToolsSheet({
                                     {lang === "bm" ? "+ Bukti" : "+ Proof"}
                                   </button>
                                 </>
-                              ) : isExtra ? (
-                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
-                                  {lang === "bm" ? "Belum Tuntut" : "Unclaimed"} +{formatRM(r.verified)}
+                              ) : isExtraOnly ? (
+                                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  {lang === "bm" ? "Belum Tuntut" : "Unclaimed"} +
+                                  {formatRM(r.verifiedClaimable, true)}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                                  <CheckCircle2 className="h-3 w-3" /> {lang === "bm" ? "Disahkan" : "Verified"}
-                                </span>
+                                <>
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                    <CheckCircle2 className="h-3 w-3" />{" "}
+                                    {lang === "bm" ? "Disahkan" : "Verified"}
+                                  </span>
+                                  {r.unclaimedExtra > 0 && (
+                                    <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                      +{formatRM(r.unclaimedExtra, true)}{" "}
+                                      {lang === "bm" ? "belum tuntut" : "unclaimed"}
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>

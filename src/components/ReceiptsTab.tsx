@@ -25,6 +25,7 @@ import {
 import { parseAnnualDocFile } from "@/lib/annual-doc-parser";
 import { exportAuditPackZip } from "@/lib/audit-pack";
 import { formatRM } from "@/lib/calculator";
+import { computeFormBeReconciliation } from "@/lib/form-be-reconciliation";
 import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
@@ -35,6 +36,7 @@ import {
   AnnualDocExtraction,
   AnnualDocType,
   AnnualTaxDoc,
+  FormBeBaseline,
   TaxCalculationResult,
   TaxExpense,
   TaxProfile,
@@ -101,6 +103,8 @@ interface ReceiptsTabProps {
   subscription: UserSubscription;
   expenses: TaxExpense[];
   annualDocs: AnnualTaxDoc[];
+  formBeBaseline?: FormBeBaseline | null;
+  onOpenAuditTally?: () => void;
   onUploadAnnualDoc: (
     docType: AnnualDocType,
     label: string,
@@ -129,6 +133,8 @@ export function ReceiptsTab({
   subscription,
   expenses,
   annualDocs,
+  formBeBaseline,
+  onOpenAuditTally,
   onUploadAnnualDoc,
   onApplyAnnualDocExtraction,
   onDeleteAnnualDoc,
@@ -307,6 +313,100 @@ export function ReceiptsTab({
           </button>
         </div>
       </div>
+
+      {/* Form e-BE vs Vault Proof Summary */}
+      {(() => {
+        const beAudit = computeFormBeReconciliation(
+          taxYear,
+          profile.annualIncome,
+          expenses,
+          formBeBaseline
+        );
+        if (!beAudit || !formBeBaseline) return null;
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-slate-900">
+                  {lang === "bm"
+                    ? `Semakan Bukti Audit Borang e-BE TT ${taxYear}`
+                    : `YA ${taxYear} Form e-BE vs. Vault Proof`}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                    beAudit.isAuditReady ? "bg-emerald-600" : "bg-amber-600"
+                  }`}
+                >
+                  {beAudit.isAuditReady
+                    ? lang === "bm"
+                      ? "Sedia Audit ✓"
+                      : "Audit Ready ✓"
+                    : `${beAudit.verifiedCategoryCount}/${beAudit.declaredCategoryCount} ${
+                        lang === "bm" ? "kategori sah" : "categories backed"
+                      }`}
+                </span>
+                {beAudit.totalUnclaimedExtra > 0 && (
+                  <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                    +{formatRM(beAudit.totalUnclaimedExtra, true)}{" "}
+                    {lang === "bm" ? "belum tuntut" : "unclaimed"}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-600">
+                {lang === "bm" ? "Diisytihar e-BE" : "e-BE Declared"}:{" "}
+                <strong>{formatRM(beAudit.totalDeclaredExpenseReliefs, true)}</strong> •{" "}
+                {lang === "bm" ? "Bukti Sah (Had LHDN)" : "Valid Capped Proof"}:{" "}
+                <strong>{formatRM(beAudit.totalVerifiedClaimable, true)}</strong>
+                {beAudit.totalVerifiedRaw > beAudit.totalVerifiedClaimable + 0.01 && (
+                  <span className="text-slate-400">
+                    {" "}
+                    ({formatRM(beAudit.totalVerifiedRaw, true)}{" "}
+                    {lang === "bm" ? "jumlah resit" : "raw uploaded"})
+                  </span>
+                )}
+                {beAudit.totalShortfall > 0 && (
+                  <>
+                    {" "}
+                    •{" "}
+                    <span className="font-semibold text-amber-700">
+                      {lang === "bm" ? "Kurang" : "Short"}{" "}
+                      {formatRM(beAudit.totalShortfall, true)}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {beAudit.totalShortfall > 0 && vaultView === "receipts" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilterMode((prev) => (prev === "missing" ? "all" : "missing"))
+                  }
+                  className="rounded-xl border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-50"
+                >
+                  {filterMode === "missing"
+                    ? lang === "bm"
+                      ? "Tunjuk Semua"
+                      : "Show All"
+                    : lang === "bm"
+                    ? "Tapis Tiada Resit"
+                    : "Filter Missing"}
+                </button>
+              )}
+              {onOpenAuditTally && (
+                <button
+                  type="button"
+                  onClick={onOpenAuditTally}
+                  className="rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-indigo-700 active:scale-95"
+                >
+                  {lang === "bm" ? "Semak Audit" : "Audit & Tally"}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Vault Mode Switch + Quick Import Actions */}
       <div className="flex items-center justify-between gap-2">

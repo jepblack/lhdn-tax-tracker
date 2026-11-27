@@ -76,6 +76,10 @@ import {
   STARTER_RECURRING_BILLS,
   UserPersonalization,
 } from "@/lib/personalization";
+import {
+  isFormBePlaceholderExpense,
+  isVerifiedAuditExpense,
+} from "@/lib/form-be-reconciliation";
 import { getSupabaseClient } from "@/lib/supabase";
 import {
   AnnualDocExtraction,
@@ -965,6 +969,68 @@ export function TaxApp() {
     };
   }, [taxYear, userId]);
 
+  const reconciledBaselineKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const baseline = formBeBaselines[String(taxYear)];
+    if (!isLoaded || !baseline) return;
+    const guardKey = `${userId || "local"}:${taxYear}:${baseline.uploadedAt}`;
+    if (reconciledBaselineKeysRef.current.has(guardKey)) return;
+    reconciledBaselineKeysRef.current.add(guardKey);
+
+    (async () => {
+      const deletedIds = new Set<string>();
+      const updatedMap = new Map<string, TaxExpense>();
+      const yrList = expensesRef.current.filter((e) => e.taxYear === taxYear);
+
+      for (const [catId, declared] of Object.entries(
+        baseline.declaredByCategory || {}
+      )) {
+        const placeholders = yrList.filter(
+          (e) => e.categoryId === catId && isFormBePlaceholderExpense(e)
+        );
+        if (placeholders.length === 0) continue;
+        const verifiedSum = yrList
+          .filter((e) => e.categoryId === catId && isVerifiedAuditExpense(e))
+          .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        const placeholderSum = placeholders.reduce(
+          (s, e) => s + (Number(e.amount) || 0),
+          0
+        );
+        const maxAllowed = Math.max(0, Math.round((declared - verifiedSum) * 100) / 100);
+        let toTrim = Math.round((placeholderSum - maxAllowed) * 100) / 100;
+        if (toTrim <= 0.01) continue;
+
+        for (const ph of placeholders) {
+          if (toTrim <= 0.01) break;
+          if (ph.amount <= toTrim + 0.01) {
+            toTrim = Math.round((toTrim - ph.amount) * 100) / 100;
+            await removeExpense(ph, userId);
+            deletedIds.add(ph.id);
+          } else {
+            const nextAmt = Math.round((ph.amount - toTrim) * 100) / 100;
+            toTrim = 0;
+            const patched = await updateExpense(
+              ph.id,
+              { ...ph, amount: nextAmt },
+              null,
+              userId
+            );
+            updatedMap.set(ph.id, patched);
+          }
+        }
+      }
+
+      if (deletedIds.size > 0 || updatedMap.size > 0) {
+        const applyPatch = (list: TaxExpense[]) =>
+          list
+            .filter((e) => !deletedIds.has(e.id))
+            .map((e) => updatedMap.get(e.id) || e);
+        expensesRef.current = applyPatch(expensesRef.current);
+        setExpenses((prev) => applyPatch(prev));
+      }
+    })();
+  }, [isLoaded, taxYear, userId, formBeBaselines]);
+
   const summary = useMemo(
     () => calculateTaxSummary(profile, expenses),
     [profile, expenses]
@@ -1032,29 +1098,75 @@ export function TaxApp() {
     skipYearSwitch?: boolean
   ): Promise<TaxExpense> {
     const hasReceiptProof = Boolean(
-      receiptFile || saved.receiptUrl || saved.receiptPath
+      receiptFile || isVerifiedAuditExpense(saved)
     );
     const deletedIds = new Set<string>();
     const updatedMap = new Map<string, TaxExpense>();
 
     if (hasReceiptProof && saved.amount > 0) {
-      const isFormBePlaceholder = (e: TaxExpense) =>
-        e.id !== saved.id &&
-        e.taxYear === saved.taxYear &&
-        e.categoryId === saved.categoryId &&
-        !e.receiptUrl &&
-        !e.receiptPath &&
-        Boolean(e.description?.includes("attach supporting receipts for LHDN 7-year audit"));
+      const prevExp = isEdit
+        ? expensesRef.current.find((e) => e.id === saved.id)
+        : undefined;
+      const prevSameCatVerifiedAmt =
+        prevExp &&
+        prevExp.taxYear === saved.taxYear &&
+        prevExp.categoryId === saved.categoryId &&
+        isVerifiedAuditExpense(prevExp)
+          ? prevExp.amount
+          : 0;
 
       const matching = expensesRef.current
-        .filter(isFormBePlaceholder)
+        .filter(
+          (e) =>
+            e.id !== saved.id &&
+            e.taxYear === saved.taxYear &&
+            e.categoryId === saved.categoryId &&
+            isFormBePlaceholderExpense(e)
+        )
         .sort((a, b) => {
-          const aExact = saved.subCategoryId && a.subCategoryId === saved.subCategoryId ? 0 : 1;
-          const bExact = saved.subCategoryId && b.subCategoryId === saved.subCategoryId ? 0 : 1;
+          const aExact =
+            saved.subCategoryId && a.subCategoryId === saved.subCategoryId ? 0 : 1;
+          const bExact =
+            saved.subCategoryId && b.subCategoryId === saved.subCategoryId ? 0 : 1;
           return aExact - bExact;
         });
 
-      let remaining = saved.amount;
+      // Compute exact excess placeholder amount to trim:
+      // If a Form e-BE baseline exists for this year/category, clamp remaining placeholders
+      // to at most (declared - totalVerifiedInCat), which also heals any prior double-counting.
+      const baselineForYr = formBeBaselines[String(saved.taxYear)];
+      const declaredInCat =
+        baselineForYr?.declaredByCategory?.[saved.categoryId] || 0;
+      const otherVerifiedInCat = expensesRef.current
+        .filter(
+          (e) =>
+            e.id !== saved.id &&
+            e.taxYear === saved.taxYear &&
+            e.categoryId === saved.categoryId &&
+            isVerifiedAuditExpense(e)
+        )
+        .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const currentPlaceholderTotal = matching.reduce(
+        (s, e) => s + (Number(e.amount) || 0),
+        0
+      );
+
+      const deltaVerified = Math.max(
+        0,
+        Math.round((saved.amount - prevSameCatVerifiedAmt) * 100) / 100
+      );
+      let remaining =
+        declaredInCat > 0
+          ? Math.max(
+              deltaVerified,
+              Math.round(
+                (currentPlaceholderTotal -
+                  Math.max(0, declaredInCat - (otherVerifiedInCat + saved.amount))) *
+                  100
+              ) / 100
+            )
+          : deltaVerified;
+
       for (const placeholder of matching) {
         if (remaining <= 0.01) break;
         if (placeholder.amount <= remaining + 0.01) {
@@ -1899,11 +2011,17 @@ export function TaxApp() {
               {activeTab === "reliefs" && (
                 <ReliefsTab
                   taxYear={taxYear}
+                  annualIncome={profile.annualIncome}
                   expenses={expenses}
                   summaries={summary.categorySummaries}
                   marginalRate={summary.marginalRate}
                   language={personalization.language}
                   pinnedCategoryIds={personalization.pinnedCategoryIds}
+                  formBeBaseline={formBeBaselines[String(taxYear)] || null}
+                  onOpenAuditTally={() => {
+                    setToolsTab("form-be");
+                    setToolsOpen(true);
+                  }}
                   onTogglePinCategory={handleTogglePinCategory}
                   onAddExpenseForCategory={(catId, subId) =>
                     openScanner(catId, subId)
@@ -1919,6 +2037,11 @@ export function TaxApp() {
                   subscription={subscription}
                   expenses={expenses}
                   annualDocs={annualDocs}
+                  formBeBaseline={formBeBaselines[String(taxYear)] || null}
+                  onOpenAuditTally={() => {
+                    setToolsTab("form-be");
+                    setToolsOpen(true);
+                  }}
                   onUploadAnnualDoc={handleUploadAnnualDoc}
                   onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
                   onDeleteAnnualDoc={handleDeleteAnnualDoc}
