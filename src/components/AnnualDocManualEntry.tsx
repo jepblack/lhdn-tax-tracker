@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Edit3 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Edit3, ExternalLink } from "lucide-react";
 import { SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { AnnualDocExtraction, AnnualTaxDoc, TaxYear } from "@/lib/types";
+import { openFileSafely } from "./ReceiptPreviewModal";
 
 interface AnnualDocManualEntryProps {
   doc: AnnualTaxDoc;
@@ -138,24 +139,38 @@ export function AnnualDocManualEntry({
 
   return (
     <div className="space-y-2.5 rounded-2xl border border-indigo-200 bg-white p-3.5 text-xs shadow-xs">
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
-          <Edit3 className="h-3.5 w-3.5 text-indigo-600" />
-          {lang === "bm"
-            ? `Masukkan Angka Manual — ${doc.fileName}`
-            : `Manual Entry — ${doc.fileName}`}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex min-w-0 items-center gap-1.5 font-bold text-slate-900">
+          <Edit3 className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+          <span className="truncate">
+            {lang === "bm"
+              ? `Masukkan Angka Manual — ${doc.fileName}`
+              : `Manual Entry — ${doc.fileName}`}
+          </span>
         </span>
-        <select
-          value={targetYear}
-          onChange={(e) => setTargetYear(Number(e.target.value) as TaxYear)}
-          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-800"
-        >
-          {SUPPORTED_TAX_YEARS.map((yr) => (
-            <option key={yr} value={yr}>
-              YA {yr}
-            </option>
-          ))}
-        </select>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {doc.fileUrl && (
+            <button
+              type="button"
+              onClick={() => openFileSafely(doc.fileUrl, doc.fileName)}
+              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+            >
+              {lang === "bm" ? "Buka Fail" : "Open Doc"}
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          <select
+            value={targetYear}
+            onChange={(e) => setTargetYear(Number(e.target.value) as TaxYear)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-800"
+          >
+            {SUPPORTED_TAX_YEARS.map((yr) => (
+              <option key={yr} value={yr}>
+                YA {yr}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
