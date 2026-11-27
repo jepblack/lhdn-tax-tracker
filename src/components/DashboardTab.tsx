@@ -62,6 +62,7 @@ import { computeFormBeReconciliation } from "@/lib/form-be-reconciliation";
 import { FilingToolTab } from "./FilingToolsSheet";
 import { InfoHint } from "./InfoHint";
 import { QuickStartChecklist } from "./QuickStartGuide";
+import { AnnualDocManualEntry } from "./AnnualDocManualEntry";
 import { FormBeChecklist } from "./FormBeChecklist";
 import { ReliefIcon } from "./ReliefIcon";
 
@@ -138,6 +139,7 @@ export function DashboardTab({
     "personal"
   );
   const [loggingBillId, setLoggingBillId] = useState<string | null>(null);
+  const [manualBeDocId, setManualBeDocId] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState(String(personalization.taxSavingGoal));
   const [beParsing, setBeParsing] = useState(false);
@@ -866,9 +868,24 @@ export function DashboardTab({
                           {formatRM(item.extraction.pcbPaid)}
                         </p>
                       ) : (
-                        <p className="text-[11px] text-amber-700">
-                          {item.note || "Archived only — no numeric figures detected"}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[11px] text-amber-700">
+                            {item.note || "Archived only — no numeric figures detected"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setManualBeDocId((cur) =>
+                                cur === item.id ? null : item.id
+                              )
+                            }
+                            className="rounded-lg bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-indigo-700"
+                          >
+                            {personalization.language === "bm"
+                              ? "Isi Manual"
+                              : "Enter Manually"}
+                          </button>
+                        </div>
                       )}
                     </div>
                     <select
@@ -892,6 +909,24 @@ export function DashboardTab({
                     <FormBeChecklist
                       extraction={item.extraction}
                       lang={personalization.language}
+                    />
+                  )}
+                  {!item.extraction && manualBeDocId === item.id && (
+                    <AnnualDocManualEntry
+                      doc={item.doc}
+                      defaultYear={item.targetYear}
+                      lang={personalization.language}
+                      onApply={async (ext, doc, yr) => {
+                        await onApplyAnnualDocExtraction(ext, doc, yr);
+                        setManualBeDocId(null);
+                        setBeQueue((prev) => prev.filter((q) => q.id !== item.id));
+                        setBeNotice(
+                          personalization.language === "bm"
+                            ? `Angka Borang e-BE disimpan ke TT ${yr}!`
+                            : `Saved manual Form e-BE figures to YA ${yr}!`
+                        );
+                      }}
+                      onCancel={() => setManualBeDocId(null)}
                     />
                   )}
                 </div>

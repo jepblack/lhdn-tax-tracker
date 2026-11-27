@@ -30,6 +30,7 @@ import { getReliefCategories, SUPPORTED_TAX_YEARS } from "@/lib/lhdn-rules";
 import { useLanguage } from "@/lib/language-context";
 import { isProOrFamily } from "@/lib/monetization";
 import { openFileSafely, ReceiptPreviewModal } from "./ReceiptPreviewModal";
+import { AnnualDocManualEntry } from "./AnnualDocManualEntry";
 import { FormBeChecklist } from "./FormBeChecklist";
 import { exportExpensesToCsv } from "@/lib/storage";
 import {
@@ -166,6 +167,7 @@ export function ReceiptsTab({
   const [applyingExtraction, setApplyingExtraction] = useState(false);
   const [extractionAppliedMsg, setExtractionAppliedMsg] = useState<string | null>(null);
   const [docNotice, setDocNotice] = useState<string | null>(null);
+  const [manualDoc, setManualDoc] = useState<AnnualTaxDoc | null>(null);
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillQueue, setBackfillQueue] = useState<
     Array<{
@@ -528,16 +530,19 @@ export function ReceiptsTab({
                         doc: savedDoc,
                         targetYear: detected,
                       });
+                      setManualDoc(null);
                     } else {
                       setDocNotice(
                         skipReason ||
-                          `${slot.label} archived! No numeric tax figures were detected automatically—you can enter them under Profile.`
+                          `${slot.label} archived! No numeric tax figures were detected automatically—enter them below.`
                       );
+                      setManualDoc(savedDoc);
                     }
                   } catch {
                     setDocNotice(
-                      `${slot.label} archived! Could not reach extractor right now.`
+                      `${slot.label} archived! Could not reach extractor right now — enter the figures below.`
                     );
+                    setManualDoc(savedDoc);
                   }
                 } else {
                   setExtractionAppliedMsg(`${slot.label} archived to Vault!`);
@@ -727,6 +732,25 @@ export function ReceiptsTab({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <span>{docNotice}</span>
             </div>
+          )}
+
+          {manualDoc && (
+            <AnnualDocManualEntry
+              doc={manualDoc}
+              defaultYear={taxYear}
+              lang={lang}
+              onApply={async (ext, doc, yr) => {
+                await onApplyAnnualDocExtraction(ext, doc, yr);
+                setExtractionAppliedMsg(
+                  lang === "bm"
+                    ? `Angka daripada ${doc.label} disimpan ke TT ${yr}!`
+                    : `Saved manual figures from ${doc.label} to YA ${yr}!`
+                );
+                setManualDoc(null);
+                setDocNotice(null);
+              }}
+              onCancel={() => setManualDoc(null)}
+            />
           )}
 
           {extractionAppliedMsg && (
@@ -986,6 +1010,18 @@ export function ReceiptsTab({
                           {doc.fileName}
                         </span>
                         <div className="flex shrink-0 items-center gap-1.5">
+                          {doc.docType !== "other_doc" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualDoc(doc);
+                                setPendingExtraction(null);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
+                            >
+                              {lang === "bm" ? "Isi" : "Enter"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() =>
