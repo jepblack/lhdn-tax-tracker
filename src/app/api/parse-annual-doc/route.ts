@@ -9,13 +9,13 @@ import {
   verifySameOrigin,
 } from "@/lib/api-security";
 import { callGroqJson } from "@/lib/groq-vision";
+import { getActiveGeminiVisionModels } from "@/lib/gemini-models";
 import { parseFormBeText } from "@/lib/form-be-text-parser";
 import { parseMalaysianPayslipText } from "@/lib/payslip-parser";
 import { AnnualDocExtraction, AnnualDocType } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-const GEMINI_MODEL = "gemini-3.8-flash";
 
 async function isAuthed(request: Request): Promise<boolean> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -235,6 +235,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
     if (canUseGemini) {
       try {
         const ai = new GoogleGenAI({ apiKey: geminiKey!, vertexai: false });
+        const geminiModels = await getActiveGeminiVisionModels(geminiKey!);
 
         const contents = pdfText.length >= 20
           ? `${prompt}\n\nDOCUMENT TEXT:\n${pdfText.slice(0, 15000)}`
@@ -250,10 +251,10 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
               },
             ];
 
-        const callGemini = async () => {
+        const callGeminiModel = async (model: string) => {
           try {
             return await ai.models.generateContent({
-              model: GEMINI_MODEL,
+              model,
               contents,
               config: {
                 temperature: 0.1,
@@ -265,7 +266,7 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
             const m = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
             if (m.includes("400") || m.includes("INVALID_ARGUMENT")) {
               return await ai.models.generateContent({
-                model: GEMINI_MODEL,
+                model,
                 contents,
                 config: { temperature: 0.1, maxOutputTokens: maxTokens },
               });
@@ -283,19 +284,20 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
           ]);
 
         let response;
-        try {
-          response = await withTimeout(callGemini(), 14000);
-        } catch (firstErr) {
-          const m = firstErr instanceof Error ? firstErr.message : String(firstErr);
-          if (m.includes("503") || m.includes("UNAVAILABLE")) {
-            await new Promise((r) => setTimeout(r, 600));
-            response = await withTimeout(callGemini(), 12000);
-          } else {
-            throw firstErr;
+        for (const model of geminiModels.slice(0, 3)) {
+          try {
+            response = await withTimeout(callGeminiModel(model), 14000);
+            if (response?.text) break;
+          } catch (modelErr) {
+            const m = modelErr instanceof Error ? modelErr.message : String(modelErr);
+            geminiFailReason = m.slice(0, 140);
+            if (m.includes("503") || m.includes("UNAVAILABLE")) {
+              await new Promise((r) => setTimeout(r, 500));
+            }
           }
         }
 
-        if (response.text) {
+        if (response?.text) {
           const match = response.text.match(/\{[\s\S]*\}/);
           const parsed = JSON.parse((match ? match[0] : response.text).trim());
           return NextResponse.json(

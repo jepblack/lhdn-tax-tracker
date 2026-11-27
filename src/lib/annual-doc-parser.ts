@@ -1,5 +1,8 @@
 import { parseMalaysianPayslipText } from "./payslip-parser";
-import { renderPdfFirstPageToJpeg } from "./pdf-to-image";
+import {
+  extractPdfTextInBrowser,
+  renderPdfFirstPageToJpeg,
+} from "./pdf-to-image";
 import { getSupabaseClient } from "./supabase";
 import { AnnualDocExtraction, AnnualDocType, TaxYear } from "./types";
 
@@ -78,7 +81,32 @@ export async function parseAnnualDocFile(
 
   let imageForFallback: File | null = file.type.startsWith("image/") ? file : null;
   if (isPdfFile && isScannedPdf) {
-    imageForFallback = await renderPdfFirstPageToJpeg(file);
+    // First check if browser PDF.js can extract embedded text (e.g. if server unpdf missed it)
+    if (docType === "ea_form" || docType === "kwsp_statement") {
+      const browserText = await extractPdfTextInBrowser(file, 3);
+      if (browserText.length >= 20) {
+        const p = parseMalaysianPayslipText(browserText);
+        const browserExt: AnnualDocExtraction = {
+          docType,
+          providerName: docType === "kwsp_statement" ? "KWSP / EPF" : slotLabel,
+          annualIncome: p.estimatedAnnualIncome,
+          pcbPaid: p.ytdPcb || p.monthlyPcb,
+          zakatPaid: p.ytdZakat || p.monthlyZakat,
+          epfEmployee: p.ytdEpf || p.employeeEpf,
+          socsoEisEmployee:
+            (p.ytdSocso || p.employeeSocso) + (p.ytdEis || p.employeeEis),
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: 0,
+          summaryNote: p.notes.join(" ") || "Extracted from PDF text.",
+          confidence: p.confidence,
+        };
+        if (hasExtractedFigures(browserExt)) {
+          return { extraction: browserExt, skipReason: null };
+        }
+      }
+    }
+    imageForFallback = await renderPdfFirstPageToJpeg(file, 1600);
     if (imageForFallback) {
       res = await postToApi(imageForFallback);
       if (res && res.ok) {
