@@ -2387,6 +2387,28 @@ export function TaxApp() {
         summary={summary}
         expenses={expenses}
         formBeBaseline={formBeBaselines[String(taxYear)] || null}
+        onSyncProfileToFormBe={async () => {
+          const b = formBeBaselines[String(taxYear)];
+          if (!b) return;
+          const synced: TaxProfile = {
+            ...profile,
+            annualIncome:
+              b.declaredIncome > 0 ? b.declaredIncome : profile.annualIncome,
+            pcbPaid: b.declaredPcb > 0 ? b.declaredPcb : profile.pcbPaid,
+            zakatPaid:
+              b.declaredZakat !== undefined ? b.declaredZakat : profile.zakatPaid,
+            cp500Paid:
+              b.cp500Paid !== undefined ? b.cp500Paid : profile.cp500Paid,
+            otherTaxCredits:
+              b.otherTaxCredits !== undefined
+                ? b.otherTaxCredits
+                : profile.otherTaxCredits,
+            statusReliefs: b.statusReliefs
+              ? { ...profile.statusReliefs, ...b.statusReliefs, individual: true }
+              : profile.statusReliefs,
+          };
+          await handleUpdateProfile(synced);
+        }}
         onClearFormBeBaseline={() => {
           setFormBeBaselines((prev) => {
             const next = { ...prev };

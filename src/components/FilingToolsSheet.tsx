@@ -39,6 +39,7 @@ interface FilingToolsSheetProps {
   expenses: TaxExpense[];
   formBeBaseline?: FormBeBaseline | null;
   onClearFormBeBaseline?: () => void;
+  onSyncProfileToFormBe?: () => Promise<void>;
   onClose: () => void;
   onQuickAdd: (categoryId?: string, subCategoryId?: string) => void;
   onQuickLogTemplate: (template: {
@@ -154,6 +155,7 @@ export function FilingToolsSheet({
   expenses,
   formBeBaseline,
   onClearFormBeBaseline,
+  onSyncProfileToFormBe,
   onClose,
   onQuickAdd,
   onQuickLogTemplate,
@@ -163,6 +165,7 @@ export function FilingToolsSheet({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
   const [loggedId, setLoggedId] = useState<string | null>(null);
+  const [syncingBe, setSyncingBe] = useState(false);
 
   // Joint vs Separate Simulator state
   const [spouseIncome, setSpouseIncome] = useState("60000");
@@ -682,25 +685,50 @@ export function FilingToolsSheet({
                         checks.every((c) => Math.abs(c.be - c.app) <= 0.01);
                       return (
                         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-[11px] font-bold text-slate-800">
                               {lang === "bm"
                                 ? "Semakan Pengiraan Cukai"
                                 : "Tax Computation Tally"}
                             </span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
-                                allTallied ? "bg-emerald-600" : "bg-amber-600"
-                              }`}
-                            >
-                              {allTallied
-                                ? lang === "bm"
-                                  ? "Sepadan LHDN (100%)"
-                                  : "Matches LHDN (Exact)"
-                                : lang === "bm"
-                                ? "Ada Perbezaan"
-                                : "Needs Review"}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {!allTallied && onSyncProfileToFormBe && (
+                                <button
+                                  type="button"
+                                  disabled={syncingBe}
+                                  onClick={async () => {
+                                    setSyncingBe(true);
+                                    try {
+                                      await onSyncProfileToFormBe();
+                                    } finally {
+                                      setSyncingBe(false);
+                                    }
+                                  }}
+                                  className="rounded-lg bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                  {syncingBe
+                                    ? lang === "bm"
+                                      ? "Menyelaras..."
+                                      : "Syncing..."
+                                    : lang === "bm"
+                                    ? "Selaras Profil ke e-BE"
+                                    : "Sync Profile to e-BE"}
+                                </button>
+                              )}
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                                  allTallied ? "bg-emerald-600" : "bg-amber-600"
+                                }`}
+                              >
+                                {allTallied
+                                  ? lang === "bm"
+                                    ? "Sepadan LHDN (100%)"
+                                    : "Matches LHDN (Exact)"
+                                  : lang === "bm"
+                                  ? "Ada Perbezaan"
+                                  : "Needs Review"}
+                              </span>
+                            </div>
                           </div>
                           <div className="grid grid-cols-1 gap-1 text-[10px]">
                             {checks.map((c) => {

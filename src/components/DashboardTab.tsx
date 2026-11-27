@@ -1087,7 +1087,7 @@ export function DashboardTab({
                 summary.estimatedRefund >= 0 ? "text-emerald-200" : "text-amber-200"
               }`}
             >
-              {formatRM(Math.abs(summary.estimatedRefund))}
+              {formatRM(Math.abs(summary.estimatedRefund), true)}
             </p>
           </div>
         </div>
