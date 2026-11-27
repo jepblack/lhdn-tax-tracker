@@ -428,7 +428,7 @@ export function BatchImportModal({
                           </span>
                         )}
                         {item.status === "saved" && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
                             <CheckCircle2 className="h-3 w-3" /> Archived
                           </span>
                         )}
@@ -444,23 +444,23 @@ export function BatchImportModal({
                           item.result?.confidence === "low" && (
                             <span
                               title="Low confidence — could not be determined 100%"
-                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900"
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white"
                             >
                               Not 100% sure
                             </span>
                           )}
                         {item.status === "ready" && elig === "eligible" && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
                             <Sparkles className="h-2.5 w-2.5" /> Eligible
                           </span>
                         )}
                         {item.status === "ready" && elig === "uncertain" && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
                             <HelpCircle className="h-2.5 w-2.5" /> Review
                           </span>
                         )}
                         {item.status === "ready" && elig === "rejected" && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">
                             <Ban className="h-2.5 w-2.5" /> Rejected
                           </span>
                         )}
