@@ -52,9 +52,15 @@ export function ReliefsTab({
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
+  const [expandedReceiptLists, setExpandedReceiptLists] = useState<
+    Record<string, boolean>
+  >({});
   const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
   const { lang, copy, tCategory, tCategoryTips, tSubCategory, tSubCategoryDesc } =
     useLanguage();
+
+  const toggleReceiptList = (key: string) =>
+    setExpandedReceiptLists((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
 
@@ -307,7 +313,17 @@ export function ReliefsTab({
                           ? "Sub-Kategori & Had Khusus"
                           : "Sub-Categories & Sub-Limits"}
                       </p>
-                      {item.subSummaries.map((sub) => (
+                      {item.subSummaries.map((sub) => {
+                        const subKey = `${item.category.id}:${sub.subCategory.id}`;
+                        const subExpenses = yearExpenses.filter(
+                          (e) =>
+                            e.categoryId === item.category.id &&
+                            e.subCategoryId === sub.subCategory.id
+                        );
+                        const isSubReceiptsOpen = Boolean(
+                          expandedReceiptLists[subKey]
+                        );
+                        return (
                         <div
                           key={sub.subCategory.id}
                           className="rounded-xl border border-slate-200/80 bg-white p-3"
@@ -336,7 +352,7 @@ export function ReliefsTab({
                           </div>
 
                           <div className="mt-2 space-y-1">
-                            <div className="flex justify-between text-[11px]">
+                            <div className="flex items-center justify-between text-[11px]">
                               <span className="font-semibold text-slate-800">
                                 {formatRM(sub.claimable)}{" "}
                                 <span className="font-normal text-slate-400">
@@ -344,14 +360,36 @@ export function ReliefsTab({
                                   {lang === "bm" ? "sub-had" : "sub-cap"}
                                 </span>
                               </span>
-                              <span className="text-slate-500">
-                                {sub.expenseCount}{" "}
-                                {lang === "bm"
-                                  ? "resit"
-                                  : sub.expenseCount === 1
-                                  ? "receipt"
-                                  : "receipts"}
-                              </span>
+                              {subExpenses.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleReceiptList(subKey)}
+                                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold text-emerald-700 hover:bg-emerald-50 active:scale-95"
+                                >
+                                  <span>
+                                    {sub.expenseCount}{" "}
+                                    {lang === "bm"
+                                      ? "resit"
+                                      : sub.expenseCount === 1
+                                      ? "receipt"
+                                      : "receipts"}
+                                  </span>
+                                  {isSubReceiptsOpen ? (
+                                    <ChevronUp className="h-3 w-3" />
+                                  ) : (
+                                    <ChevronDown className="h-3 w-3" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="text-slate-500">
+                                  {sub.expenseCount}{" "}
+                                  {lang === "bm"
+                                    ? "resit"
+                                    : sub.expenseCount === 1
+                                    ? "receipt"
+                                    : "receipts"}
+                                </span>
+                              )}
                             </div>
                             <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                               <div
@@ -371,15 +409,10 @@ export function ReliefsTab({
                               </p>
                             )}
                           </div>
-                          {renderReceiptRows(
-                            yearExpenses.filter(
-                              (e) =>
-                                e.categoryId === item.category.id &&
-                                e.subCategoryId === sub.subCategory.id
-                            )
-                          )}
+                          {isSubReceiptsOpen && renderReceiptRows(subExpenses)}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -395,14 +428,39 @@ export function ReliefsTab({
                           !subIds.has(e.subCategoryId))
                     );
                     if (categoryLevelExpenses.length === 0) return null;
+                    const catKey = `${item.category.id}:__category`;
+                    const isCatReceiptsOpen = Boolean(
+                      expandedReceiptLists[catKey]
+                    );
                     return (
                       <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          {lang === "bm"
-                            ? "Resit Dilampirkan"
-                            : "Uploaded Receipts"}
-                        </p>
-                        {renderReceiptRows(categoryLevelExpenses)}
+                        <button
+                          type="button"
+                          onClick={() => toggleReceiptList(catKey)}
+                          className="flex w-full items-center justify-between text-left"
+                        >
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                            {lang === "bm"
+                              ? `Resit Dilampirkan (${categoryLevelExpenses.length})`
+                              : `Uploaded Receipts (${categoryLevelExpenses.length})`}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                            {isCatReceiptsOpen
+                              ? lang === "bm"
+                                ? "Sembunyi"
+                                : "Hide"
+                              : lang === "bm"
+                              ? "Lihat"
+                              : "Show"}
+                            {isCatReceiptsOpen ? (
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </span>
+                        </button>
+                        {isCatReceiptsOpen &&
+                          renderReceiptRows(categoryLevelExpenses)}
                       </div>
                     );
                   })()}
