@@ -565,7 +565,9 @@ export function FilingToolsSheet({
                                     ? "Pendapatan Agregat"
                                     : "Aggregate Income",
                                 be: formBeBaseline.declaredIncome || 0,
-                                app: profile.annualIncome,
+                                app: Math.floor(
+                                  Math.max(0, profile.annualIncome || 0)
+                                ),
                                 show: (formBeBaseline.declaredIncome || 0) > 0,
                               },
                               {
