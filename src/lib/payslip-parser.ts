@@ -424,29 +424,31 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
     }
   }
 
-  // D. Pendapatan Penggajian (Bahagian B sahaja)
-  const sectionBLines = sliceSectionLines(
-    lines,
-    /bahagian\s*b\b/i,
-    /bahagian\s*c\b/i
-  );
-  const bLines = sectionBLines.length > 0 ? sectionBLines : sliceSectionLines(lines, /bahagian\s*b\b/i, /bahagian\s*d\b/i);
+  // D. Pendapatan Penggajian (Bahagian B / Section B)
+  const secBStart = /(?:bahagian\s*b\b|^\s*b[\s.]+employment\s+income\b)/i;
+  const secCStart = /(?:bahagian\s*c\b|^\s*c[\s.]+pension\s+and\s+others\b)/i;
+  const secDStart = /(?:bahagian\s*d\b|^\s*d[\s.]+total\s+deduction\b)/i;
+  const secEStart = /(?:bahagian\s*e\b|^\s*e[\s.]+contributions?\s+paid\s+by\s+employee\b)/i;
+  const secFStart = /(?:bahagian\s*f\b|^\s*f[\s.]+total\s+tax\s+exempt\b)/i;
+
+  const sectionBLines = sliceSectionLines(lines, secBStart, secCStart);
+  const bLines = sectionBLines.length > 0 ? sectionBLines : sliceSectionLines(lines, secBStart, secDStart);
 
   const gross_salary_wages_ot = findLabeledAmount(
     bLines,
-    /(?:gaji\s*kasar,\s*upah\s*atau\s*gaji\s*(?:cuti|umum)|gaji\s*kasar,\s*upah|\(\s*a\s*\)\s*gaji\s*kasar)/i
+    /(?:gaji\s*kasar,\s*upah\s*atau\s*gaji\s*(?:cuti|umum)|gaji\s*kasar,\s*upah|\(\s*a\s*\)\s*gaji\s*kasar|gross\s*salary,\s*wages\s*or\s*leave\s*pay|\(\s*a\s*\)\s*gross\s*salary)/i
   );
   const fees_commission_bonus = findLabeledAmount(
     bLines,
-    /(?:fi\s*(?:\([^)]*\)\s*)?,?\s*komisen\s*atau\s*bonus|\(\s*b\s*\)\s*fi)/i
+    /(?:fi\s*(?:\([^)]*\)\s*)?,?\s*komisen\s*atau\s*bonus|\(\s*b\s*\)\s*fi|fees\s*(?:\([^)]*\)\s*)?,?\s*commission\s*or\s*bonus|\(\s*b\s*\)\s*fees)/i
   );
   const tips_perquisites_gratuity_allowances = findLabeledAmount(
     bLines,
-    /(?:tip\s*kasar,\s*perkuisit,\s*penerimaan\s*sagu\s*hati|tip\s*kasar,\s*perkuisit|\(\s*c\s*\)\s*tip\s*kasar)/i
+    /(?:tip\s*kasar,\s*perkuisit,\s*penerimaan\s*sagu\s*hati|tip\s*kasar,\s*perkuisit|\(\s*c\s*\)\s*tip\s*kasar|gross\s*tips,\s*perquisites|\(\s*c\s*\)\s*gross\s*tips)/i
   );
   const income_tax_paid_by_employer = findLabeledAmount(
     bLines,
-    /(?:cukai\s*pendapatan\s*yang\s*dibayar\s*oleh\s*majikan|\(\s*d\s*\)\s*cukai\s*pendapatan)/i
+    /(?:cukai\s*pendapatan\s*yang\s*dibayar\s*oleh\s*majikan|\(\s*d\s*\)\s*cukai\s*pendapatan|income\s*tax\s*borne\s*by\s*the\s*employer|\(\s*d\s*\)\s*income\s*tax)/i
   );
   const esos_benefit = findLabeledAmount(
     bLines,
@@ -477,28 +479,24 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
     /(?:pampasan\s*kerana\s*kehilangan\s*pekerjaan|compensation\s*for\s*loss\s*of\s*employment)/i
   );
 
-  // E. Pencen dan Bayaran Berkala (Bahagian C sahaja)
-  const sectionCLines = sliceSectionLines(
-    lines,
-    /bahagian\s*c\b/i,
-    /bahagian\s*d\b/i
-  );
+  // E. Pencen dan Bayaran Berkala (Bahagian C / Section C)
+  const sectionCLines = sliceSectionLines(lines, secCStart, secDStart);
   const pension = findLabeledAmount(
     sectionCLines,
-    /(?:^\s*1\.?\s*pencen\b|\bpencen\b(?!\s*dan\s*lain-lain|\s*yang\s*diluluskan))/i,
-    /^bahagian\s*c/i
+    /(?:^\s*1\.?\s*(?:pencen|pension)\b|\bpencen\b(?!\s*dan\s*lain-lain|\s*yang\s*diluluskan))/i,
+    /(?:^bahagian\s*c|^\s*c[\s.]+pension)/i
   );
   const other_periodic_payments = findLabeledAmount(
     sectionCLines,
     /(?:anuiti\s*atau\s*bayaran\s*berkala|annuities\s*or\s*other\s*periodical)/i
   );
 
-  // F. Jumlah Pendapatan (JUMLAH selepas Bahagian B dan C)
-  const jumlahSource = sectionCLines.length > 0 ? sectionCLines : sliceSectionLines(lines, /bahagian\s*b\b/i, /bahagian\s*d\b/i);
+  // F. Jumlah Pendapatan (JUMLAH / TOTAL selepas Bahagian B dan C)
+  const jumlahSource = sectionCLines.length > 0 ? sectionCLines : sliceSectionLines(lines, secBStart, secDStart);
   let total_gross_income = findLabeledAmount(
     jumlahSource,
     /(?:\bjumlah\b(?:\s*\(\s*b1\s*[-–]\s*b5\s*\)|\s*\(\s*b\s*\+\s*c\s*\)|\s*saraan\s*kasar|\s*pendapatan)?|\btotal\b)/i,
-    /(?:potongan|bahagian\s*d|section\s*d)/i
+    /(?:potongan|bahagian\s*d|section\s*d|^\s*d[\s.]+total\s+deduction)/i
   );
 
   const bAndCItems = [
@@ -532,59 +530,60 @@ export function parseEaFormText(rawText: string): EaFormExtraction {
     );
   }
 
-  // G. Potongan (Bahagian D sahaja)
-  const sectionDLines = sliceSectionLines(
-    lines,
-    /bahagian\s*d\b/i,
-    /bahagian\s*e\b/i
-  );
+  // G. Potongan (Bahagian D / Section D)
+  const sectionDLines = sliceSectionLines(lines, secDStart, secEStart);
   const pcb_paid_to_lhdnm = findLabeledAmount(
     sectionDLines,
-    /(?:potongan\s*cukai\s*bulanan\s*\(pcb\)\s*(?:tahun\s*semasa\s*)?yang\s*dibayar\s*kepada\s*lhdnm|potongan\s*cukai\s*bulanan)/i,
-    /^bahagian\s*d/i
+    /(?:potongan\s*cukai\s*bulanan\s*\(pcb\)\s*(?:tahun\s*semasa\s*)?yang\s*dibayar\s*kepada\s*lhdnm|potongan\s*cukai\s*bulanan|monthly\s*tax\s*deductions?\s*\(mtd\)\s*remitted\s*to\s*lhdnm|monthly\s*tax\s*deductions?)/i,
+    /(?:^bahagian\s*d|^\s*d[\s.]+total\s+deduction)/i
   );
-  const cp38 = findLabeledAmount(sectionDLines, /(?:arahan\s*potongan\s*cp\s*38|\bcp\s*38\b)/i);
+  const cp38 = findLabeledAmount(
+    sectionDLines,
+    /(?:arahan\s*potongan\s*cp\s*38|\bcp\s*38\b)/i
+  );
   const zakat_via_salary_deduction = findLabeledAmount(
     sectionDLines,
-    /(?:zakat\s*yang\s*dibayar\s*melalui\s*potongan\s*gaji)/i
+    /(?:zakat\s*yang\s*dibayar\s*melalui\s*potongan\s*gaji|zakat\s*paid\s*via\s*salary\s*deduction)/i
   );
   const tp1_relief = findLabeledAmount(
     sectionDLines,
-    /(?:borang\s*tp1.*pelepasan|tuntutan\s*potongan.*tp1)/i
+    /(?:borang\s*tp1.*pelepasan|tuntutan\s*potongan.*tp1|claim\s*for\s*deduction.*tp1)/i
   );
   const zakat_other_than_salary_deduction = findLabeledAmount(
     sectionDLines,
-    /(?:zakat\s*selain\s*yang\s*dibayar\s*melalui\s*potongan\s*gaji)/i
+    /(?:zakat\s*selain\s*yang\s*dibayar\s*melalui\s*potongan\s*gaji|zakat\s*other\s*than\s*that\s*paid\s*via\s*monthly\s*salary\s*deduction)/i
   );
   const children_relief = findLabeledAmount(
     sectionDLines,
-    /(?:jumlah\s*pelepasan\s*(?:bagi|untuk)\s*anak)/i
+    /(?:jumlah\s*pelepasan\s*(?:bagi|untuk)\s*anak|total\s*qualifying\s*child\s*relief)/i
   );
 
-  // H. Caruman Pekerja (Bahagian E sahaja)
-  const sectionELines = sliceSectionLines(
-    lines,
-    /bahagian\s*e\b/i,
-    /bahagian\s*f\b/i
-  );
-  const epf_employee_contribution = findLabeledAmount(
-    sectionELines,
-    /(?:kumpulan\s*wang\s*simpanan\s*pekerja|\bkwsp\b|\bepf\b)/i,
-    /(?:^bahagian\s*e|majikan|employer)/i
-  );
+  // H. Caruman Pekerja (Bahagian E / Section E)
+  const sectionELines = sliceSectionLines(lines, secEStart, secFStart);
+  const epf_employee_contribution =
+    findLabeledAmount(
+      sectionELines,
+      /(?:kumpulan\s*wang\s*simpanan\s*pekerja|\bkwsp\b|\bepf\b)/i,
+      /(?:^bahagian\s*e|^\s*e[\s.]+contributions|majikan|employer)/i
+    ) ??
+    findLabeledAmount(
+      sectionELines,
+      /amount\s*of\s*compulsory\s*contribution\s*paid/i,
+      /(?:socso|perkeso|^\s*2\.)/i
+    );
   const socso_employee_contribution = findLabeledAmount(
     sectionELines,
     /(?:\bperkeso\b|\bsocso\b|pertubuhan\s*keselamatan\s*sosial)/i,
-    /(?:^bahagian\s*e|majikan|employer)/i
+    /(?:^bahagian\s*e|^\s*e[\s.]+contributions|majikan|employer)/i
   );
   const other_approved_fund_contribution = findLabeledAmount(
     sectionELines,
     /(?:sistem\s*insurans\s*pekerjaan|\bsip\b|\beis\b|kumpulan\s*wang\s*simpanan\/pencen\s*lain)/i,
-    /(?:^bahagian\s*e|majikan|employer)/i
+    /(?:^bahagian\s*e|^\s*e[\s.]+contributions|majikan|employer)/i
   );
 
-  // I. Elaun Dikecualikan Cukai (Bahagian F sahaja - berasingan daripada total_gross_income)
-  const sectionFLines = sliceSectionLines(lines, /bahagian\s*f\b/i);
+  // I. Elaun Dikecualikan Cukai (Bahagian F / Section F)
+  const sectionFLines = sliceSectionLines(lines, secFStart);
   const tax_exempt_benefits = findLabeledAmount(
     sectionFLines,
     /(?:jumlah\s*elaun\s*\/\s*perkuisit|dikecualikan\s*cukai|tax\s*exempt)/i
