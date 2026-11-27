@@ -657,22 +657,49 @@ export function DashboardTab({
                   );
                   if (!beAudit) return null;
                   return (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
-                        beAudit.isAuditReady ? "bg-emerald-600" : "bg-amber-600"
-                      }`}
-                    >
-                      {beAudit.verifiedCategoryCount}/{beAudit.declaredCategoryCount}{" "}
-                      {personalization.language === "bm" ? "disahkan" : "verified"}
-                    </span>
+                    <>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                          beAudit.isAuditReady ? "bg-emerald-600" : "bg-amber-600"
+                        }`}
+                      >
+                        {beAudit.verifiedCategoryCount}/{beAudit.declaredCategoryCount}{" "}
+                        {personalization.language === "bm" ? "disahkan" : "verified"}
+                      </span>
+                      {formBeBaseline.filingReferenceNo && (
+                        <span className="rounded-full bg-indigo-600 px-2 py-0.5 font-mono text-[10px] font-bold text-white">
+                          {formBeBaseline.filingReferenceNo}
+                        </span>
+                      )}
+                    </>
                   );
                 })()}
               </div>
               <p className="mt-0.5 text-xs text-indigo-800/80">
                 {formBeBaseline
                   ? personalization.language === "bm"
-                    ? `Sumber: ${formBeBaseline.uploadedFileName} • Semak penyesuaian audit & muat naik resit sokongan yang masih kurang.`
-                    : `Source: ${formBeBaseline.uploadedFileName} • Check audit reconciliation & attach any missing supporting receipts.`
+                    ? `Sumber: ${formBeBaseline.uploadedFileName}${
+                        formBeBaseline.acknowledgementFileName &&
+                        formBeBaseline.acknowledgementFileName !==
+                          formBeBaseline.uploadedFileName
+                          ? ` + ${formBeBaseline.acknowledgementFileName}`
+                          : ""
+                      }${
+                        formBeBaseline.filingDate
+                          ? ` (Dihantar ${formBeBaseline.filingDate})`
+                          : ""
+                      } • Semak penyesuaian audit & muat naik resit sokongan.`
+                    : `Source: ${formBeBaseline.uploadedFileName}${
+                        formBeBaseline.acknowledgementFileName &&
+                        formBeBaseline.acknowledgementFileName !==
+                          formBeBaseline.uploadedFileName
+                          ? ` + ${formBeBaseline.acknowledgementFileName}`
+                          : ""
+                      }${
+                        formBeBaseline.filingDate
+                          ? ` (Filed ${formBeBaseline.filingDate})`
+                          : ""
+                      } • Check audit reconciliation & attach supporting receipts.`
                   : personalization.language === "bm"
                   ? "Muat naik PDF Borang e-BE MyTax anda (satu atau beberapa tahun sekaligus) untuk mengisi pendapatan, pelepasan & PCB secara automatik."
                   : "Upload your MyTax Form e-BE PDF (single or multiple years at once) to auto-fill income, reliefs & PCB."}

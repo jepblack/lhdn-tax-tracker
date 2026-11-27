@@ -448,15 +448,56 @@ export function FilingToolsSheet({
                           {lang === "bm" ? (
                             <>
                               Membandingkan jumlah diisytihar daripada{" "}
-                              <strong>{formBeBaseline.uploadedFileName}</strong> berbanding resit sokongan dimuat naik.
+                              <strong>{formBeBaseline.uploadedFileName}</strong>
+                              {formBeBaseline.acknowledgementFileName &&
+                              formBeBaseline.acknowledgementFileName !==
+                                formBeBaseline.uploadedFileName ? (
+                                <>
+                                  {" "}
+                                  +{" "}
+                                  <strong>
+                                    {formBeBaseline.acknowledgementFileName}
+                                  </strong>
+                                </>
+                              ) : null}{" "}
+                              berbanding resit sokongan dimuat naik.
                             </>
                           ) : (
                             <>
                               Comparing declared totals from{" "}
-                              <strong>{formBeBaseline.uploadedFileName}</strong> vs. uploaded supporting receipts.
+                              <strong>{formBeBaseline.uploadedFileName}</strong>
+                              {formBeBaseline.acknowledgementFileName &&
+                              formBeBaseline.acknowledgementFileName !==
+                                formBeBaseline.uploadedFileName ? (
+                                <>
+                                  {" "}
+                                  +{" "}
+                                  <strong>
+                                    {formBeBaseline.acknowledgementFileName}
+                                  </strong>
+                                </>
+                              ) : null}{" "}
+                              vs. uploaded supporting receipts.
                             </>
                           )}
                         </p>
+                        {(formBeBaseline.filingReferenceNo ||
+                          formBeBaseline.filingDate) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {formBeBaseline.filingReferenceNo && (
+                              <span className="inline-flex items-center rounded-full bg-indigo-600 px-2 py-0.5 font-mono text-[10px] font-bold text-white">
+                                {lang === "bm" ? "No. Siri:" : "Serial:"}{" "}
+                                {formBeBaseline.filingReferenceNo}
+                              </span>
+                            )}
+                            {formBeBaseline.filingDate && (
+                              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                                {lang === "bm" ? "Dihantar:" : "Filed:"}{" "}
+                                {formBeBaseline.filingDate}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {onClearFormBeBaseline && (
                         <button
@@ -509,16 +550,49 @@ export function FilingToolsSheet({
                       const appRebateTotal =
                         summary.smallIncomeRebate + summary.zakatRebate;
 
+                      const donationsDeclared =
+                        formBeBaseline.declaredByCategory?.["approved_donations"] || 0;
                       const checks = [
-                        {
-                          label:
-                            lang === "bm"
-                              ? "Jumlah Pendapatan"
-                              : "Aggregate Income",
-                          be: formBeBaseline.declaredIncome || 0,
-                          app: profile.annualIncome,
-                          show: (formBeBaseline.declaredIncome || 0) > 0,
-                        },
+                        ...(donationsDeclared > 0 ||
+                        summary.approvedDonationsClaimable > 0
+                          ? [
+                              {
+                                label:
+                                  lang === "bm"
+                                    ? "Pendapatan Agregat"
+                                    : "Aggregate Income",
+                                be: formBeBaseline.declaredIncome || 0,
+                                app: profile.annualIncome,
+                                show: (formBeBaseline.declaredIncome || 0) > 0,
+                              },
+                              {
+                                label:
+                                  lang === "bm"
+                                    ? "Jumlah Pendapatan (Selepas Derma)"
+                                    : "Total Income (After Donations)",
+                                be: Math.max(
+                                  0,
+                                  Math.round(
+                                    ((formBeBaseline.declaredIncome || 0) -
+                                      donationsDeclared) *
+                                      100
+                                  ) / 100
+                                ),
+                                app: summary.totalIncome,
+                                show: (formBeBaseline.declaredIncome || 0) > 0,
+                              },
+                            ]
+                          : [
+                              {
+                                label:
+                                  lang === "bm"
+                                    ? "Jumlah Pendapatan"
+                                    : "Total / Aggregate Income",
+                                be: formBeBaseline.declaredIncome || 0,
+                                app: summary.totalIncome,
+                                show: (formBeBaseline.declaredIncome || 0) > 0,
+                              },
+                            ]),
                         {
                           label:
                             lang === "bm" ? "Jumlah Pelepasan" : "Total Reliefs",
@@ -605,7 +679,7 @@ export function FilingToolsSheet({
                       ].filter((c) => c.show);
                       const allTallied =
                         checks.length > 0 &&
-                        checks.every((c) => Math.abs(c.be - c.app) <= 1);
+                        checks.every((c) => Math.abs(c.be - c.app) <= 0.01);
                       return (
                         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
@@ -615,16 +689,14 @@ export function FilingToolsSheet({
                                 : "Tax Computation Tally"}
                             </span>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                allTallied
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : "bg-amber-100 text-amber-900"
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
+                                allTallied ? "bg-emerald-600" : "bg-amber-600"
                               }`}
                             >
                               {allTallied
                                 ? lang === "bm"
-                                  ? "Sepadan dengan LHDN"
-                                  : "Matches LHDN Submission"
+                                  ? "Sepadan LHDN (100%)"
+                                  : "Matches LHDN (Exact)"
                                 : lang === "bm"
                                 ? "Ada Perbezaan"
                                 : "Needs Review"}
@@ -632,8 +704,8 @@ export function FilingToolsSheet({
                           </div>
                           <div className="grid grid-cols-1 gap-1 text-[10px]">
                             {checks.map((c) => {
-                              const diff = c.app - c.be;
-                              const ok = Math.abs(diff) <= 1;
+                              const diff = Math.round((c.app - c.be) * 100) / 100;
+                              const ok = Math.abs(diff) <= 0.01;
                               return (
                                 <div
                                   key={c.label}

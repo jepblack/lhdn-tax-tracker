@@ -176,6 +176,8 @@ export interface PartnerOffer {
 export interface TaxCalculationResult {
   taxYear: TaxYear;
   annualIncome: number;
+  approvedDonationsClaimable: number;
+  totalIncome: number;
   statusReliefTotal: number;
   expenseReliefSpent: number;
   expenseReliefClaimable: number;
@@ -290,6 +292,7 @@ export interface AnnualDocExtraction {
   otherTaxCredits?: number;
   filingReferenceNo?: string | null;
   filingDate?: string | null;
+  isAcknowledgement?: boolean;
   extraReliefs?: Array<{
     categoryId: string;
     subCategoryId?: string | null;
@@ -323,4 +326,5 @@ export interface FormBeBaseline {
   otherTaxCredits?: number;
   filingReferenceNo?: string | null;
   filingDate?: string | null;
+  acknowledgementFileName?: string | null;
 }

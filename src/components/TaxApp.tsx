@@ -445,6 +445,20 @@ export function TaxApp() {
       }
     }
 
+    const existingBaseline = formBeBaselines[String(targetYear)];
+    const isAckReceiptOnly =
+      isFormBeImport &&
+      Boolean(
+        ext.isAcknowledgement ||
+          ((ext.filingReferenceNo || ext.filingDate) &&
+            !ext.declaredTotalReliefs &&
+            !(ext.extraReliefs && ext.extraReliefs.length > 0) &&
+            ext.epfEmployee === 0 &&
+            ext.lifeInsuranceAmount === 0 &&
+            ext.medicalInsuranceAmount === 0 &&
+            ext.socsoEisEmployee === 0)
+      );
+
     // 1. Update Income / PCB / Zakat / Status Reliefs in the target year's Tax Profile
     const baseProfile =
       targetYear === profile.taxYear ? profile : await fetchProfile(targetYear, userId);
@@ -457,11 +471,19 @@ export function TaxApp() {
           }
         : baseProfile.statusReliefs;
 
+    // Preserve Aggregate Income if Doc 1 already recorded Approved Donations > 0 and Doc 2 (Acknowledgement) is uploaded afterwards
+    const preservePreDonationIncome =
+      isAckReceiptOnly &&
+      (existingBaseline?.declaredByCategory?.["approved_donations"] || 0) > 0 &&
+      (existingBaseline?.declaredIncome || 0) > 0;
+
     const updatedTargetProfile: TaxProfile = {
       ...baseProfile,
       taxYear: targetYear,
       annualIncome:
-        ext.annualIncome > 0 ? ext.annualIncome : baseProfile.annualIncome,
+        !preservePreDonationIncome && ext.annualIncome > 0
+          ? ext.annualIncome
+          : baseProfile.annualIncome,
       pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : baseProfile.pcbPaid,
       zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : baseProfile.zakatPaid,
       cp500Paid:
@@ -489,8 +511,8 @@ export function TaxApp() {
     }
 
     // 2. Log corresponding tax reliefs
-    // For Form BE imports, save a FormBeBaseline for live audit & tax-computation reconciliation AND
-    // intentionally leave receiptUrl/receiptPath null so CukaiKu flags missing supporting receipts!
+    // For Form BE imports, merge with any existing YA baseline so uploading both the 5-page Borang e-BE
+    // and the 1-page Pengesahan Penerimaan combines itemized reliefs + official Serial No. & Filing Date!
     if (isFormBeImport) {
       const declaredByCategory: Record<string, number> = {};
       const epfLife = (ext.epfEmployee || 0) + (ext.lifeInsuranceAmount || 0);
@@ -503,28 +525,68 @@ export function TaxApp() {
         declaredByCategory["first_home_interest"] = ext.housingLoanInterest;
       }
       for (const extra of ext.extraReliefs || []) {
-        if (extra.amount > 0 && extra.subCategoryId !== "parents_allowance") {
+        if (extra.amount > 0) {
           declaredByCategory[extra.categoryId] =
             (declaredByCategory[extra.categoryId] || 0) + extra.amount;
         }
       }
+
+      const hasNewItemized = Object.keys(declaredByCategory).length > 0;
+      const mergedDeclaredByCategory = hasNewItemized
+        ? declaredByCategory
+        : existingBaseline?.declaredByCategory || {};
+
       const baseline: FormBeBaseline = {
         taxYear: targetYear,
-        uploadedFileName: doc.fileName,
+        uploadedFileName: isAckReceiptOnly
+          ? existingBaseline?.uploadedFileName || doc.fileName
+          : doc.fileName,
+        acknowledgementFileName: isAckReceiptOnly
+          ? doc.fileName
+          : existingBaseline?.acknowledgementFileName || null,
         uploadedAt: new Date().toISOString(),
-        declaredIncome: ext.annualIncome || 0,
-        declaredPcb: ext.pcbPaid || 0,
-        declaredZakat: ext.zakatPaid || 0,
-        declaredByCategory,
-        statusReliefs: ext.statusReliefs,
-        declaredTotalReliefs: ext.declaredTotalReliefs,
-        declaredChargeableIncome: ext.declaredChargeableIncome,
-        declaredTaxCharged: ext.declaredTaxCharged,
-        declaredTaxRebate: ext.declaredTaxRebate,
-        declaredTaxPayable: ext.declaredTaxPayable,
-        declaredRefund: ext.declaredRefund,
-        cp500Paid: ext.cp500Paid,
-        otherTaxCredits: ext.otherTaxCredits,
+        declaredIncome: preservePreDonationIncome
+          ? existingBaseline!.declaredIncome
+          : ext.annualIncome || existingBaseline?.declaredIncome || 0,
+        declaredPcb: ext.pcbPaid || existingBaseline?.declaredPcb || 0,
+        declaredZakat: ext.zakatPaid || existingBaseline?.declaredZakat || 0,
+        declaredByCategory: mergedDeclaredByCategory,
+        statusReliefs: ext.statusReliefs ?? existingBaseline?.statusReliefs,
+        declaredTotalReliefs:
+          (ext.declaredTotalReliefs || 0) > 0
+            ? ext.declaredTotalReliefs
+            : existingBaseline?.declaredTotalReliefs,
+        declaredChargeableIncome:
+          (ext.declaredChargeableIncome || 0) > 0
+            ? ext.declaredChargeableIncome
+            : existingBaseline?.declaredChargeableIncome,
+        declaredTaxCharged:
+          (ext.declaredTaxCharged || 0) > 0
+            ? ext.declaredTaxCharged
+            : existingBaseline?.declaredTaxCharged,
+        declaredTaxRebate:
+          (ext.declaredTaxRebate || 0) > 0
+            ? ext.declaredTaxRebate
+            : existingBaseline?.declaredTaxRebate,
+        declaredTaxPayable:
+          (ext.declaredTaxPayable || 0) > 0
+            ? ext.declaredTaxPayable
+            : existingBaseline?.declaredTaxPayable,
+        declaredRefund:
+          ext.declaredRefund !== undefined && ext.declaredRefund !== null
+            ? ext.declaredRefund
+            : existingBaseline?.declaredRefund,
+        cp500Paid:
+          (ext.cp500Paid || 0) > 0
+            ? ext.cp500Paid
+            : existingBaseline?.cp500Paid,
+        otherTaxCredits:
+          (ext.otherTaxCredits || 0) > 0
+            ? ext.otherTaxCredits
+            : existingBaseline?.otherTaxCredits,
+        filingReferenceNo:
+          ext.filingReferenceNo || existingBaseline?.filingReferenceNo || null,
+        filingDate: ext.filingDate || existingBaseline?.filingDate || null,
       };
       setFormBeBaselines((prev) => {
         const next = { ...prev, [String(targetYear)]: baseline };

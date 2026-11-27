@@ -199,6 +199,19 @@ export function calculateTaxSummary(
   const expenseReliefClaimable = round2(
     categorySummaries.reduce((acc, c) => acc + c.claimable, 0)
   );
+  const approvedDonationsClaimable = round2(
+    categorySummaries.find((c) => c.category.id === "approved_donations")
+      ?.claimable || 0
+  );
+  // LHDN Form e-BE Page 1 deducts Section 44(6) Approved Donations from Aggregate Income
+  // to yield Total Income (Jumlah Pendapatan), before subtracting Pelepasan (Total Reliefs).
+  const totalIncome = Math.max(
+    0,
+    round2(profile.annualIncome - approvedDonationsClaimable)
+  );
+  const expenseReliefWithoutDonations = round2(
+    Math.max(0, expenseReliefClaimable - approvedDonationsClaimable)
+  );
   const expenseReliefRemaining = round2(
     categorySummaries.reduce((acc, c) => acc + c.remaining, 0)
   );
@@ -206,8 +219,8 @@ export function calculateTaxSummary(
     categorySummaries.reduce((acc, c) => acc + c.overflow, 0)
   );
 
-  const totalReliefs = round2(statusReliefTotal + expenseReliefClaimable);
-  const chargeableIncome = Math.max(0, round2(profile.annualIncome - totalReliefs));
+  const totalReliefs = round2(statusReliefTotal + expenseReliefWithoutDonations);
+  const chargeableIncome = Math.max(0, round2(totalIncome - totalReliefs));
   const chargeableIncomeWithoutExpenseReliefs = Math.max(
     0,
     round2(profile.annualIncome - statusReliefTotal)
@@ -291,6 +304,8 @@ export function calculateTaxSummary(
   return {
     taxYear: profile.taxYear,
     annualIncome: profile.annualIncome,
+    approvedDonationsClaimable,
+    totalIncome,
     statusReliefTotal,
     expenseReliefSpent,
     expenseReliefClaimable,

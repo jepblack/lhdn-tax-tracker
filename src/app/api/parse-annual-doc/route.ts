@@ -118,16 +118,17 @@ Also, since this is a Malaysian LHDN Form BE (Borang BE / e-BE), extract these n
    "disabledChildrenHigherEd": number (count of disabled children in higher ed in F8c)
 }
 5. Part F / Part G Tax Computation, Credits & Filing Proof:
-   - "declaredTotalReliefs": number (Jumlah Pelepasan / Total Relief)
+   - "isAcknowledgement": boolean (true ONLY if this is a 1-page "PENGESAHAN PENERIMAAN e-BE / ACKNOWLEDGEMENT RECEIPT" without Page 2 itemized relief rows)
+   - "declaredTotalReliefs": number (Jumlah Pelepasan / Total Relief; 0 if absent on Acknowledgement Receipt)
    - "declaredChargeableIncome": number (Pendapatan Bercukai / Chargeable Income)
-   - "declaredTaxCharged": number (Cukai Pendapatan Dikenakan / Income Tax Charged before rebates)
+   - "declaredTaxCharged": number (JUMLAH CUKAI PENDAPATAN BEFORE rebates/zakat; set 0 on 1-page Acknowledgement Receipt where "Total Tax Charged / Jumlah Cukai Yang Dikenakan" is actually post-rebate payable)
    - "declaredTaxRebate": number (Jumlah Rebat / Total Rebate including Zakat & RM400/RM800 rebate)
-   - "declaredTaxPayable": number (Net Tax Charged / Cukai Kena Dibayar after rebates, BEFORE deducting PCB/MTD)
+   - "declaredTaxPayable": number (CUKAI KENA DIBAYAR / Net Tax Charged after rebates, BEFORE deducting PCB/MTD)
    - "declaredRefund": number (Lebihan Bayaran / Excess Payment as positive, or negative Baki Cukai Kena Dibayar if underpaid)
    - "cp500Paid": number (Ansuran CP500 / Bayaran Sendiri)
    - "otherTaxCredits": number (Tolakan Seksyen 110 / Pelepasan Seksyen 132 & 133)
-   - "filingReferenceNo": string | null (e-BE acknowledgement / submission reference number, if printed)
-   - "filingDate": string | null (YYYY-MM-DD submission date, if printed)
+   - "filingReferenceNo": string | null (Nombor Siri / Serial Number e.g. "BE 148347", if printed)
+   - "filingDate": string | null (Tarikh dan Masa submission timestamp e.g. "3-Mar-2020 15:21:52", if printed)
 6. "extraReliefs": array of other claimed relief boxes using ONLY these valid categoryId values:
 - "lifestyle" (F9 Lifestyle)
 - "sports" (F10 Sports equipment/activities)
@@ -147,6 +148,7 @@ Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": numbe
     const formBeSchemaKeys =
       docType === "form_be_proof"
         ? `
+  "isAcknowledgement": boolean,
   "detectedTaxYear": number | null,
   "assessmentType": "separate" | "joint_self" | "joint_spouse" | null,
   "employmentIncome": number,
@@ -310,12 +312,14 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
       }
     }
 
-    // Fallback: deterministic local text parser for Form e-BE PDFs
+    // Fallback: deterministic local text parser for Form e-BE & Pengesahan Penerimaan PDFs
     if (pdfText.length >= 20 && docType === "form_be_proof") {
       const be = parseFormBeText(pdfText);
       if (
         (be.annualIncome && be.annualIncome > 0) ||
         (be.declaredTotalReliefs && be.declaredTotalReliefs > 0) ||
+        (be.declaredChargeableIncome && be.declaredChargeableIncome > 0) ||
+        (be.declaredTaxPayable && be.declaredTaxPayable > 0) ||
         (be.pcbPaid && be.pcbPaid > 0)
       ) {
         const base = normalizeAnnualExtraction(
@@ -375,71 +379,103 @@ function mergeFormBeText(
   if (docType !== "form_be_proof" || pdfText.length < 40) return ext;
   const be = parseFormBeText(pdfText);
 
-  // When deterministic PDF text parsing is available, prefer its verified extraReliefs
-  // to avoid AI misreading "Terhad 6,000" limit columns as claimed amounts.
-  const mergedExtras =
-    be.extraReliefs && be.extraReliefs.length > 0
-      ? [...be.extraReliefs]
-      : [...(ext.extraReliefs || [])];
+  // Merge deterministic PDF relief rows (authoritative for all printed MyTax boxes)
+  // while preserving any extra categories found only by AI (e.g. new year-specific boxes).
+  const mergedMap = new Map<
+    string,
+    { categoryId: string; subCategoryId?: string | null; label: string; amount: number }
+  >();
+  if (!be.isAcknowledgement) {
+    for (const item of ext.extraReliefs || []) {
+      if (item.amount > 0) mergedMap.set(item.categoryId, item);
+    }
+    for (const item of be.extraReliefs || []) {
+      if (item.amount > 0) mergedMap.set(item.categoryId, item);
+    }
+  }
+  const mergedExtras = Array.from(mergedMap.values());
+
+  const resolvedPayable =
+    (be.declaredTaxPayable || 0) > 0
+      ? be.declaredTaxPayable!
+      : ext.declaredTaxPayable || 0;
+  let resolvedTaxCharged =
+    (be.declaredTaxCharged || 0) > 0
+      ? be.declaredTaxCharged!
+      : ext.declaredTaxCharged || 0;
+  if (
+    be.isAcknowledgement &&
+    Math.abs(resolvedTaxCharged - resolvedPayable) <= 0.01 &&
+    (be.declaredTaxRebate || ext.declaredTaxRebate || 0) === 0
+  ) {
+    resolvedTaxCharged = 0;
+  }
 
   return {
     ...ext,
-    detectedTaxYear: ext.detectedTaxYear ?? be.detectedTaxYear ?? null,
-    assessmentType: ext.assessmentType ?? be.assessmentType ?? null,
-    annualIncome: ext.annualIncome > 0 ? ext.annualIncome : be.annualIncome || 0,
+    isAcknowledgement: Boolean(be.isAcknowledgement ?? ext.isAcknowledgement),
+    detectedTaxYear: be.detectedTaxYear ?? ext.detectedTaxYear ?? null,
+    assessmentType: be.assessmentType ?? ext.assessmentType ?? null,
+    annualIncome:
+      (be.annualIncome || 0) > 0 ? be.annualIncome! : ext.annualIncome || 0,
     employmentIncome:
-      (ext.employmentIncome || 0) > 0
-        ? ext.employmentIncome
-        : be.employmentIncome || 0,
+      (be.employmentIncome || 0) > 0
+        ? be.employmentIncome!
+        : ext.employmentIncome || 0,
     rentalIncome:
-      (ext.rentalIncome || 0) > 0 ? ext.rentalIncome : be.rentalIncome || 0,
-    declaredTotalReliefs:
-      (ext.declaredTotalReliefs || 0) > 0
-        ? ext.declaredTotalReliefs
-        : be.declaredTotalReliefs || 0,
+      (be.rentalIncome || 0) > 0 ? be.rentalIncome! : ext.rentalIncome || 0,
+    declaredTotalReliefs: be.isAcknowledgement
+      ? 0
+      : (be.declaredTotalReliefs || 0) > 0
+      ? be.declaredTotalReliefs!
+      : ext.declaredTotalReliefs || 0,
     declaredChargeableIncome:
-      (ext.declaredChargeableIncome || 0) > 0
-        ? ext.declaredChargeableIncome
-        : be.declaredChargeableIncome || 0,
-    declaredTaxCharged:
-      (ext.declaredTaxCharged || 0) > 0
-        ? ext.declaredTaxCharged
-        : be.declaredTaxCharged || 0,
+      (be.declaredChargeableIncome || 0) > 0
+        ? be.declaredChargeableIncome!
+        : ext.declaredChargeableIncome || 0,
+    declaredTaxCharged: resolvedTaxCharged,
     declaredTaxRebate:
-      (ext.declaredTaxRebate || 0) > 0
-        ? ext.declaredTaxRebate
-        : be.declaredTaxRebate || 0,
-    zakatPaid: ext.zakatPaid > 0 ? ext.zakatPaid : be.zakatPaid || 0,
-    declaredTaxPayable:
-      (ext.declaredTaxPayable || 0) > 0
-        ? ext.declaredTaxPayable
-        : be.declaredTaxPayable || 0,
+      (be.declaredTaxRebate || 0) > 0
+        ? be.declaredTaxRebate!
+        : ext.declaredTaxRebate || 0,
+    zakatPaid: (be.zakatPaid || 0) > 0 ? be.zakatPaid! : ext.zakatPaid || 0,
+    declaredTaxPayable: resolvedPayable,
     declaredRefund:
-      ext.declaredRefund !== undefined && ext.declaredRefund !== null
-        ? ext.declaredRefund
-        : be.declaredRefund,
-    pcbPaid: ext.pcbPaid > 0 ? ext.pcbPaid : be.pcbPaid || 0,
-    cp500Paid: (ext.cp500Paid || 0) > 0 ? ext.cp500Paid : be.cp500Paid || 0,
+      be.declaredRefund !== undefined && be.declaredRefund !== null
+        ? be.declaredRefund
+        : ext.declaredRefund,
+    pcbPaid: (be.pcbPaid || 0) > 0 ? be.pcbPaid! : ext.pcbPaid || 0,
+    cp500Paid: (be.cp500Paid || 0) > 0 ? be.cp500Paid! : ext.cp500Paid || 0,
     otherTaxCredits:
-      (ext.otherTaxCredits || 0) > 0
-        ? ext.otherTaxCredits
-        : be.otherTaxCredits || 0,
-    statusReliefs: ext.statusReliefs ?? be.statusReliefs,
-    lifeInsuranceAmount:
-      ext.lifeInsuranceAmount > 0
-        ? ext.lifeInsuranceAmount
-        : be.lifeInsuranceAmount || 0,
-    epfEmployee: ext.epfEmployee > 0 ? ext.epfEmployee : be.epfEmployee || 0,
-    medicalInsuranceAmount:
-      ext.medicalInsuranceAmount > 0
-        ? ext.medicalInsuranceAmount
-        : be.medicalInsuranceAmount || 0,
-    socsoEisEmployee:
-      ext.socsoEisEmployee > 0
-        ? ext.socsoEisEmployee
-        : be.socsoEisEmployee || 0,
+      (be.otherTaxCredits || 0) > 0
+        ? be.otherTaxCredits!
+        : ext.otherTaxCredits || 0,
+    statusReliefs: be.isAcknowledgement
+      ? undefined
+      : be.statusReliefs ?? ext.statusReliefs,
+    lifeInsuranceAmount: be.isAcknowledgement
+      ? 0
+      : (be.lifeInsuranceAmount || 0) > 0
+      ? be.lifeInsuranceAmount!
+      : ext.lifeInsuranceAmount || 0,
+    epfEmployee: be.isAcknowledgement
+      ? 0
+      : (be.epfEmployee || 0) > 0
+      ? be.epfEmployee!
+      : ext.epfEmployee || 0,
+    medicalInsuranceAmount: be.isAcknowledgement
+      ? 0
+      : (be.medicalInsuranceAmount || 0) > 0
+      ? be.medicalInsuranceAmount!
+      : ext.medicalInsuranceAmount || 0,
+    socsoEisEmployee: be.isAcknowledgement
+      ? 0
+      : (be.socsoEisEmployee || 0) > 0
+      ? be.socsoEisEmployee!
+      : ext.socsoEisEmployee || 0,
     extraReliefs: mergedExtras,
-    filingReferenceNo: ext.filingReferenceNo || be.filingReferenceNo || null,
+    filingReferenceNo: be.filingReferenceNo || ext.filingReferenceNo || null,
+    filingDate: be.filingDate || ext.filingDate || null,
   };
 }
 
@@ -506,6 +542,7 @@ function normalizeAnnualExtraction(
 
   return {
     docType,
+    isAcknowledgement: Boolean(parsed.isAcknowledgement),
     providerName: String(parsed.providerName || ""),
     detectedTaxYear,
     annualIncome: Number(parsed.annualIncome) || 0,
