@@ -795,6 +795,7 @@ export function ReceiptsTab({
 
           {manualDoc && (
             <AnnualDocManualEntry
+              key={manualDoc.id}
               doc={manualDoc}
               defaultYear={taxYear}
               lang={lang}

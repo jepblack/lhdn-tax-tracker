@@ -30,9 +30,13 @@ export function AnnualDocManualEntry({
   onCancel,
 }: AnnualDocManualEntryProps) {
   const isBe = doc.docType === "form_be_proof";
+  const isEa = doc.docType === "ea_form";
+  const isKwsp = doc.docType === "kwsp_statement";
+  const isInsurance = doc.docType === "insurance_statement";
+  const isLoan = doc.docType === "loan_interest_statement";
   const [targetYear, setTargetYear] = useState<TaxYear>(defaultYear);
   const [providerName, setProviderName] = useState(
-    isBe ? "LHDN Form BE" : doc.label
+    isBe ? "LHDN Form BE" : isKwsp ? "KWSP / EPF" : doc.label
   );
   const [annualIncome, setAnnualIncome] = useState("");
   const [pcbPaid, setPcbPaid] = useState("");
@@ -157,7 +161,21 @@ export function AnnualDocManualEntry({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>
-            {lang === "bm" ? "Majikan / Pembekal" : "Employer / Provider"}
+            {isInsurance
+              ? lang === "bm"
+                ? "Syarikat Insurans / Takaful"
+                : "Insurer / Takaful Provider"
+              : isLoan
+              ? lang === "bm"
+                ? "Nama Bank"
+                : "Bank / Lender"
+              : isKwsp
+              ? lang === "bm"
+                ? "Institusi"
+                : "Institution"
+              : lang === "bm"
+              ? "Majikan / Pembekal"
+              : "Employer / Provider"}
           </label>
           <input
             type="text"
@@ -166,71 +184,88 @@ export function AnnualDocManualEntry({
             className={inputCls}
           />
         </div>
-        <div>
-          <label className={labelCls}>
-            {lang === "bm" ? "Pendapatan Tahunan (RM)" : "Annual Income (RM)"}
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={annualIncome}
-            onChange={(e) => setAnnualIncome(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls}>PCB / MTD (RM)</label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={pcbPaid}
-            onChange={(e) => setPcbPaid(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls}>
-            {lang === "bm" ? "KWSP Pekerja (RM)" : "EPF / KWSP (RM)"}
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={epfEmployee}
-            onChange={(e) => setEpfEmployee(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls}>SOCSO &amp; EIS (RM)</label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={socsoEisEmployee}
-            onChange={(e) => setSocsoEisEmployee(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls}>Zakat / Fitrah (RM)</label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={zakatPaid}
-            onChange={(e) => setZakatPaid(e.target.value)}
-            className={inputCls}
-          />
-        </div>
 
-        {(doc.docType === "insurance_statement" || isBe) && (
+        {(isEa || isBe) && (
           <>
             <div>
               <label className={labelCls}>
-                {lang === "bm" ? "Insurans Nyawa (RM)" : "Life Insurance (RM)"}
+                {lang === "bm"
+                  ? "Pendapatan Tahunan (RM)"
+                  : "Annual Income (RM)"}
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={annualIncome}
+                onChange={(e) => setAnnualIncome(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>PCB / MTD (RM)</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={pcbPaid}
+                onChange={(e) => setPcbPaid(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </>
+        )}
+
+        {(isEa || isKwsp || isBe) && (
+          <div>
+            <label className={labelCls}>
+              {lang === "bm" ? "KWSP Pekerja (RM)" : "EPF / KWSP (RM)"}
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={epfEmployee}
+              onChange={(e) => setEpfEmployee(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        )}
+
+        {(isEa || isBe) && (
+          <>
+            <div>
+              <label className={labelCls}>SOCSO &amp; EIS (RM)</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={socsoEisEmployee}
+                onChange={(e) => setSocsoEisEmployee(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Zakat / Fitrah (RM)</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={zakatPaid}
+                onChange={(e) => setZakatPaid(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </>
+        )}
+
+        {(isInsurance || isBe) && (
+          <>
+            <div>
+              <label className={labelCls}>
+                {lang === "bm"
+                  ? "Insurans Nyawa / Takaful (RM)"
+                  : "Life Insurance / Takaful (RM)"}
               </label>
               <input
                 type="number"
@@ -244,8 +279,8 @@ export function AnnualDocManualEntry({
             <div>
               <label className={labelCls}>
                 {lang === "bm"
-                  ? "Insurans Perubatan (RM)"
-                  : "Med / Edu Insurance (RM)"}
+                  ? "Insurans Perubatan & Pendidikan (RM)"
+                  : "Medical & Edu Insurance (RM)"}
               </label>
               <input
                 type="number"
@@ -259,7 +294,7 @@ export function AnnualDocManualEntry({
           </>
         )}
 
-        {(doc.docType === "loan_interest_statement" || isBe) && (
+        {(isLoan || isBe) && (
           <div>
             <label className={labelCls}>
               {lang === "bm"
