@@ -183,6 +183,10 @@ export function TaxApp() {
     getDefaultSubscription()
   );
   const [annualDocs, setAnnualDocs] = useState<AnnualTaxDoc[]>([]);
+  const annualDocsRef = useRef<AnnualTaxDoc[]>([]);
+  useEffect(() => {
+    annualDocsRef.current = annualDocs;
+  }, [annualDocs]);
   const [formBeBaselines, setFormBeBaselines] = useState<
     Record<string, FormBeBaseline>
   >({});
@@ -232,7 +236,11 @@ export function TaxApp() {
         updateThemeColorMeta(false);
       }
       const savedDocs = window.localStorage.getItem(ANNUAL_DOCS_KEY);
-      if (savedDocs) setAnnualDocs(JSON.parse(savedDocs));
+      if (savedDocs) {
+        const parsedDocs = JSON.parse(savedDocs) as AnnualTaxDoc[];
+        annualDocsRef.current = parsedDocs;
+        setAnnualDocs(parsedDocs);
+      }
       const savedBaselines = window.localStorage.getItem(FORM_BE_BASELINES_KEY);
       if (savedBaselines) setFormBeBaselines(JSON.parse(savedBaselines));
 
@@ -400,7 +408,11 @@ export function TaxApp() {
       storageProvider,
     };
 
-    const nextAll = [newDoc, ...annualDocs];
+    const nextAll = [
+      newDoc,
+      ...annualDocsRef.current.filter((d) => d.id !== newDoc.id),
+    ];
+    annualDocsRef.current = nextAll;
     setAnnualDocs(nextAll);
     try {
       window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(nextAll));
@@ -435,16 +447,17 @@ export function TaxApp() {
     // and mark its extractionStatus as "extracted" or "manual"
     const nextStatus: AnnualTaxDoc["extractionStatus"] =
       ext.summaryNote === "Entered manually by taxpayer." ? "manual" : "extracted";
-    const effectiveDocs = annualDocs.map((d) =>
-      d.id === doc.id
-        ? {
-            ...d,
-            taxYear: targetYear,
-            extractionStatus: nextStatus,
-            extractionNote: null,
-          }
-        : d
-    );
+    const baseDocs = annualDocsRef.current;
+    const updatedDoc: AnnualTaxDoc = {
+      ...doc,
+      taxYear: targetYear,
+      extractionStatus: nextStatus,
+      extractionNote: null,
+    };
+    const effectiveDocs = baseDocs.some((d) => d.id === doc.id)
+      ? baseDocs.map((d) => (d.id === doc.id ? updatedDoc : d))
+      : [updatedDoc, ...baseDocs];
+    annualDocsRef.current = effectiveDocs;
     setAnnualDocs(effectiveDocs);
     try {
       window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(effectiveDocs));
@@ -605,17 +618,22 @@ export function TaxApp() {
         return next;
       });
       if (userId) {
-        const currentDocs = effectiveDocs.some((d) => d.id === doc.id)
-          ? effectiveDocs
-          : [{ ...doc, taxYear: targetYear }, ...effectiveDocs];
         await persistAnnualStateToCloud(
           targetYear,
-          currentDocs.filter((d) => d.taxYear === targetYear),
+          effectiveDocs.filter((d) => d.taxYear === targetYear),
           baseline,
           updatedTargetProfile,
           userId
         );
       }
+    } else if (userId) {
+      await persistAnnualStateToCloud(
+        targetYear,
+        effectiveDocs.filter((d) => d.taxYear === targetYear),
+        existingBaseline || null,
+        updatedTargetProfile,
+        userId
+      );
     }
     const today = `${targetYear}-${new Date().toISOString().slice(5, 10)}`;
     const provider = ext.providerName || doc.label;
@@ -659,6 +677,16 @@ export function TaxApp() {
     const gapAmount = (declared: number, existingAmt: number) =>
       isFormBeImport ? Math.max(0, Math.round((declared - existingAmt) * 100) / 100) : declared;
 
+    const eaEmployerKey =
+      doc.docType === "ea_form" &&
+      ext.providerName &&
+      !/^ea\s*form/i.test(ext.providerName.trim())
+        ? ext.providerName
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, "")
+            .slice(0, 12) || undefined
+        : undefined;
+
     if (ext.epfEmployee > 0) {
       await upsertStatutoryRelief(
         "epf",
@@ -670,9 +698,13 @@ export function TaxApp() {
           description: descriptionNote,
           amount: ext.epfEmployee,
           expenseDate: today,
+          ...(eaEmployerKey
+            ? { invoiceNumber: `PAYSLIP-EPF-${targetYear}-${eaEmployerKey}` }
+            : {}),
           ...sharedFileFields,
         },
-        null
+        null,
+        eaEmployerKey
       );
     }
 
@@ -687,9 +719,13 @@ export function TaxApp() {
           description: descriptionNote,
           amount: ext.socsoEisEmployee,
           expenseDate: today,
+          ...(eaEmployerKey
+            ? { invoiceNumber: `PAYSLIP-SOCSO-${targetYear}-${eaEmployerKey}` }
+            : {}),
           ...sharedFileFields,
         },
-        null
+        null,
+        eaEmployerKey
       );
     }
 
@@ -806,11 +842,12 @@ export function TaxApp() {
     extractionStatus: "extracted" | "failed" | "manual",
     extractionNote?: string | null
   ) {
-    const next = annualDocs.map((d) =>
+    const next = annualDocsRef.current.map((d) =>
       d.id === id
         ? { ...d, extractionStatus, extractionNote: extractionNote ?? null }
         : d
     );
+    annualDocsRef.current = next;
     setAnnualDocs(next);
     try {
       window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
@@ -829,7 +866,8 @@ export function TaxApp() {
   }
 
   function handleDeleteAnnualDoc(id: string) {
-    const next = annualDocs.filter((d) => d.id !== id);
+    const next = annualDocsRef.current.filter((d) => d.id !== id);
+    annualDocsRef.current = next;
     setAnnualDocs(next);
     try {
       window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
