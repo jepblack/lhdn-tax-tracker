@@ -91,6 +91,11 @@ interface DashboardTabProps {
     overrideYear?: TaxYear,
     options?: { skipYearSwitch?: boolean }
   ) => Promise<void>;
+  onUpdateAnnualDocStatus?: (
+    id: string,
+    status: "extracted" | "failed" | "manual",
+    note?: string | null
+  ) => void;
   onChangeTaxpayerMode: (mode: TaxpayerMode) => void;
   onApplyLifeStage: (presetId: LifeStagePresetId) => void;
   onUpdatePersonalization: (next: UserPersonalization) => void;
@@ -120,6 +125,7 @@ export function DashboardTab({
   formBeBaseline,
   onUploadAnnualDoc,
   onApplyAnnualDocExtraction,
+  onUpdateAnnualDocStatus,
   onChangeTaxpayerMode,
   onApplyLifeStage,
   onUpdatePersonalization,
@@ -622,6 +628,13 @@ export function DashboardTab({
                     file,
                     detectedYr
                   );
+                  if (!extraction) {
+                    onUpdateAnnualDocStatus?.(
+                      savedDoc.id,
+                      "failed",
+                      skipReason || "No numeric figures detected"
+                    );
+                  }
                   items.push({
                     id: savedDoc.id,
                     fileName: file.name,

@@ -431,18 +431,25 @@ export function TaxApp() {
     const targetYear = overrideYear ?? doc.taxYear ?? taxYear;
     const isFormBeImport = doc.docType === "form_be_proof";
 
-    // If the user/AI routed this doc to a different YA than when it was uploaded, move the doc record
-    let effectiveDocs = annualDocs;
-    if (doc.taxYear !== targetYear) {
-      effectiveDocs = annualDocs.map((d) =>
-        d.id === doc.id ? { ...d, taxYear: targetYear } : d
-      );
-      setAnnualDocs(effectiveDocs);
-      try {
-        window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(effectiveDocs));
-      } catch {
-        // ignore
-      }
+    // If the user/AI routed this doc to a different YA than when it was uploaded, move the doc record,
+    // and mark its extractionStatus as "extracted" or "manual"
+    const nextStatus: AnnualTaxDoc["extractionStatus"] =
+      ext.summaryNote === "Entered manually by taxpayer." ? "manual" : "extracted";
+    const effectiveDocs = annualDocs.map((d) =>
+      d.id === doc.id
+        ? {
+            ...d,
+            taxYear: targetYear,
+            extractionStatus: nextStatus,
+            extractionNote: null,
+          }
+        : d
+    );
+    setAnnualDocs(effectiveDocs);
+    try {
+      window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(effectiveDocs));
+    } catch {
+      // ignore
     }
 
     const existingBaseline = formBeBaselines[String(targetYear)];
@@ -791,6 +798,33 @@ export function TaxApp() {
       SUPPORTED_TAX_YEARS.includes(targetYear)
     ) {
       setTaxYear(targetYear);
+    }
+  }
+
+  function handleUpdateAnnualDocStatus(
+    id: string,
+    extractionStatus: "extracted" | "failed" | "manual",
+    extractionNote?: string | null
+  ) {
+    const next = annualDocs.map((d) =>
+      d.id === id
+        ? { ...d, extractionStatus, extractionNote: extractionNote ?? null }
+        : d
+    );
+    setAnnualDocs(next);
+    try {
+      window.localStorage.setItem(ANNUAL_DOCS_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+    if (userId) {
+      persistAnnualStateToCloud(
+        taxYear,
+        next.filter((d) => d.taxYear === taxYear),
+        formBeBaselines[String(taxYear)] || null,
+        profile,
+        userId
+      );
     }
   }
 
@@ -2046,6 +2080,7 @@ export function TaxApp() {
                   formBeBaseline={formBeBaselines[String(taxYear)] || null}
                   onUploadAnnualDoc={handleUploadAnnualDoc}
                   onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
+                  onUpdateAnnualDocStatus={handleUpdateAnnualDocStatus}
                   onChangeTaxpayerMode={(mode) =>
                     handleUpdateProfile({ ...profile, taxpayerMode: mode })
                   }
@@ -2106,6 +2141,7 @@ export function TaxApp() {
                   }}
                   onUploadAnnualDoc={handleUploadAnnualDoc}
                   onApplyAnnualDocExtraction={handleApplyAnnualDocExtraction}
+                  onUpdateAnnualDocStatus={handleUpdateAnnualDocStatus}
                   onDeleteAnnualDoc={handleDeleteAnnualDoc}
                   onOpenBatchImport={() => setBatchOpen(true)}
                   onOpenMyInvoisQr={() =>

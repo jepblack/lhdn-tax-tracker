@@ -16,6 +16,7 @@ import {
   Loader2,
   Pencil,
   QrCode,
+  RotateCcw,
   Search,
   Sparkles,
   Trash2,
@@ -118,6 +119,11 @@ interface ReceiptsTabProps {
     overrideYear?: TaxYear,
     options?: { skipYearSwitch?: boolean }
   ) => Promise<void>;
+  onUpdateAnnualDocStatus?: (
+    id: string,
+    status: "extracted" | "failed" | "manual",
+    note?: string | null
+  ) => void;
   onDeleteAnnualDoc: (id: string) => void;
   onOpenBatchImport: () => void;
   onOpenMyInvoisQr: () => void;
@@ -138,6 +144,7 @@ export function ReceiptsTab({
   onOpenAuditTally,
   onUploadAnnualDoc,
   onApplyAnnualDocExtraction,
+  onUpdateAnnualDocStatus,
   onDeleteAnnualDoc,
   onOpenBatchImport,
   onOpenMyInvoisQr,
@@ -168,6 +175,56 @@ export function ReceiptsTab({
   const [extractionAppliedMsg, setExtractionAppliedMsg] = useState<string | null>(null);
   const [docNotice, setDocNotice] = useState<string | null>(null);
   const [manualDoc, setManualDoc] = useState<AnnualTaxDoc | null>(null);
+  const [retryingDocId, setRetryingDocId] = useState<string | null>(null);
+
+  async function handleRetryAnnualDoc(doc: AnnualTaxDoc) {
+    if (!doc.fileUrl || doc.docType === "other_doc") return;
+    setRetryingDocId(doc.id);
+    setDocNotice(null);
+    setExtractionAppliedMsg(null);
+    try {
+      const resp = await fetch(doc.fileUrl);
+      if (!resp.ok) throw new Error("Failed to load archived file");
+      const blob = await resp.blob();
+      const file = new File([blob], doc.fileName, {
+        type: doc.mimeType || blob.type || "application/pdf",
+      });
+      const { extraction, skipReason } = await parseAnnualDocFile(
+        file,
+        doc.docType,
+        doc.label,
+        doc.taxYear
+      );
+      if (extraction) {
+        const detected =
+          extraction.detectedTaxYear &&
+          SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+            ? extraction.detectedTaxYear
+            : doc.taxYear;
+        setPendingExtraction({
+          extraction,
+          doc,
+          targetYear: detected,
+        });
+        setManualDoc(null);
+        onUpdateAnnualDocStatus?.(doc.id, "extracted", null);
+      } else {
+        const msg =
+          skipReason ||
+          `${doc.label} still could not be read automatically — enter the figures below.`;
+        setDocNotice(msg);
+        setManualDoc(doc);
+        onUpdateAnnualDocStatus?.(doc.id, "failed", msg);
+      }
+    } catch {
+      const msg = `${doc.fileName}: could not re-read archived file (e.g. external Google Drive link). Enter the figures manually below.`;
+      setDocNotice(msg);
+      setManualDoc(doc);
+      onUpdateAnnualDocStatus?.(doc.id, "failed", msg);
+    } finally {
+      setRetryingDocId(null);
+    }
+  }
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillQueue, setBackfillQueue] = useState<
     Array<{
@@ -531,18 +588,20 @@ export function ReceiptsTab({
                         targetYear: detected,
                       });
                       setManualDoc(null);
+                      onUpdateAnnualDocStatus?.(savedDoc.id, "extracted", null);
                     } else {
-                      setDocNotice(
+                      const msg =
                         skipReason ||
-                          `${slot.label} archived! No numeric tax figures were detected automatically—enter them below.`
-                      );
+                        `${slot.label} archived! No numeric tax figures were detected automatically—enter them below.`;
+                      setDocNotice(msg);
                       setManualDoc(savedDoc);
+                      onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
                     }
                   } catch {
-                    setDocNotice(
-                      `${slot.label} archived! Could not reach extractor right now — enter the figures below.`
-                    );
+                    const msg = `${slot.label} archived! Could not reach extractor right now — enter the figures below.`;
+                    setDocNotice(msg);
                     setManualDoc(savedDoc);
+                    onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
                   }
                 } else {
                   setExtractionAppliedMsg(`${slot.label} archived to Vault!`);
@@ -1001,46 +1060,105 @@ export function ReceiptsTab({
 
                 {matchedDocs.length > 0 && (
                   <div className="space-y-1.5 border-t border-slate-100 pt-2">
-                    {matchedDocs.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50/70 px-2.5 py-1.5 text-xs"
-                      >
-                        <span className="truncate font-medium text-emerald-950">
-                          {doc.fileName}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          {doc.docType !== "other_doc" && (
+                    {matchedDocs.map((doc) => {
+                      const isFailed = doc.extractionStatus === "failed";
+                      const isManual = doc.extractionStatus === "manual";
+                      const isExtracted = doc.extractionStatus === "extracted";
+                      const isRetrying = retryingDocId === doc.id;
+                      return (
+                        <div
+                          key={doc.id}
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs ${
+                            isFailed
+                              ? "border border-amber-300 bg-amber-50/80"
+                              : "bg-emerald-50/70"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`truncate font-medium ${
+                                  isFailed
+                                    ? "text-amber-950"
+                                    : "text-emerald-950"
+                                }`}
+                              >
+                                {doc.fileName}
+                              </span>
+                              {isFailed && (
+                                <span className="shrink-0 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  {lang === "bm" ? "Perlu Imbas" : "Needs Read"}
+                                </span>
+                              )}
+                              {isManual && (
+                                <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  Manual
+                                </span>
+                              )}
+                              {isExtracted && (
+                                <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  {lang === "bm" ? "Diekstrak ✓" : "Extracted ✓"}
+                                </span>
+                              )}
+                            </div>
+                            {isFailed && doc.extractionNote && (
+                              <p className="line-clamp-1 text-[10px] text-amber-800">
+                                {doc.extractionNote}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {doc.docType !== "other_doc" && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isRetrying}
+                                  onClick={() => handleRetryAnnualDoc(doc)}
+                                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold shadow-xs disabled:opacity-50 ${
+                                    isFailed
+                                      ? "bg-amber-600 text-white hover:bg-amber-700"
+                                      : "bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {isRetrying ? (
+                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-2.5 w-2.5" />
+                                  )}
+                                  {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setManualDoc(doc);
+                                    setPendingExtraction(null);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
+                                >
+                                  {lang === "bm" ? "Isi" : "Enter"}
+                                </button>
+                              </>
+                            )}
                             <button
                               type="button"
-                              onClick={() => {
-                                setManualDoc(doc);
-                                setPendingExtraction(null);
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
+                              onClick={() =>
+                                openFileSafely(doc.fileUrl, doc.fileName)
+                              }
+                              className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs hover:bg-emerald-50"
                             >
-                              {lang === "bm" ? "Isi" : "Enter"}
+                              Open <ExternalLink className="h-2.5 w-2.5" />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openFileSafely(doc.fileUrl, doc.fileName)
-                            }
-                            className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs hover:bg-emerald-50"
-                          >
-                            Open <ExternalLink className="h-2.5 w-2.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteAnnualDoc(doc.id)}
-                            className="rounded-lg p-1 text-slate-400 hover:text-rose-600"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteAnnualDoc(doc.id)}
+                              className="rounded-lg p-1 text-slate-400 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

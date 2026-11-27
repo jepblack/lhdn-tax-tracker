@@ -263,6 +263,8 @@ export interface AnnualTaxDoc {
   mimeType: string;
   uploadedAt: string;
   storageProvider: "gdrive" | "supabase" | "local";
+  extractionStatus?: "extracted" | "failed" | "manual";
+  extractionNote?: string | null;
 }
 
 export interface AnnualDocExtraction {
