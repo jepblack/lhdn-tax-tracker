@@ -141,7 +141,8 @@ export function computeFormBeReconciliation(
     }
 
     verifiedRaw = round2(verifiedRaw);
-    const verifiedClaimable = round2(
+    // LHDN Form e-BE truncates (floors) each relief category total to whole Ringgit
+    const verifiedClaimable = Math.floor(
       Math.min(rawClaimableBeforeParentCap, categoryCap)
     );
     const declared = round2(baseline.declaredByCategory?.[catId] || 0);

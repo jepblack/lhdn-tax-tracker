@@ -172,7 +172,10 @@ export function calculateTaxSummary(
       rawClaimableBeforeParentCap = totalSpent;
     }
 
-    const claimable = Math.min(rawClaimableBeforeParentCap, category.maxLimit);
+    // LHDN Form e-BE truncates (floors) each relief category total to whole Ringgit (no sen, no rounding up)
+    const claimable = Math.floor(
+      Math.min(rawClaimableBeforeParentCap, category.maxLimit)
+    );
     const remaining = Math.max(0, category.maxLimit - claimable);
     const overflow = Math.max(0, totalSpent - claimable);
 
@@ -203,11 +206,12 @@ export function calculateTaxSummary(
     categorySummaries.find((c) => c.category.id === "approved_donations")
       ?.claimable || 0
   );
-  // LHDN Form e-BE Page 1 deducts Section 44(6) Approved Donations from Aggregate Income
-  // to yield Total Income (Jumlah Pendapatan), before subtracting Pelepasan (Total Reliefs).
+  // LHDN Form e-BE Page 1 truncates Aggregate/Statutory Income to whole Ringgit and deducts
+  // Section 44(6) Approved Donations to yield Total Income (Jumlah Pendapatan), before subtracting Pelepasan.
+  const flooredAggregateIncome = Math.floor(Math.max(0, profile.annualIncome || 0));
   const totalIncome = Math.max(
     0,
-    round2(profile.annualIncome - approvedDonationsClaimable)
+    flooredAggregateIncome - approvedDonationsClaimable
   );
   const expenseReliefWithoutDonations = round2(
     Math.max(0, expenseReliefClaimable - approvedDonationsClaimable)
@@ -223,7 +227,7 @@ export function calculateTaxSummary(
   const chargeableIncome = Math.max(0, round2(totalIncome - totalReliefs));
   const chargeableIncomeWithoutExpenseReliefs = Math.max(
     0,
-    round2(profile.annualIncome - statusReliefTotal)
+    round2(flooredAggregateIncome - statusReliefTotal)
   );
 
   const { tax: grossTax, marginalRate } = calculateProgressiveTax(
