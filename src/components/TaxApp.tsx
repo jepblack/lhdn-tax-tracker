@@ -1898,6 +1898,8 @@ export function TaxApp() {
 
               {activeTab === "reliefs" && (
                 <ReliefsTab
+                  taxYear={taxYear}
+                  expenses={expenses}
                   summaries={summary.categorySummaries}
                   marginalRate={summary.marginalRate}
                   language={personalization.language}

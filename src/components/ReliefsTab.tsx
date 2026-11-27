@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Eye,
+  FileCheck2,
   Info,
   Plus,
   Star,
@@ -13,11 +15,14 @@ import {
 import { formatRM } from "@/lib/calculator";
 import { useLanguage } from "@/lib/language-context";
 import { AppLanguage } from "@/lib/personalization";
-import { CategorySummary } from "@/lib/types";
+import { CategorySummary, TaxExpense, TaxYear } from "@/lib/types";
 import { InfoHint } from "./InfoHint";
+import { ReceiptPreviewModal } from "./ReceiptPreviewModal";
 import { ReliefIcon } from "./ReliefIcon";
 
 interface ReliefsTabProps {
+  taxYear: TaxYear;
+  expenses: TaxExpense[];
   summaries: CategorySummary[];
   marginalRate: number;
   language?: AppLanguage;
@@ -36,6 +41,8 @@ const GROUP_FILTERS = [
 ] as const;
 
 export function ReliefsTab({
+  taxYear,
+  expenses,
   summaries,
   marginalRate,
   language = "en",
@@ -45,8 +52,53 @@ export function ReliefsTab({
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
+  const [previewExpense, setPreviewExpense] = useState<TaxExpense | null>(null);
   const { lang, copy, tCategory, tCategoryTips, tSubCategory, tSubCategoryDesc } =
     useLanguage();
+
+  const yearExpenses = expenses.filter((e) => e.taxYear === taxYear);
+
+  const renderReceiptRows = (items: TaxExpense[]) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="mt-2.5 space-y-1.5 border-t border-slate-100 pt-2">
+        {items.map((exp) => {
+          const isPreviewable =
+            Boolean(exp.receiptUrl) && exp.receiptUrl !== "sample://attached";
+          return (
+            <div
+              key={exp.id}
+              className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-slate-800">
+                  {exp.merchant}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {exp.expenseDate} • {formatRM(exp.amount, true)}
+                </p>
+              </div>
+              {isPreviewable ? (
+                <button
+                  type="button"
+                  onClick={() => setPreviewExpense(exp)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50 active:scale-95"
+                >
+                  <Eye className="h-3 w-3" />
+                  {lang === "bm" ? "Lihat" : "View"}
+                </button>
+              ) : exp.receiptPath || exp.receiptFileName ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                  <FileCheck2 className="h-3 w-3" />
+                  {lang === "bm" ? "Dilampirkan" : "Attached"}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const groupLabels: Record<string, string> = {
     all: copy.filterAll,
@@ -319,10 +371,41 @@ export function ReliefsTab({
                               </p>
                             )}
                           </div>
+                          {renderReceiptRows(
+                            yearExpenses.filter(
+                              (e) =>
+                                e.categoryId === item.category.id &&
+                                e.subCategoryId === sub.subCategory.id
+                            )
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
+
+                  {(() => {
+                    const subIds = new Set(
+                      item.subSummaries.map((s) => s.subCategory.id)
+                    );
+                    const categoryLevelExpenses = yearExpenses.filter(
+                      (e) =>
+                        e.categoryId === item.category.id &&
+                        (!hasSubLimits ||
+                          !e.subCategoryId ||
+                          !subIds.has(e.subCategoryId))
+                    );
+                    if (categoryLevelExpenses.length === 0) return null;
+                    return (
+                      <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          {lang === "bm"
+                            ? "Resit Dilampirkan"
+                            : "Uploaded Receipts"}
+                        </p>
+                        {renderReceiptRows(categoryLevelExpenses)}
+                      </div>
+                    );
+                  })()}
 
                   {/* Tip Box */}
                   <div className="flex items-start gap-2 rounded-xl bg-emerald-50/80 p-3 text-xs text-emerald-900">
@@ -371,6 +454,11 @@ export function ReliefsTab({
           );
         })}
       </div>
+
+      <ReceiptPreviewModal
+        expense={previewExpense}
+        onClose={() => setPreviewExpense(null)}
+      />
     </div>
   );
 }
