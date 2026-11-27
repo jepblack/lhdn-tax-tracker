@@ -66,6 +66,7 @@ export function ReliefsTab({
   onAddExpenseForCategory,
 }: ReliefsTabProps) {
   const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [sortMode, setSortMode] = useState<"grouped" | "form_be">("grouped");
   const [expandedId, setExpandedId] = useState<string | null>("medical_self");
   const [expandedReceiptLists, setExpandedReceiptLists] = useState<
     Record<string, boolean>
@@ -141,10 +142,27 @@ export function ReliefsTab({
     housing: copy.filterHousing,
   };
 
-  const filtered =
+  const parseFormBeSortKey = (ref: string): number => {
+    const m = ref.match(/^([A-Z]+)(\d+)$/i);
+    if (!m) return 9999;
+    const prefix = m[1].toUpperCase();
+    const num = Number(m[2]);
+    // F2..F22 come first in numerical order, followed by D1 (Donations)
+    return (prefix === "F" ? 0 : 1000) + num;
+  };
+
+  const sortByFormBe = (list: CategorySummary[]) =>
+    [...list].sort(
+      (a, b) =>
+        parseFormBeSortKey(a.category.formBeRef) -
+        parseFormBeSortKey(b.category.formBeRef)
+    );
+
+  const filtered = sortByFormBe(
     groupFilter === "all"
       ? summaries
-      : summaries.filter((s) => s.category.group === groupFilter);
+      : summaries.filter((s) => s.category.group === groupFilter)
+  );
 
   return (
     <div className="space-y-4 pb-6">
@@ -168,24 +186,56 @@ export function ReliefsTab({
         />
       </div>
 
-      {/* Group Filter Pills */}
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
-        {GROUP_FILTERS.map((f) => {
-          const active = groupFilter === f.id;
-          return (
+      {/* Group Filter Pills + Organization Toggle */}
+      <div className="space-y-2">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
+          {GROUP_FILTERS.map((f) => {
+            const active = groupFilter === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setGroupFilter(f.id)}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "border border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                {groupLabels[f.id] || f.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 text-[11px]">
+          <span className="font-medium text-slate-500">
+            {lang === "bm" ? "Susunan:" : "Order:"}
+          </span>
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
             <button
-              key={f.id}
-              onClick={() => setGroupFilter(f.id)}
-              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                active
-                  ? "bg-emerald-600 text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-slate-600"
+              type="button"
+              onClick={() => setSortMode("grouped")}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                sortMode === "grouped"
+                  ? "bg-emerald-600 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
               }`}
             >
-              {groupLabels[f.id] || f.label}
+              {lang === "bm" ? "Mengikut Kumpulan" : "Grouped Sections"}
             </button>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => setSortMode("form_be")}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                sortMode === "form_be"
+                  ? "bg-emerald-600 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {lang === "bm" ? "Susunan Borang e-BE" : "Form e-BE Order (F2→D1)"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Form e-BE Audit Tally Summary Banner */}
@@ -248,8 +298,8 @@ export function ReliefsTab({
       )}
 
       {/* Category Cards */}
-      <div className="space-y-3">
-        {filtered.map((item) => {
+      {(() => {
+        const renderCategoryCard = (item: CategorySummary) => {
           const isExpanded = expandedId === item.category.id;
           const isMaxed = item.percentUsed >= 100;
           const hasSubLimits = item.subSummaries.length > 0;
@@ -636,8 +686,71 @@ export function ReliefsTab({
               )}
             </div>
           );
-        })}
-      </div>
+        };
+
+        if (sortMode === "form_be" || groupFilter !== "all") {
+          return (
+            <div className="space-y-3">
+              {filtered.map(renderCategoryCard)}
+            </div>
+          );
+        }
+
+        const isActiveItem = (s: CategorySummary) =>
+          s.claimable > 0 ||
+          s.spent > 0 ||
+          Boolean(beAudit?.byCategory[s.category.id]?.declared);
+
+        const activeItems = filtered.filter(isActiveItem);
+        const remainingItems = filtered.filter((s) => !isActiveItem(s));
+        const sections: Array<{ id: string; title: string; items: CategorySummary[] }> = [];
+
+        if (activeItems.length > 0) {
+          sections.push({
+            id: "active",
+            title:
+              lang === "bm"
+                ? `Pelepasan Aktif / Dituntut (${activeItems.length})`
+                : `Claimed / Active Reliefs (${activeItems.length})`,
+            items: activeItems,
+          });
+        }
+
+        for (const gf of GROUP_FILTERS) {
+          if (gf.id === "all") continue;
+          const groupItems = remainingItems.filter(
+            (s) => s.category.group === gf.id
+          );
+          if (groupItems.length > 0) {
+            sections.push({
+              id: gf.id,
+              title: groupLabels[gf.id] || gf.label,
+              items: groupItems,
+            });
+          }
+        }
+
+        return (
+          <div className="space-y-5">
+            {sections.map((sec) => (
+              <div key={sec.id} className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    {sec.title}
+                  </h2>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {sec.items.length}{" "}
+                    {lang === "bm" ? "kategori" : sec.items.length === 1 ? "item" : "items"}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {sec.items.map(renderCategoryCard)}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       <ReceiptPreviewModal
         expense={previewExpense}
