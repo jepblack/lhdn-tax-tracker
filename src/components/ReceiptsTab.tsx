@@ -93,8 +93,8 @@ const ANNUAL_DOC_SLOTS: Array<{
     type: "other_doc",
     label: "Other Annual Tax Document",
     labelBm: "Dokumen Cukai Tahunan Lain",
-    hint: "CP58, stamped SPA, OKU card, or JKM letter",
-    hintBm: "CP58, SPA bercop hasil, kad OKU, atau surat JKM",
+    hint: "CP58, Zakat statement/receipt, stamped SPA, OKU card, or JKM letter",
+    hintBm: "CP58, penyata/resit Zakat, SPA bercop hasil, kad OKU, atau surat JKM",
   },
 ];
 
@@ -371,7 +371,7 @@ export function ReceiptsTab({
   }
 
   async function handleRetryAnnualDoc(doc: AnnualTaxDoc) {
-    if (!doc.fileUrl || doc.docType === "other_doc") return;
+    if (!doc.fileUrl) return;
     setRetryingDocId(doc.id);
     setDocNotice(null);
     setExtractionAppliedMsg(null);
@@ -404,11 +404,18 @@ export function ReceiptsTab({
               (d.extractionStatus === "extracted" ||
                 d.extractionStatus === "manual")
           );
+        const shouldAddZakat =
+          doc.docType === "other_doc" &&
+          extraction.zakatPaid > 0 &&
+          profile.zakatPaid > 0 &&
+          extraction.zakatPaid < profile.zakatPaid;
         setPendingExtraction({
           extraction: {
             ...extraction,
             ...(doc.docType === "ea_form"
               ? { addToExistingProfile: hasOtherEa }
+              : doc.docType === "other_doc" && extraction.zakatPaid > 0
+              ? { addToExistingProfile: shouldAddZakat }
               : {}),
           },
           doc,
@@ -775,9 +782,8 @@ export function ReceiptsTab({
                   file
                 );
 
-                // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, or Form BE
-                if (slot.type !== "other_doc") {
-                  try {
+                // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, Form BE, or Other Annual Docs (e.g. Zakat)
+                try {
                     const { extraction, skipReason } = await parseAnnualDocFile(
                       file,
                       slot.type,
@@ -800,11 +806,19 @@ export function ReceiptsTab({
                             (d.extractionStatus === "extracted" ||
                               d.extractionStatus === "manual")
                         );
+                      const shouldAddZakat =
+                        slot.type === "other_doc" &&
+                        extraction.zakatPaid > 0 &&
+                        profile.zakatPaid > 0 &&
+                        extraction.zakatPaid < profile.zakatPaid;
                       setPendingExtraction({
                         extraction: {
                           ...extraction,
                           ...(slot.type === "ea_form"
                             ? { addToExistingProfile: hasOtherEa }
+                            : slot.type === "other_doc" &&
+                              extraction.zakatPaid > 0
+                            ? { addToExistingProfile: shouldAddZakat }
                             : {}),
                         },
                         doc: savedDoc,
@@ -826,9 +840,6 @@ export function ReceiptsTab({
                     setManualDoc(savedDoc);
                     onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
                   }
-                } else {
-                  setExtractionAppliedMsg(`${slot.label} archived to Vault!`);
-                }
               } finally {
                 setUploadingDocType(null);
               }
@@ -1175,7 +1186,9 @@ export function ReceiptsTab({
                 </div>
               )}
 
-              {pendingExtraction.doc.docType === "ea_form" && (
+              {(pendingExtraction.doc.docType === "ea_form" ||
+                (pendingExtraction.doc.docType === "other_doc" &&
+                  pendingExtraction.extraction.zakatPaid > 0)) && (
                 <label className="flex items-center gap-2 rounded-xl bg-white px-2.5 py-2 text-[11px] font-medium text-slate-700">
                   <input
                     type="checkbox"
@@ -1198,9 +1211,13 @@ export function ReceiptsTab({
                     className="rounded border-slate-300"
                   />
                   <span>
-                    {lang === "bm"
-                      ? `Tambah kepada Pendapatan & PCB TT ${pendingExtraction.targetYear} sedia ada (majikan ke-2)`
-                      : `Add to existing YA ${pendingExtraction.targetYear} Income, PCB & Zakat (2nd employer)`}
+                    {pendingExtraction.doc.docType === "ea_form"
+                      ? lang === "bm"
+                        ? `Tambah kepada Pendapatan & PCB TT ${pendingExtraction.targetYear} sedia ada (majikan ke-2)`
+                        : `Add to existing YA ${pendingExtraction.targetYear} Income, PCB & Zakat (2nd employer)`
+                      : lang === "bm"
+                      ? `Tambah kepada Zakat TT ${pendingExtraction.targetYear} sedia ada (nyahtanda jika penyata penuh pusat zakat sudah termasuk Zakat EA)`
+                      : `Add to existing YA ${pendingExtraction.targetYear} Zakat (uncheck if full-year Zakat statement already includes EA Zakat)`}
                   </span>
                 </label>
               )}

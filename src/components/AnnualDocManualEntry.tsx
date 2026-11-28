@@ -112,9 +112,13 @@ export function AnnualDocManualEntry({
   const [donations, setDonations] = useState(initExtra("approved_donations"));
 
   const [saving, setSaving] = useState(false);
+  const isOtherDoc = doc.docType === "other_doc";
   const [addToExisting, setAddToExisting] = useState(
-    doc.docType === "ea_form" &&
-      (init?.addToExistingProfile ?? hasOtherEaInYear)
+    doc.docType === "ea_form"
+      ? init?.addToExistingProfile ?? hasOtherEaInYear
+      : isOtherDoc
+      ? Boolean(init?.addToExistingProfile)
+      : false
   );
 
   async function handleSave() {
@@ -167,7 +171,9 @@ export function AnnualDocManualEntry({
             }
           : {}),
         extraReliefs,
-        ...(isEa ? { addToExistingProfile: addToExisting } : {}),
+        ...(isEa || (isOtherDoc && numOrZero(zakatPaid) > 0)
+          ? { addToExistingProfile: addToExisting }
+          : {}),
         summaryNote: "Entered manually by taxpayer.",
         confidence: "high",
       };
@@ -613,7 +619,7 @@ export function AnnualDocManualEntry({
         </div>
       )}
 
-      {isEa && (
+      {(isEa || (isOtherDoc && numOrZero(zakatPaid) > 0)) && (
         <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
           <input
             type="checkbox"
@@ -621,9 +627,13 @@ export function AnnualDocManualEntry({
             onChange={(e) => setAddToExisting(e.target.checked)}
             className="rounded border-slate-300"
           />
-          {lang === "bm"
-            ? `Tambah kepada Pendapatan & PCB TT ${targetYear} sedia ada (jika majikan ke-2)`
-            : `Add to existing YA ${targetYear} Income, PCB & Zakat (for 2nd employer)`}
+          {isEa
+            ? lang === "bm"
+              ? `Tambah kepada Pendapatan & PCB TT ${targetYear} sedia ada (jika majikan ke-2)`
+              : `Add to existing YA ${targetYear} Income, PCB & Zakat (for 2nd employer)`
+            : lang === "bm"
+            ? `Tambah kepada Zakat TT ${targetYear} sedia ada (nyahtanda jika penyata penuh pusat zakat sudah termasuk Zakat EA)`
+            : `Add to existing YA ${targetYear} Zakat (uncheck if full-year Zakat statement already includes EA Zakat)`}
         </label>
       )}
 

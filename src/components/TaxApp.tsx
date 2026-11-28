@@ -554,7 +554,7 @@ export function TaxApp() {
           : baseProfile.pcbPaid,
       zakatPaid:
         useEaSum && sumEaZakat > 0
-          ? sumEaZakat
+          ? Math.max(sumEaZakat, baseProfile.zakatPaid || 0)
           : ext.zakatPaid > 0
           ? ext.addToExistingProfile
             ? Math.round(((baseProfile.zakatPaid || 0) + ext.zakatPaid) * 100) / 100

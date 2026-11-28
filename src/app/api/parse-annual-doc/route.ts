@@ -60,11 +60,6 @@ export async function POST(request: Request) {
     const sizeErr = enforceMaxUploadBytes(file, 15);
     if (sizeErr) return sizeErr;
 
-    // Only generic other_doc is archive-only; EA Form, KWSP, Insurance, Loan & Form BE all extract!
-    if (docType === "other_doc") {
-      return NextResponse.json({ skipped: true });
-    }
-
     const arrayBuffer = await file.arrayBuffer();
     if (arrayBuffer.byteLength === 0) {
       return NextResponse.json({ skipped: true });
