@@ -299,30 +299,31 @@ export function AnnualDocManualEntry({
         )}
 
         {(isEa || isBe) && (
-          <>
-            <div>
-              <label className={labelCls}>SOCSO &amp; EIS (RM)</label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={socsoEisEmployee}
-                onChange={(e) => setSocsoEisEmployee(e.target.value)}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Zakat / Fitrah (RM)</label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={zakatPaid}
-                onChange={(e) => setZakatPaid(e.target.value)}
-                className={inputCls}
-              />
-            </div>
-          </>
+          <div>
+            <label className={labelCls}>SOCSO &amp; EIS (RM)</label>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={socsoEisEmployee}
+              onChange={(e) => setSocsoEisEmployee(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        )}
+
+        {(isEa || isBe || isOtherDoc) && (
+          <div>
+            <label className={labelCls}>Zakat / Fitrah (RM)</label>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={zakatPaid}
+              onChange={(e) => setZakatPaid(e.target.value)}
+              className={inputCls}
+            />
+          </div>
         )}
 
         {(isInsurance || isBe) && (

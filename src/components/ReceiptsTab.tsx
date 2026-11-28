@@ -1362,44 +1362,57 @@ export function ReceiptsTab({
                                   {doc.extractionNote}
                                 </p>
                               )}
+                              {!isFailed && doc.extraction && (() => {
+                                const ex = doc.extraction;
+                                const parts: string[] = [];
+                                if (ex.annualIncome > 0) parts.push(`Income ${formatRM(ex.annualIncome, true)}`);
+                                if (ex.pcbPaid > 0) parts.push(`PCB ${formatRM(ex.pcbPaid, true)}`);
+                                if (ex.epfEmployee > 0) parts.push(`EPF ${formatRM(ex.epfEmployee, true)}`);
+                                if (ex.socsoEisEmployee > 0) parts.push(`SOCSO ${formatRM(ex.socsoEisEmployee, true)}`);
+                                if (ex.lifeInsuranceAmount > 0) parts.push(`Life ${formatRM(ex.lifeInsuranceAmount, true)}`);
+                                if (ex.medicalInsuranceAmount > 0) parts.push(`Med ${formatRM(ex.medicalInsuranceAmount, true)}`);
+                                if (ex.housingLoanInterest > 0) parts.push(`Loan ${formatRM(ex.housingLoanInterest, true)}`);
+                                if (ex.zakatPaid > 0) parts.push(`Zakat ${formatRM(ex.zakatPaid, true)}`);
+                                return parts.length > 0 ? (
+                                  <p className="line-clamp-1 text-[10px] font-medium text-emerald-700">
+                                    {parts.join(" • ")}
+                                  </p>
+                                ) : null;
+                              })()}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              {doc.docType !== "other_doc" && (
-                                <>
-                                  {isFailed && (
-                                    <button
-                                      type="button"
-                                      disabled={isRetrying}
-                                      onClick={() => handleRetryAnnualDoc(doc)}
-                                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50"
-                                    >
-                                      {isRetrying ? (
-                                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                      ) : (
-                                        <RotateCcw className="h-2.5 w-2.5" />
-                                      )}
-                                      {lang === "bm" ? "Cuba Lagi" : "Retry"}
-                                    </button>
+                              {isFailed && (
+                                <button
+                                  type="button"
+                                  disabled={isRetrying}
+                                  onClick={() => handleRetryAnnualDoc(doc)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50"
+                                >
+                                  {isRetrying ? (
+                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-2.5 w-2.5" />
                                   )}
-                                {manualDoc?.id !== doc.id && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setManualDoc(doc);
-                                      setPendingExtraction(null);
-                                    }}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
-                                  >
-                                    {isSavedDoc
-                                      ? lang === "bm"
-                                        ? "Ubah"
-                                        : "Edit"
-                                      : lang === "bm"
-                                      ? "Isi"
-                                      : "Enter"}
-                                  </button>
-                                )}
-                                </>
+                                  {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                                </button>
+                              )}
+                              {manualDoc?.id !== doc.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setManualDoc(doc);
+                                    setPendingExtraction(null);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
+                                >
+                                  {isSavedDoc
+                                    ? lang === "bm"
+                                      ? "Ubah"
+                                      : "Edit"
+                                    : lang === "bm"
+                                    ? "Isi"
+                                    : "Enter"}
+                                </button>
                               )}
                               <button
                                 type="button"
