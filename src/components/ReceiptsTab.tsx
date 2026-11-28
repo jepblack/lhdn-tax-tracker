@@ -322,6 +322,12 @@ export function ReceiptsTab({
     }
 
     if (doc.docType === "ea_form") {
+      const epfRow = pool.find(
+        (e) =>
+          e.categoryId === "epf_life_insurance" &&
+          e.subCategoryId === "epf_mandatory"
+      );
+      const socsoRow = pool.find((e) => e.categoryId === "socso");
       const epf = pool
         .filter(
           (e) =>
@@ -336,14 +342,20 @@ export function ReceiptsTab({
         (d) => d.taxYear === doc.taxYear && d.docType === "ea_form"
       );
       const singleEa = otherEas.length <= 1;
-      if (singleEa && (profile.annualIncome > 0 || profile.pcbPaid > 0 || epf > 0 || socso > 0)) {
+      const inferredProvider =
+        (epfRow || socsoRow)?.merchant?.split(" — ")[0]?.trim() || doc.label;
+      if (
+        (singleEa && (profile.annualIncome > 0 || profile.pcbPaid > 0)) ||
+        epf > 0 ||
+        socso > 0
+      ) {
         return {
           docType: "ea_form",
-          providerName: doc.label,
+          providerName: inferredProvider,
           detectedTaxYear: doc.taxYear,
-          annualIncome: profile.annualIncome || 0,
-          pcbPaid: profile.pcbPaid || 0,
-          zakatPaid: profile.zakatPaid || 0,
+          annualIncome: singleEa ? profile.annualIncome || 0 : 0,
+          pcbPaid: singleEa ? profile.pcbPaid || 0 : 0,
+          zakatPaid: singleEa ? profile.zakatPaid || 0 : 0,
           epfEmployee: epf,
           socsoEisEmployee: socso,
           lifeInsuranceAmount: 0,
@@ -1297,7 +1309,13 @@ export function ReceiptsTab({
                                     }}
                                     className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
                                   >
-                                    {lang === "bm" ? "Isi" : "Enter"}
+                                    {isExtracted || isManual
+                                      ? lang === "bm"
+                                        ? "Ubah"
+                                        : "Edit"
+                                      : lang === "bm"
+                                      ? "Isi"
+                                      : "Enter"}
                                   </button>
                                 </>
                               )}
