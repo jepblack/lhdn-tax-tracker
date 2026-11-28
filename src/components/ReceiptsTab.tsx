@@ -1381,7 +1381,7 @@ export function ReceiptsTab({
                               })()}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              {isFailed && (
+                              {(isFailed || !doc.extraction) && (
                                 <button
                                   type="button"
                                   disabled={isRetrying}

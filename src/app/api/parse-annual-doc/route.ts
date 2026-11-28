@@ -171,10 +171,21 @@ Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": numbe
   "filingDate": string | null,`
         : "";
 
+    const otherDocExtraPrompt =
+      docType === "other_doc"
+        ? `
+SPECIAL INSTRUCTIONS FOR "other_doc" (ZAKAT STATEMENT / RECEIPT / CP58 / OTHER ANNUAL DOC):
+- If this is a Malaysian Zakat annual statement or receipt (e.g., Penyata Zakat, Resit Rasmi Zakat, Lembaga Zakat Selangor, PPZ-MAIWP, MAIWP, MAIK, etc.):
+  * Extract the TOTAL Zakat paid for the year (Jumlah Keseluruhan / Jumlah Bayaran / Jumlah Zakat / Total Contribution, including Zakat Pendapatan + Zakat Fitrah + Zakat Harta) into "zakatPaid".
+  * Do NOT put Zakat amounts into "annualIncome", "epfEmployee", or "extraReliefs".
+  * Set "providerName" to the Zakat authority / issuer name (e.g. "Lembaga Zakat Selangor", "PPZ-MAIWP").
+  * Set "detectedTaxYear" to the 4-digit statement year if visible (e.g. 2023).`
+        : "";
+
     const prompt = `You are a Malaysian LHDN personal tax document parser for YA ${taxYear}.
 Document type uploaded: "${docType}".
 Extract ONLY visibly printed annual MYR figures from this document. Never guess or fabricate numbers; return 0 for any field not present.
-${formBeExtraPrompt}
+${formBeExtraPrompt}${otherDocExtraPrompt}
 
 Return ONLY raw valid JSON (no markdown) with exact keys:
 {
@@ -347,6 +358,52 @@ Return ONLY raw valid JSON (no markdown) with exact keys:
         confidence: p.confidence,
       };
       return NextResponse.json(extraction);
+    }
+
+    // Fallback: local text parser for Zakat statements / receipts
+    if (
+      pdfText.length >= 20 &&
+      docType === "other_doc" &&
+      /zakat|fitrah|ppz|maiwp|lembaga\s+zakat/i.test(pdfText)
+    ) {
+      const totalPatterns = [
+        /(?:jumlah\s+(?:keseluruhan|bayaran|zakat|sumbangan)|total\s+(?:zakat|paid|contribution|amount))\s*[:\-]?\s*(?:rm|myr)?\s*([\d,]+\.\d{2})/i,
+        /(?:rm|myr)\s*([\d,]+\.\d{2})/gi,
+      ];
+      let zakatAmt = 0;
+      const explicitMatch = pdfText.match(totalPatterns[0]);
+      if (explicitMatch?.[1]) {
+        zakatAmt = Number(explicitMatch[1].replace(/,/g, "")) || 0;
+      } else {
+        const allRm = [...pdfText.matchAll(totalPatterns[1])]
+          .map((m) => Number(m[1].replace(/,/g, "")) || 0)
+          .filter((n) => n > 0 && n < 500000);
+        if (allRm.length > 0) zakatAmt = Math.max(...allRm);
+      }
+      if (zakatAmt > 0) {
+        const yrMatch = pdfText.match(/\b(202[0-9])\b/);
+        const detectedTaxYear = yrMatch ? Number(yrMatch[1]) : undefined;
+        const extraction: AnnualDocExtraction = {
+          docType,
+          providerName: /selangor|lzs/i.test(pdfText)
+            ? "Lembaga Zakat Selangor"
+            : /ppz|maiwp/i.test(pdfText)
+            ? "PPZ-MAIWP"
+            : "Zakat Authority",
+          ...(detectedTaxYear ? { detectedTaxYear } : {}),
+          annualIncome: 0,
+          pcbPaid: 0,
+          zakatPaid: Math.round(zakatAmt * 100) / 100,
+          epfEmployee: 0,
+          socsoEisEmployee: 0,
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: 0,
+          summaryNote: `Extracted Zakat total RM ${zakatAmt.toFixed(2)} from PDF text.`,
+          confidence: explicitMatch ? "high" : "medium",
+        };
+        return NextResponse.json(extraction);
+      }
     }
 
     const skipReason = !authed
