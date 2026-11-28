@@ -1239,6 +1239,10 @@ export function ReceiptsTab({
                       const isManual = doc.extractionStatus === "manual";
                       const isExtracted = doc.extractionStatus === "extracted";
                       const isRetrying = retryingDocId === doc.id;
+                      const isSavedDoc =
+                        isExtracted ||
+                        isManual ||
+                        (!isFailed && Boolean(deriveFallbackExtraction(doc)));
                       return (
                         <div key={doc.id} className="space-y-2">
                           <div
@@ -1308,7 +1312,7 @@ export function ReceiptsTab({
                                     }}
                                     className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
                                   >
-                                    {isExtracted || isManual
+                                    {isSavedDoc
                                       ? lang === "bm"
                                         ? "Ubah"
                                         : "Edit"
