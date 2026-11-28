@@ -394,8 +394,23 @@ export function ReceiptsTab({
           SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
             ? extraction.detectedTaxYear
             : doc.taxYear;
+        const hasOtherEa =
+          doc.docType === "ea_form" &&
+          annualDocs.some(
+            (d) =>
+              d.id !== doc.id &&
+              d.taxYear === detected &&
+              d.docType === "ea_form" &&
+              (d.extractionStatus === "extracted" ||
+                d.extractionStatus === "manual")
+          );
         setPendingExtraction({
-          extraction,
+          extraction: {
+            ...extraction,
+            ...(doc.docType === "ea_form"
+              ? { addToExistingProfile: hasOtherEa }
+              : {}),
+          },
           doc,
           targetYear: detected,
         });
@@ -775,8 +790,23 @@ export function ReceiptsTab({
                         SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
                           ? extraction.detectedTaxYear
                           : taxYear;
+                      const hasOtherEa =
+                        slot.type === "ea_form" &&
+                        annualDocs.some(
+                          (d) =>
+                            d.id !== savedDoc.id &&
+                            d.taxYear === detected &&
+                            d.docType === "ea_form" &&
+                            (d.extractionStatus === "extracted" ||
+                              d.extractionStatus === "manual")
+                        );
                       setPendingExtraction({
-                        extraction,
+                        extraction: {
+                          ...extraction,
+                          ...(slot.type === "ea_form"
+                            ? { addToExistingProfile: hasOtherEa }
+                            : {}),
+                        },
                         doc: savedDoc,
                         targetYear: detected,
                       });
@@ -925,7 +955,8 @@ export function ReceiptsTab({
                     </select>
                   </div>
                 ))}
-                <div className="flex gap-2">
+
+              <div className="flex gap-2">
                   <button
                     type="button"
                     disabled={
@@ -1142,6 +1173,36 @@ export function ReceiptsTab({
                     ))}
                   </select>
                 </div>
+              )}
+
+              {pendingExtraction.doc.docType === "ea_form" && (
+                <label className="flex items-center gap-2 rounded-xl bg-white px-2.5 py-2 text-[11px] font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(
+                      pendingExtraction.extraction.addToExistingProfile
+                    )}
+                    onChange={(e) =>
+                      setPendingExtraction((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              extraction: {
+                                ...prev.extraction,
+                                addToExistingProfile: e.target.checked,
+                              },
+                            }
+                          : null
+                      )
+                    }
+                    className="rounded border-slate-300"
+                  />
+                  <span>
+                    {lang === "bm"
+                      ? `Tambah kepada Pendapatan & PCB TT ${pendingExtraction.targetYear} sedia ada (majikan ke-2)`
+                      : `Add to existing YA ${pendingExtraction.targetYear} Income, PCB & Zakat (2nd employer)`}
+                  </span>
+                </label>
               )}
 
               <div className="flex gap-2">

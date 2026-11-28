@@ -691,13 +691,13 @@ export function TaxApp() {
       isFormBeImport ? Math.max(0, Math.round((declared - existingAmt) * 100) / 100) : declared;
 
     const eaEmployerKey =
-      doc.docType === "ea_form" &&
-      ext.providerName &&
-      !/^ea\s*form/i.test(ext.providerName.trim())
-        ? ext.providerName
-            .toUpperCase()
-            .replace(/[^A-Z0-9]+/g, "")
-            .slice(0, 12) || undefined
+      doc.docType === "ea_form"
+        ? ext.providerName && !/^ea\s*form/i.test(ext.providerName.trim())
+          ? ext.providerName
+              .toUpperCase()
+              .replace(/[^A-Z0-9]+/g, "")
+              .slice(0, 12) || doc.id.slice(-8).toUpperCase()
+          : doc.id.slice(-8).toUpperCase()
         : undefined;
 
     if (ext.epfEmployee > 0) {
