@@ -177,6 +177,187 @@ export function ReceiptsTab({
   const [manualDoc, setManualDoc] = useState<AnnualTaxDoc | null>(null);
   const [retryingDocId, setRetryingDocId] = useState<string | null>(null);
 
+  function deriveFallbackExtraction(doc: AnnualTaxDoc): AnnualDocExtraction | null {
+    if (doc.extraction) return doc.extraction;
+
+    const matchingByFile = yearExpenses.filter(
+      (e) =>
+        e.receiptFileName &&
+        e.receiptFileName.toLowerCase() === doc.fileName.toLowerCase()
+    );
+    const pool = matchingByFile.length > 0 ? matchingByFile : yearExpenses;
+
+    if (doc.docType === "form_be_proof" && formBeBaseline) {
+      const cat = formBeBaseline.declaredByCategory || {};
+      const epfRow = yearExpenses.find(
+        (e) =>
+          e.categoryId === "epf_life_insurance" &&
+          e.subCategoryId === "epf_mandatory"
+      );
+      const epfAmt = epfRow ? epfRow.amount : Math.min(4000, cat["epf_life_insurance"] || 0);
+      const lifeAmt = Math.max(0, (cat["epf_life_insurance"] || 0) - epfAmt);
+      return {
+        docType: "form_be_proof",
+        providerName: "LHDN Form BE",
+        detectedTaxYear: formBeBaseline.taxYear,
+        annualIncome: formBeBaseline.declaredIncome || 0,
+        pcbPaid: formBeBaseline.declaredPcb || 0,
+        zakatPaid: formBeBaseline.declaredZakat || 0,
+        epfEmployee: epfAmt,
+        socsoEisEmployee: cat["socso"] || 0,
+        lifeInsuranceAmount: lifeAmt,
+        medicalInsuranceAmount: cat["edu_med_insurance"] || 0,
+        housingLoanInterest: cat["first_home_interest"] || 0,
+        statusReliefs: formBeBaseline.statusReliefs,
+        declaredTotalReliefs: formBeBaseline.declaredTotalReliefs,
+        declaredChargeableIncome: formBeBaseline.declaredChargeableIncome,
+        declaredTaxCharged: formBeBaseline.declaredTaxCharged,
+        declaredTaxRebate: formBeBaseline.declaredTaxRebate,
+        declaredTaxPayable: formBeBaseline.declaredTaxPayable,
+        declaredRefund: formBeBaseline.declaredRefund,
+        filingReferenceNo: formBeBaseline.filingReferenceNo,
+        filingDate: formBeBaseline.filingDate,
+        extraReliefs: Object.entries(cat)
+          .filter(
+            ([id, amt]) =>
+              amt > 0 &&
+              ![
+                "epf_life_insurance",
+                "socso",
+                "edu_med_insurance",
+                "first_home_interest",
+              ].includes(id)
+          )
+          .map(([categoryId, amount]) => ({
+            categoryId,
+            label: categoryId,
+            amount,
+          })),
+        summaryNote: "Loaded from existing Form e-BE baseline.",
+        confidence: "high",
+      };
+    }
+
+    if (doc.docType === "insurance_statement") {
+      const life = pool
+        .filter(
+          (e) =>
+            e.categoryId === "epf_life_insurance" &&
+            e.subCategoryId === "life_insurance"
+        )
+        .reduce((s, e) => s + e.amount, 0);
+      const med = pool
+        .filter((e) => e.categoryId === "edu_med_insurance")
+        .reduce((s, e) => s + e.amount, 0);
+      if (life > 0 || med > 0) {
+        return {
+          docType: "insurance_statement",
+          providerName: doc.label,
+          detectedTaxYear: doc.taxYear,
+          annualIncome: 0,
+          pcbPaid: 0,
+          zakatPaid: 0,
+          epfEmployee: 0,
+          socsoEisEmployee: 0,
+          lifeInsuranceAmount: life,
+          medicalInsuranceAmount: med,
+          housingLoanInterest: 0,
+          summaryNote: "Loaded from existing YA reliefs.",
+          confidence: "medium",
+        };
+      }
+      return null;
+    }
+
+    if (doc.docType === "kwsp_statement") {
+      const epf = pool
+        .filter(
+          (e) =>
+            e.categoryId === "epf_life_insurance" &&
+            e.subCategoryId === "epf_mandatory"
+        )
+        .reduce((s, e) => s + e.amount, 0);
+      if (epf > 0) {
+        return {
+          docType: "kwsp_statement",
+          providerName: "KWSP / EPF",
+          detectedTaxYear: doc.taxYear,
+          annualIncome: 0,
+          pcbPaid: 0,
+          zakatPaid: 0,
+          epfEmployee: epf,
+          socsoEisEmployee: 0,
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: 0,
+          summaryNote: "Loaded from existing YA reliefs.",
+          confidence: "medium",
+        };
+      }
+      return null;
+    }
+
+    if (doc.docType === "loan_interest_statement") {
+      const loan = pool
+        .filter((e) => e.categoryId === "first_home_interest")
+        .reduce((s, e) => s + e.amount, 0);
+      if (loan > 0) {
+        return {
+          docType: "loan_interest_statement",
+          providerName: doc.label,
+          detectedTaxYear: doc.taxYear,
+          annualIncome: 0,
+          pcbPaid: 0,
+          zakatPaid: 0,
+          epfEmployee: 0,
+          socsoEisEmployee: 0,
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: loan,
+          summaryNote: "Loaded from existing YA reliefs.",
+          confidence: "medium",
+        };
+      }
+      return null;
+    }
+
+    if (doc.docType === "ea_form") {
+      const epf = pool
+        .filter(
+          (e) =>
+            e.categoryId === "epf_life_insurance" &&
+            e.subCategoryId === "epf_mandatory"
+        )
+        .reduce((s, e) => s + e.amount, 0);
+      const socso = pool
+        .filter((e) => e.categoryId === "socso")
+        .reduce((s, e) => s + e.amount, 0);
+      const otherEas = annualDocs.filter(
+        (d) => d.taxYear === doc.taxYear && d.docType === "ea_form"
+      );
+      const singleEa = otherEas.length <= 1;
+      if (singleEa && (profile.annualIncome > 0 || profile.pcbPaid > 0 || epf > 0 || socso > 0)) {
+        return {
+          docType: "ea_form",
+          providerName: doc.label,
+          detectedTaxYear: doc.taxYear,
+          annualIncome: profile.annualIncome || 0,
+          pcbPaid: profile.pcbPaid || 0,
+          zakatPaid: profile.zakatPaid || 0,
+          epfEmployee: epf,
+          socsoEisEmployee: socso,
+          lifeInsuranceAmount: 0,
+          medicalInsuranceAmount: 0,
+          housingLoanInterest: 0,
+          summaryNote: "Loaded from existing YA profile & reliefs.",
+          confidence: "medium",
+        };
+      }
+    }
+
+    return null;
+  }
+
   async function handleRetryAnnualDoc(doc: AnnualTaxDoc) {
     if (!doc.fileUrl || doc.docType === "other_doc") return;
     setRetryingDocId(doc.id);
@@ -1144,7 +1325,7 @@ export function ReceiptsTab({
                               doc={doc}
                               defaultYear={taxYear}
                               lang={lang}
-                              initialExtraction={doc.extraction}
+                              initialExtraction={deriveFallbackExtraction(doc)}
                               hasOtherEaInYear={annualDocs.some(
                                 (d) =>
                                   d.id !== doc.id &&
