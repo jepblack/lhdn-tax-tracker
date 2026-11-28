@@ -11,6 +11,7 @@ interface AnnualDocManualEntryProps {
   defaultYear: TaxYear;
   lang: "en" | "bm";
   hasOtherEaInYear?: boolean;
+  initialExtraction?: AnnualDocExtraction | null;
   onApply: (
     extraction: AnnualDocExtraction,
     doc: AnnualTaxDoc,
@@ -29,53 +30,91 @@ export function AnnualDocManualEntry({
   defaultYear,
   lang,
   hasOtherEaInYear = false,
+  initialExtraction,
   onApply,
   onCancel,
 }: AnnualDocManualEntryProps) {
+  const init = initialExtraction ?? doc.extraction ?? null;
+  const initExtra = (catId: string) => {
+    const found = init?.extraReliefs?.find((r) => r.categoryId === catId);
+    return found && found.amount > 0 ? String(found.amount) : "";
+  };
+  const fmtInit = (n: number | undefined | null) =>
+    n && n > 0 ? String(n) : "";
+
   const isBe = doc.docType === "form_be_proof";
   const isEa = doc.docType === "ea_form";
   const isKwsp = doc.docType === "kwsp_statement";
   const isInsurance = doc.docType === "insurance_statement";
   const isLoan = doc.docType === "loan_interest_statement";
-  const [targetYear, setTargetYear] = useState<TaxYear>(defaultYear);
-  const [providerName, setProviderName] = useState(
-    isBe ? "LHDN Form BE" : isKwsp ? "KWSP / EPF" : doc.label
+  const [targetYear, setTargetYear] = useState<TaxYear>(
+    init?.detectedTaxYear || defaultYear
   );
-  const [annualIncome, setAnnualIncome] = useState("");
-  const [pcbPaid, setPcbPaid] = useState("");
-  const [zakatPaid, setZakatPaid] = useState("");
-  const [epfEmployee, setEpfEmployee] = useState("");
-  const [socsoEisEmployee, setSocsoEisEmployee] = useState("");
-  const [lifeInsurance, setLifeInsurance] = useState("");
-  const [medicalInsurance, setMedicalInsurance] = useState("");
-  const [housingLoanInterest, setHousingLoanInterest] = useState("");
+  const [providerName, setProviderName] = useState(
+    init?.providerName || (isBe ? "LHDN Form BE" : isKwsp ? "KWSP / EPF" : doc.label)
+  );
+  const [annualIncome, setAnnualIncome] = useState(fmtInit(init?.annualIncome));
+  const [pcbPaid, setPcbPaid] = useState(fmtInit(init?.pcbPaid));
+  const [zakatPaid, setZakatPaid] = useState(fmtInit(init?.zakatPaid));
+  const [epfEmployee, setEpfEmployee] = useState(fmtInit(init?.epfEmployee));
+  const [socsoEisEmployee, setSocsoEisEmployee] = useState(
+    fmtInit(init?.socsoEisEmployee)
+  );
+  const [lifeInsurance, setLifeInsurance] = useState(
+    fmtInit(init?.lifeInsuranceAmount)
+  );
+  const [medicalInsurance, setMedicalInsurance] = useState(
+    fmtInit(init?.medicalInsuranceAmount)
+  );
+  const [housingLoanInterest, setHousingLoanInterest] = useState(
+    fmtInit(init?.housingLoanInterest)
+  );
 
   // Form e-BE specific fields
-  const [filingRef, setFilingRef] = useState("");
-  const [filingDate, setFilingDate] = useState("");
-  const [declaredTotalReliefs, setDeclaredTotalReliefs] = useState("");
-  const [declaredChargeable, setDeclaredChargeable] = useState("");
-  const [declaredTaxCharged, setDeclaredTaxCharged] = useState("");
-  const [declaredTaxPayable, setDeclaredTaxPayable] = useState("");
-  const [declaredRefund, setDeclaredRefund] = useState("");
-  const [childrenUnder18, setChildrenUnder18] = useState("0");
-  const [childrenHigherEd, setChildrenHigherEd] = useState("0");
-  const [spouseRelief, setSpouseRelief] = useState(false);
+  const [filingRef, setFilingRef] = useState(init?.filingReferenceNo || "");
+  const [filingDate, setFilingDate] = useState(init?.filingDate || "");
+  const [declaredTotalReliefs, setDeclaredTotalReliefs] = useState(
+    fmtInit(init?.declaredTotalReliefs)
+  );
+  const [declaredChargeable, setDeclaredChargeable] = useState(
+    fmtInit(init?.declaredChargeableIncome)
+  );
+  const [declaredTaxCharged, setDeclaredTaxCharged] = useState(
+    fmtInit(init?.declaredTaxCharged)
+  );
+  const [declaredTaxPayable, setDeclaredTaxPayable] = useState(
+    fmtInit(init?.declaredTaxPayable)
+  );
+  const [declaredRefund, setDeclaredRefund] = useState(
+    init?.declaredRefund !== undefined && init?.declaredRefund !== null
+      ? String(init.declaredRefund)
+      : ""
+  );
+  const [childrenUnder18, setChildrenUnder18] = useState(
+    String(init?.statusReliefs?.childrenUnder18 ?? 0)
+  );
+  const [childrenHigherEd, setChildrenHigherEd] = useState(
+    String(init?.statusReliefs?.childrenHigherEd ?? 0)
+  );
+  const [spouseRelief, setSpouseRelief] = useState(
+    Boolean(init?.statusReliefs?.spouse)
+  );
 
   // Extra e-BE relief categories
   const [showMoreReliefs, setShowMoreReliefs] = useState(isBe);
-  const [lifestyle, setLifestyle] = useState("");
-  const [medicalSelf, setMedicalSelf] = useState("");
-  const [parentsCare, setParentsCare] = useState("");
-  const [childcare, setChildcare] = useState("");
-  const [educationSelf, setEducationSelf] = useState("");
-  const [sspn, setSspn] = useState("");
-  const [prs, setPrs] = useState("");
-  const [donations, setDonations] = useState("");
+  const [lifestyle, setLifestyle] = useState(initExtra("lifestyle"));
+  const [medicalSelf, setMedicalSelf] = useState(initExtra("medical_self"));
+  const [parentsCare, setParentsCare] = useState(initExtra("parents_medical"));
+  const [childcare, setChildcare] = useState(initExtra("childcare"));
+  const [educationSelf, setEducationSelf] = useState(initExtra("education_self"));
+  const [sspn, setSspn] = useState(initExtra("sspn"));
+  const [prs, setPrs] = useState(initExtra("prs_annuity"));
+  const [donations, setDonations] = useState(initExtra("approved_donations"));
 
   const [saving, setSaving] = useState(false);
   const [addToExisting, setAddToExisting] = useState(
-    doc.docType === "ea_form" && hasOtherEaInYear
+    doc.docType === "ea_form" &&
+      (init ? Boolean(init.addToExistingProfile) : hasOtherEaInYear)
   );
 
   async function handleSave() {

@@ -265,6 +265,7 @@ export interface AnnualTaxDoc {
   storageProvider: "gdrive" | "supabase" | "local";
   extractionStatus?: "extracted" | "failed" | "manual";
   extractionNote?: string | null;
+  extraction?: AnnualDocExtraction | null;
 }
 
 export interface AnnualDocExtraction {

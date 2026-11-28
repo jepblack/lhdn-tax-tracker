@@ -453,6 +453,7 @@ export function TaxApp() {
       taxYear: targetYear,
       extractionStatus: nextStatus,
       extractionNote: null,
+      extraction: ext,
     };
     const effectiveDocs = baseDocs.some((d) => d.id === doc.id)
       ? baseDocs.map((d) => (d.id === doc.id ? updatedDoc : d))

@@ -799,6 +799,7 @@ export function ReceiptsTab({
               doc={manualDoc}
               defaultYear={taxYear}
               lang={lang}
+              initialExtraction={manualDoc.extraction}
               hasOtherEaInYear={annualDocs.some(
                 (d) =>
                   d.id !== manualDoc.id &&
