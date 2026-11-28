@@ -1299,12 +1299,11 @@ export function ReceiptsTab({
                                       {lang === "bm" ? "Cuba Lagi" : "Retry"}
                                     </button>
                                   )}
+                                {manualDoc?.id !== doc.id && (
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setManualDoc((cur) =>
-                                        cur?.id === doc.id ? null : doc
-                                      );
+                                      setManualDoc(doc);
                                       setPendingExtraction(null);
                                     }}
                                     className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
@@ -1317,6 +1316,7 @@ export function ReceiptsTab({
                                       ? "Isi"
                                       : "Enter"}
                                   </button>
+                                )}
                                 </>
                               )}
                               <button
