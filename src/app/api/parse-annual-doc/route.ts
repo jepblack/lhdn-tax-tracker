@@ -176,7 +176,7 @@ Format: "extraReliefs": [{"categoryId": string, "label": string, "amount": numbe
         ? `
 SPECIAL INSTRUCTIONS FOR "other_doc" (ZAKAT STATEMENT / RECEIPT / CP58 / OTHER ANNUAL DOC):
 - If this is a Malaysian Zakat annual statement or receipt (e.g., Penyata Zakat, Resit Rasmi Zakat, Lembaga Zakat Selangor, PPZ-MAIWP, MAIWP, MAIK, etc.):
-  * Extract the TOTAL Zakat paid for the year (Jumlah Keseluruhan / Jumlah Bayaran / Jumlah Zakat / Total Contribution, including Zakat Pendapatan + Zakat Fitrah + Zakat Harta) into "zakatPaid".
+  * Extract the TOTAL Zakat paid for the year (Jumlah Keseluruhan / Jumlah Bayaran / Jumlah Zakat / Total Contribution, or the bold grand-total figure at the bottom of the "JUMLAH (RM)" column on Lembaga Zakat Selangor "PENYATA MAKLUMAT BAYARAN ZAKAT", including Zakat Pendapatan + Zakat Fitrah + Zakat Harta) into "zakatPaid".
   * Do NOT put Zakat amounts into "annualIncome", "epfEmployee", or "extraReliefs".
   * Set "providerName" to the Zakat authority / issuer name (e.g. "Lembaga Zakat Selangor", "PPZ-MAIWP").
   * Set "detectedTaxYear" to the 4-digit statement year if visible (e.g. 2023).`

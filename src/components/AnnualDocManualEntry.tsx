@@ -620,7 +620,7 @@ export function AnnualDocManualEntry({
         </div>
       )}
 
-      {(isEa || (isOtherDoc && numOrZero(zakatPaid) > 0)) && (
+      {(isEa || isOtherDoc) && (
         <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
           <input
             type="checkbox"

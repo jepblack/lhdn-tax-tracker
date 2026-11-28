@@ -1381,7 +1381,22 @@ export function ReceiptsTab({
                               })()}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              {(isFailed || !doc.extraction) && (
+                              {(() => {
+                                const ex = doc.extraction;
+                                const hasAnyFigure = Boolean(
+                                  ex &&
+                                    (ex.annualIncome > 0 ||
+                                      ex.pcbPaid > 0 ||
+                                      ex.zakatPaid > 0 ||
+                                      ex.epfEmployee > 0 ||
+                                      ex.socsoEisEmployee > 0 ||
+                                      ex.lifeInsuranceAmount > 0 ||
+                                      ex.medicalInsuranceAmount > 0 ||
+                                      ex.housingLoanInterest > 0 ||
+                                      (ex.extraReliefs && ex.extraReliefs.length > 0))
+                                );
+                                return isFailed || !hasAnyFigure;
+                              })() && (
                                 <button
                                   type="button"
                                   disabled={isRetrying}
