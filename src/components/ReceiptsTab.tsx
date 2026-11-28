@@ -793,35 +793,6 @@ export function ReceiptsTab({
             </div>
           )}
 
-          {manualDoc && (
-            <AnnualDocManualEntry
-              key={manualDoc.id}
-              doc={manualDoc}
-              defaultYear={taxYear}
-              lang={lang}
-              initialExtraction={manualDoc.extraction}
-              hasOtherEaInYear={annualDocs.some(
-                (d) =>
-                  d.id !== manualDoc.id &&
-                  d.taxYear === taxYear &&
-                  d.docType === "ea_form" &&
-                  (d.extractionStatus === "extracted" ||
-                    d.extractionStatus === "manual")
-              )}
-              onApply={async (ext, doc, yr) => {
-                await onApplyAnnualDocExtraction(ext, doc, yr);
-                setExtractionAppliedMsg(
-                  lang === "bm"
-                    ? `Angka daripada ${doc.label} disimpan ke TT ${yr}!`
-                    : `Saved manual figures from ${doc.label} to YA ${yr}!`
-                );
-                setManualDoc(null);
-                setDocNotice(null);
-              }}
-              onCancel={() => setManualDoc(null)}
-            />
-          )}
-
           {extractionAppliedMsg && (
             <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-900">
               <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-600" />
@@ -1076,94 +1047,125 @@ export function ReceiptsTab({
                       const isExtracted = doc.extractionStatus === "extracted";
                       const isRetrying = retryingDocId === doc.id;
                       return (
-                        <div
-                          key={doc.id}
-                          className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs ${
-                            isFailed
-                              ? "border border-amber-300 bg-amber-50/80"
-                              : "bg-emerald-50/70"
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span
-                                className={`truncate font-medium ${
-                                  isFailed
-                                    ? "text-amber-950"
-                                    : "text-emerald-950"
-                                }`}
-                              >
-                                {doc.fileName}
-                              </span>
-                              {isFailed && (
-                                <span className="shrink-0 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                                  {lang === "bm" ? "Perlu Imbas" : "Needs Read"}
+                        <div key={doc.id} className="space-y-2">
+                          <div
+                            className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs ${
+                              isFailed
+                                ? "border border-amber-300 bg-amber-50/80"
+                                : "bg-emerald-50/70"
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`truncate font-medium ${
+                                    isFailed
+                                      ? "text-amber-950"
+                                      : "text-emerald-950"
+                                  }`}
+                                >
+                                  {doc.fileName}
                                 </span>
-                              )}
-                              {isManual && (
-                                <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                                  Manual
-                                </span>
-                              )}
-                              {isExtracted && (
-                                <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                                  {lang === "bm" ? "Diekstrak ✓" : "Extracted ✓"}
-                                </span>
+                                {isFailed && (
+                                  <span className="shrink-0 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                    {lang === "bm" ? "Perlu Imbas" : "Needs Read"}
+                                  </span>
+                                )}
+                                {isManual && (
+                                  <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                    Manual
+                                  </span>
+                                )}
+                                {isExtracted && (
+                                  <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                                    {lang === "bm" ? "Diekstrak ✓" : "Extracted ✓"}
+                                  </span>
+                                )}
+                              </div>
+                              {isFailed && doc.extractionNote && (
+                                <p className="line-clamp-1 text-[10px] text-amber-800">
+                                  {doc.extractionNote}
+                                </p>
                               )}
                             </div>
-                            {isFailed && doc.extractionNote && (
-                              <p className="line-clamp-1 text-[10px] text-amber-800">
-                                {doc.extractionNote}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            {doc.docType !== "other_doc" && (
-                              <>
-                                {isFailed && (
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {doc.docType !== "other_doc" && (
+                                <>
+                                  {isFailed && (
+                                    <button
+                                      type="button"
+                                      disabled={isRetrying}
+                                      onClick={() => handleRetryAnnualDoc(doc)}
+                                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50"
+                                    >
+                                      {isRetrying ? (
+                                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                      ) : (
+                                        <RotateCcw className="h-2.5 w-2.5" />
+                                      )}
+                                      {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
-                                    disabled={isRetrying}
-                                    onClick={() => handleRetryAnnualDoc(doc)}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50"
+                                    onClick={() => {
+                                      setManualDoc((cur) =>
+                                        cur?.id === doc.id ? null : doc
+                                      );
+                                      setPendingExtraction(null);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
                                   >
-                                    {isRetrying ? (
-                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                    ) : (
-                                      <RotateCcw className="h-2.5 w-2.5" />
-                                    )}
-                                    {lang === "bm" ? "Cuba Lagi" : "Retry"}
+                                    {lang === "bm" ? "Isi" : "Enter"}
                                   </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setManualDoc(doc);
-                                    setPendingExtraction(null);
-                                  }}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-indigo-700"
-                                >
-                                  {lang === "bm" ? "Isi" : "Enter"}
-                                </button>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openFileSafely(doc.fileUrl, doc.fileName)
-                              }
-                              className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs hover:bg-emerald-50"
-                            >
-                              Open <ExternalLink className="h-2.5 w-2.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteAnnualDoc(doc.id)}
-                              className="rounded-lg p-1 text-slate-400 hover:text-rose-600"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openFileSafely(doc.fileUrl, doc.fileName)
+                                }
+                                className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 shadow-xs hover:bg-emerald-50"
+                              >
+                                Open <ExternalLink className="h-2.5 w-2.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteAnnualDoc(doc.id)}
+                                className="rounded-lg p-1 text-slate-400 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           </div>
+                          {manualDoc?.id === doc.id && (
+                            <AnnualDocManualEntry
+                              key={doc.id}
+                              doc={doc}
+                              defaultYear={taxYear}
+                              lang={lang}
+                              initialExtraction={doc.extraction}
+                              hasOtherEaInYear={annualDocs.some(
+                                (d) =>
+                                  d.id !== doc.id &&
+                                  d.taxYear === taxYear &&
+                                  d.docType === "ea_form" &&
+                                  (d.extractionStatus === "extracted" ||
+                                    d.extractionStatus === "manual")
+                              )}
+                              onApply={async (ext, targetDoc, yr) => {
+                                await onApplyAnnualDocExtraction(ext, targetDoc, yr);
+                                setExtractionAppliedMsg(
+                                  lang === "bm"
+                                    ? `Angka daripada ${targetDoc.label} disimpan ke TT ${yr}!`
+                                    : `Saved manual figures from ${targetDoc.label} to YA ${yr}!`
+                                );
+                                setManualDoc(null);
+                                setDocNotice(null);
+                              }}
+                              onCancel={() => setManualDoc(null)}
+                            />
+                          )}
                         </div>
                       );
                     })}
