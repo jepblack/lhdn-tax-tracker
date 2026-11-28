@@ -764,26 +764,29 @@ export function ReceiptsTab({
           <input
             ref={docInputRef}
             type="file"
+            multiple
             accept="application/pdf,image/*"
             className="hidden"
             onChange={async (e) => {
-              const file = e.target.files?.[0];
+              const files = Array.from(e.target.files || []);
               const slot = activeDocSlotRef.current;
               e.target.value = "";
-              if (!file || !slot) return;
+              if (files.length === 0 || !slot) return;
               setUploadingDocType(slot.type);
               setPendingExtraction(null);
               setExtractionAppliedMsg(null);
               setDocNotice(null);
               try {
-                const savedDoc = await onUploadAnnualDoc(
-                  slot.type,
-                  slot.label,
-                  file
-                );
+                if (files.length === 1) {
+                  const file = files[0];
+                  const savedDoc = await onUploadAnnualDoc(
+                    slot.type,
+                    slot.label,
+                    file
+                  );
 
-                // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, Form BE, or Other Annual Docs (e.g. Zakat)
-                try {
+                  // Auto-extract tax figures from EA Form, KWSP, Insurance, Housing Loan, Form BE, or Other Annual Docs (e.g. Zakat)
+                  try {
                     const { extraction, skipReason } = await parseAnnualDocFile(
                       file,
                       slot.type,
@@ -840,6 +843,91 @@ export function ReceiptsTab({
                     setManualDoc(savedDoc);
                     onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
                   }
+                } else {
+                  let extractedCount = 0;
+                  let failedCount = 0;
+                  for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const savedDoc = await onUploadAnnualDoc(
+                      slot.type,
+                      slot.label,
+                      file
+                    );
+                    try {
+                      const { extraction, skipReason } = await parseAnnualDocFile(
+                        file,
+                        slot.type,
+                        slot.label,
+                        taxYear
+                      );
+                      if (extraction) {
+                        const detected =
+                          extraction.detectedTaxYear &&
+                          SUPPORTED_TAX_YEARS.includes(extraction.detectedTaxYear)
+                            ? extraction.detectedTaxYear
+                            : taxYear;
+                        const hasOtherEa =
+                          slot.type === "ea_form" &&
+                          (i > 0 ||
+                            annualDocs.some(
+                              (d) =>
+                                d.id !== savedDoc.id &&
+                                d.taxYear === detected &&
+                                d.docType === "ea_form" &&
+                                (d.extractionStatus === "extracted" ||
+                                  d.extractionStatus === "manual")
+                            ));
+                        const shouldAddZakat =
+                          slot.type === "other_doc" &&
+                          extraction.zakatPaid > 0 &&
+                          (i > 0 ||
+                            (profile.zakatPaid > 0 &&
+                              extraction.zakatPaid < profile.zakatPaid));
+                        const extToApply = {
+                          ...extraction,
+                          ...(slot.type === "ea_form"
+                            ? { addToExistingProfile: hasOtherEa }
+                            : slot.type === "other_doc" &&
+                              extraction.zakatPaid > 0
+                            ? { addToExistingProfile: shouldAddZakat }
+                            : {}),
+                        };
+                        await onApplyAnnualDocExtraction(
+                          extToApply,
+                          savedDoc,
+                          detected,
+                          { skipYearSwitch: true }
+                        );
+                        onUpdateAnnualDocStatus?.(savedDoc.id, "extracted", null);
+                        extractedCount++;
+                      } else {
+                        const msg =
+                          skipReason ||
+                          `${slot.label} archived! No numeric tax figures were detected automatically.`;
+                        onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
+                        failedCount++;
+                      }
+                    } catch {
+                      const msg = `${slot.label} archived! Could not reach extractor right now.`;
+                      onUpdateAnnualDocStatus?.(savedDoc.id, "failed", msg);
+                      failedCount++;
+                    }
+                  }
+                  if (extractedCount > 0) {
+                    setExtractionAppliedMsg(
+                      lang === "bm"
+                        ? `${extractedCount} daripada ${files.length} dokumen ${slot.label} berjaya diekstrak & digunakan!`
+                        : `Extracted & applied ${extractedCount} of ${files.length} ${slot.label} files!`
+                    );
+                  }
+                  if (failedCount > 0) {
+                    setDocNotice(
+                      lang === "bm"
+                        ? `${failedCount} fail perlu semakan manual — klik Cuba Lagi atau Isi.`
+                        : `${failedCount} file(s) could not be read automatically — click Retry or Enter.`
+                    );
+                  }
+                }
               } finally {
                 setUploadingDocType(null);
               }
