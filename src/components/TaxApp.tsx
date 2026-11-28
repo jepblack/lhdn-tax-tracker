@@ -498,23 +498,64 @@ export function TaxApp() {
       (existingBaseline?.declaredByCategory?.["approved_donations"] || 0) > 0 &&
       (existingBaseline?.declaredIncome || 0) > 0;
 
+    // When 2+ EA Forms exist for the target YA, compute the exact combined total across all saved EA Forms
+    // so uploading, retrying, or editing any EA Form never overwrites or double-counts another employer's EA.
+    const eaDocsForYear =
+      doc.docType === "ea_form"
+        ? effectiveDocs.filter(
+            (d) =>
+              d.taxYear === targetYear &&
+              d.docType === "ea_form" &&
+              d.extraction
+          )
+        : [];
+    const useEaSum = doc.docType === "ea_form" && eaDocsForYear.length >= 2;
+    const sumEaIncome = useEaSum
+      ? Math.round(
+          eaDocsForYear.reduce(
+            (s, d) => s + (d.extraction?.annualIncome || 0),
+            0
+          ) * 100
+        ) / 100
+      : 0;
+    const sumEaPcb = useEaSum
+      ? Math.round(
+          eaDocsForYear.reduce((s, d) => s + (d.extraction?.pcbPaid || 0), 0) *
+            100
+        ) / 100
+      : 0;
+    const sumEaZakat = useEaSum
+      ? Math.round(
+          eaDocsForYear.reduce(
+            (s, d) => s + (d.extraction?.zakatPaid || 0),
+            0
+          ) * 100
+        ) / 100
+      : 0;
+
     const updatedTargetProfile: TaxProfile = {
       ...baseProfile,
       taxYear: targetYear,
       annualIncome:
-        !preservePreDonationIncome && ext.annualIncome > 0
+        useEaSum && sumEaIncome > 0
+          ? sumEaIncome
+          : !preservePreDonationIncome && ext.annualIncome > 0
           ? ext.addToExistingProfile
             ? Math.round(((baseProfile.annualIncome || 0) + ext.annualIncome) * 100) / 100
             : ext.annualIncome
           : baseProfile.annualIncome,
       pcbPaid:
-        ext.pcbPaid > 0
+        useEaSum && sumEaPcb > 0
+          ? sumEaPcb
+          : ext.pcbPaid > 0
           ? ext.addToExistingProfile
             ? Math.round(((baseProfile.pcbPaid || 0) + ext.pcbPaid) * 100) / 100
             : ext.pcbPaid
           : baseProfile.pcbPaid,
       zakatPaid:
-        ext.zakatPaid > 0
+        useEaSum && sumEaZakat > 0
+          ? sumEaZakat
+          : ext.zakatPaid > 0
           ? ext.addToExistingProfile
             ? Math.round(((baseProfile.zakatPaid || 0) + ext.zakatPaid) * 100) / 100
             : ext.zakatPaid
@@ -937,6 +978,53 @@ export function TaxApp() {
     }
     setIsLoaded(true);
   }
+
+  // Reconcile profile Income / PCB / Zakat if 2+ EA Forms are saved for the active YA
+  // but the profile is still stuck on a single EA Form's figures from an earlier overwrite.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const eaDocs = annualDocs.filter(
+      (d) =>
+        d.taxYear === profile.taxYear &&
+        d.docType === "ea_form" &&
+        d.extraction
+    );
+    if (eaDocs.length < 2) return;
+    const sumIncome =
+      Math.round(
+        eaDocs.reduce((s, d) => s + (d.extraction?.annualIncome || 0), 0) * 100
+      ) / 100;
+    const sumPcb =
+      Math.round(
+        eaDocs.reduce((s, d) => s + (d.extraction?.pcbPaid || 0), 0) * 100
+      ) / 100;
+    const sumZakat =
+      Math.round(
+        eaDocs.reduce((s, d) => s + (d.extraction?.zakatPaid || 0), 0) * 100
+      ) / 100;
+    const matchesSingleEaOnly =
+      profile.annualIncome > 0 &&
+      sumIncome > profile.annualIncome + 0.01 &&
+      eaDocs.some(
+        (d) =>
+          Math.abs((d.extraction?.annualIncome || 0) - profile.annualIncome) <
+          0.01
+      );
+    if (!matchesSingleEaOnly) return;
+    handleUpdateProfile({
+      ...profile,
+      annualIncome: sumIncome,
+      pcbPaid: sumPcb > 0 ? sumPcb : profile.pcbPaid,
+      zakatPaid: sumZakat > 0 ? sumZakat : profile.zakatPaid,
+    });
+  }, [
+    isLoaded,
+    annualDocs,
+    profile.taxYear,
+    profile.annualIncome,
+    profile.pcbPaid,
+    profile.zakatPaid,
+  ]);
 
   async function handleManualRefresh() {
     if (!userId || refreshing) return;

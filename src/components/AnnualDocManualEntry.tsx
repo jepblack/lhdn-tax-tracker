@@ -114,7 +114,7 @@ export function AnnualDocManualEntry({
   const [saving, setSaving] = useState(false);
   const [addToExisting, setAddToExisting] = useState(
     doc.docType === "ea_form" &&
-      (init ? Boolean(init.addToExistingProfile) : hasOtherEaInYear)
+      (init?.addToExistingProfile ?? hasOtherEaInYear)
   );
 
   async function handleSave() {
